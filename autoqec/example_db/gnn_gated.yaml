@@ -1,0 +1,18 @@
+type: gnn
+output_mode: soft_priors
+gnn:
+  layers: 3
+  hidden_dim: 32
+  message_fn: gated_mlp
+  aggregation: gated_sum
+  normalization: layer
+  residual: true
+  edge_features: [syndrome_bit, stabilizer_type]
+head: linear
+training:
+  learning_rate: 1.0e-3
+  batch_size: 64
+  epochs: 4
+  loss: focal
+  profile: dev
+
