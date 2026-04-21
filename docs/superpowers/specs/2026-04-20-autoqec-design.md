@@ -14,7 +14,8 @@
 ## Revision history
 
 - **v1 (2026-04-20)**: initial brainstorming spec. Assumed open-ended timeline; full multi-agent DAG with Reviewer; two reference envs as MVP; dual DSL + PyTorch paths; tree-search upgrade path. See git history.
-- **v2 (2026-04-21)**: rescoped for **1-week, 3-person timeline**. Narrowed search space to **AI predecoder + classical backend** (GNN or Neural-BP → MWPM or OSD). Dropped Reviewer agent, PyTorch C-path, tree-search upgrades, background-mode checkpointing, contributor infrastructure. Added: **Tier-1 rich DSL + Tier-2 custom-fn escape hatch**, `machine_state` tool for self-aware compute budgeting, three-layer memory architecture, 5 skills and 5 demos (per project deliverable requirement), codex-cli as primary production backend. Novelty framing updated per `STRATEGIC_ASSESSMENT.md` to Framing B (generic Pareto discovery, not SOTA-beating).
+- **v2 (2026-04-21 morning)**: rescoped for **1-week, 3-person timeline**. Narrowed search space to **AI predecoder + classical backend** (GNN or Neural-BP → MWPM or OSD). Dropped Reviewer agent, PyTorch C-path, tree-search upgrades, background-mode checkpointing, contributor infrastructure. Added: **Tier-1 rich DSL + Tier-2 custom-fn escape hatch**, `machine_state` tool for self-aware compute budgeting, three-layer memory architecture, 5 skills and 5 demos (per project deliverable requirement), codex-cli as primary production backend. Novelty framing updated per `STRATEGIC_ASSESSMENT.md` to Framing B (generic Pareto discovery, not SOTA-beating).
+- **v2.1 (2026-04-21 afternoon)**: timeline compressed from 5 days to **3 days** (project reality). Redistribution of Person C's work: DSL + independent_eval + Pareto moved to Days 1-2 (core infrastructure) rather than skills; skills consolidated to Day 3 thin wrappers over already-working CLIs. Demos and skills tagged with P0 / P1 / P2 priorities; 5-skill and 5-demo deliverables are preserved but P2 items are minimum-viable.
 
 ---
 
@@ -481,15 +482,15 @@ On-demand or auto-triggered diagnosis.
 
 Each demo is a `demos/demo-N-<slug>/` directory containing `README.md`, `run.sh`, `expected_output/`, and a `walkthrough.md` narrative.
 
-| # | Demo | Skills exercised | Est. runtime | Success criterion |
-|---|---|---|---|---|
-| **1** | surface_d5 full run | `/autoqec-run`, `/verify-decoder` | ~3.3 h | Pareto has ≥3 VERIFIED candidates; at least one matches PyMatching LER within statistical tolerance. |
-| **2** | bb72 full run | `/autoqec-run`, `/verify-decoder` | ~3.3 h | Pareto has ≥3 VERIFIED candidates; at least one *Δ-dominates* plain BP+OSD (order 0) on at least one (accuracy, FLOPs) slice. |
-| **3** | `/add-env` onboarding | `/add-env`, `/autoqec-run` (5 rounds dev profile) | ~30 min | Non-coder teammate describes env → skill produces valid YAML → at least 1 round of meaningful output. |
-| **4** | Reward-hacking detection | `/verify-decoder`, `/review-log` | ~20 min | Hand-crafted cheating predecoder (memorized val syndromes) receives `FAILED` verdict with correct diagnosis. |
-| **5** | Failure recovery | `/diagnose-failure`, `/review-log` | ~20 min | Deliberately malformed config (e.g. `hidden_dim: -1`, or unstable training) → skill identifies root cause and proposes fix. |
+| # | Demo | Skills exercised | Priority | Est. runtime | Success criterion |
+|---|---|---|---|---|---|
+| **1** | surface_d5 full run | `/autoqec-run`, `/verify-decoder` | **P0** | ~3.3 h | Pareto has ≥3 VERIFIED candidates; at least one matches PyMatching LER within statistical tolerance. |
+| **4** | Reward-hacking detection | `/verify-decoder`, `/review-log` | **P0** | ~20 min | Hand-crafted cheating predecoder (memorized train/val syndromes) receives `FAILED` verdict with correct diagnosis on holdout seeds. |
+| **2** | bb72 full run | `/autoqec-run`, `/verify-decoder` | **P1** | ~3.3 h | Pareto has ≥3 VERIFIED candidates; at least one *Δ-dominates* plain BP+OSD (order 0) on at least one (accuracy, FLOPs) slice. If time-constrained on Day 3: acceptable fallback is 3 rounds dev-profile with clear qualitative Pareto. |
+| **3** | `/add-env` onboarding | `/add-env`, `/autoqec-run` (5 rounds dev profile) | **P2** | ~30 min | Non-coder teammate describes env → skill produces valid YAML → at least 1 round of meaningful output. |
+| **5** | Failure recovery | `/diagnose-failure`, `/review-log` | **P2** | ~20 min | Deliberately malformed config (e.g. `hidden_dim: -1`, or NaN-prone hyperparameters) → skill identifies root cause and proposes a fix. |
 
-Demos 1-2 are the **proof-the-system-works** demos. 3-5 are **proof-the-system-works-well** demos.
+Demos 1 and 4 are **must-ship** (they prove the core claim). Demo 2 is the **genericity proof**; a simplified fallback is acceptable under Day-3 pressure. Demos 3 and 5 are nice-to-have polish.
 
 ## 10. Repository Structure
 
@@ -588,25 +589,69 @@ run-all-claude:  $(MAKE) run AUTOQEC_IDEATOR_BACKEND=claude-cli AUTOQEC_CODER_BA
 run-cheap:       $(MAKE) run AUTOQEC_IDEATOR_MODEL=claude-haiku-4-5
 ```
 
-## 12. One-week timeline (3 people × 5 days)
+## 12. Three-day timeline (3 people × 3 days)
 
-| Day | Person A (orchestration) | Person B (QEC core) | Person C (safety/UX/skills) |
+Budget: ~7 net person-days (9 gross − ~25% coordination). Core research artifacts are front-loaded; skills are Day-3 thin wrappers over working CLIs.
+
+### Distribution principle
+
+Person C takes **DSL + independent_eval + Pareto** (the novelty-carrying infrastructure) on Days 1-2, not skills. Skills are Day-3 SKILL.md files that wrap already-functional CLIs. This gives every person hands-on core work rather than peripheral polish.
+
+| Day | Person A (Orchestration) | Person B (QEC core) | Person C (DSL + Eval + Pareto) |
 |---|---|---|---|
-| **Mon** | Port aide/journal.py skeleton, open-coscientist/framework.py structure | Stim + sinter, surface_d5 circuit, PyMatching wrapper, 1M-shot train-benchmark to pin compute numbers | DSL schema (pydantic) + 3 GNN + 3 Neural-BP example_db templates |
-| **Tue** | `.claude/agents/autoqec-{ideator,coder,analyst}.md` + prompt authoring | Verify `ldpc` package has relay_bp; obtain bb72 Stim circuit; wrap BP+OSD baselines | `/verify-decoder` skill + `autoqec verify` CLI with 3 core guards (seed isolation, bootstrap CI, ablation sanity) |
-| **Wed** | 🔴 **Integration day** — first end-to-end run, 1 round, surface_d5 | 🔴 — sync with A — | `/add-env` skill + `/review-log` skill skeletons |
-| **Thu** | Stabilize loop, run Demo 1 (10 rounds prod), start Demo 2 | Optimize Runner, debug bb72 Pareto | `/diagnose-failure` skill + `autoqec pareto compare` CLI + Demo 4 cheating-predecoder harness |
-| **Fri** | Demo 3 live; Demo 5 recording | Demo 2 completion + Pareto finalization | Polish; walkthroughs; final PR |
+| **Day 1** | Port open-coscientist/framework.py skeleton; draft 3 subagent `.md` stubs; set up Agent-tool dispatch scaffolding | Stim + sinter; surface_d5 circuit; PyMatching baseline wrapper; **1M-shot train benchmark → pin compute numbers** | **DSL schema (pydantic) + `dsl_compiler.py`**; 3 GNN + 3 Neural-BP seed templates for `example_db/`; `machine_state` tool |
+| **Day 2** | **🔴 Main loop integration** — Runner ↔ Orchestrator ↔ Subagents runs 1 round end-to-end | Runner (train + eval + FLOPs) + `RunnerSafety` sentinels; if time, bb72 env wiring (baselines + Stim circuit) | **`independent_eval.py`** with 3 MVP guards + `autoqec verify` CLI; **Pareto maintenance + visualization** + `autoqec pareto` CLI (plain scripts, not skills yet) |
+| **Day 3** | Demo 1: surface_d5 full prod run (~3.3h); help Demo 2 recovery | Demo 2: bb72 full run (P1 stretch); baseline script finalization | **5 SKILL.md thin wrappers** (P0: `/autoqec-run`, `/verify-decoder`; P1: `/add-env`; P2: `/review-log`, `/diagnose-failure`) + Demo 4 cheating-predecoder + walkthroughs + final PR |
 
-**Key risk day**: Wed integration. If A+B's interfaces are misaligned, Thu/Fri become debugging. Mitigation: schedule an explicit 30-min interface sync on Tue EOD.
+### Skill priority (Day 3)
 
-**Compute wallclock budget**: 2 envs × 10 rounds × ~20 min/round = ~6.6 h. Add 1-2 h verify. Fits an overnight on one 4090. **Dev profile for all Mon-Thu iterations** (~3 min/round); prod profile only Thu-Fri for demos.
+| P | Skills | Target quality |
+|---|---|---|
+| **P0** (demo-critical) | `/autoqec-run`, `/verify-decoder` | Full working wrappers (~100 LOC SKILL.md each) |
+| **P1** (high-value) | `/add-env` | Functional Q&A flow, produces valid env YAML |
+| **P2** (minimum viable) | `/review-log`, `/diagnose-failure` | SKILL.md with polished prompts; skill runnable but exercised lightly in Demo 5 only if time permits |
+
+All 5 SKILL.md files exist at end of Day 3 (deliverable fulfilled); depth varies by priority.
+
+### Demo priority (deliverable: 5 demos)
+
+| # | Demo | P | 3-day minimum |
+|---|---|---|---|
+| 1 | surface_d5 full run | **P0** | 10 rounds prod, Pareto ≥3 verified |
+| 4 | Reward-hacking detection | **P0** | Hand-crafted cheating predecoder → FAILED verdict |
+| 2 | bb72 full run | **P1 stretch** | 10 rounds if time; else 3-round dev-profile version |
+| 3 | `/add-env` onboarding | **P2** | 5-min interactive walkthrough recording |
+| 5 | `/diagnose-failure` | **P2** | Broken config → skill emits fix recommendation |
+
+**Worst case (3 days tight)**: Demos 1 + 4 + 3 solid; Demos 2 + 5 have skeleton walkthroughs. Still 5 demos deliverable.
+**Best case**: all 5 demos solid.
+
+### Key risk: Day-2 integration misalignment
+
+Day 2 morning Person A must have Orchestrator calling subagents and Runner. If Person B's Runner interface isn't matched to Person A's orchestrator invocation, Day 2 afternoon becomes debugging. Mitigation: **Day-1 EOD 30-minute interface sync meeting** — A and B write their interface contracts to a shared file before parting.
+
+### Compute wallclock budget
+
+- Dev profile for all iteration work: ~3 min / round × many attempts (fits interactively)
+- Prod profile for demos: 10 rounds × ~20 min = ~3.3h per env
+- 1 env prod + 1 env dev-scale + 1-2h verify → ~5h total, comfortable on overnight 4090
+- **Full 5-demo stretch**: ~7h GPU time; Person B's Day-3 evening run
+
+### What is cut from the 5-day plan
+
+| Dropped | Where it moves |
+|---|---|
+| Day 5 polish buffer | absorbed into Day 3 if time; else post-MVP |
+| Full 6 fair-baseline guards (was already 3 in v2) | no change |
+| Post-MVP skills (`add-decoder-template`, etc.) | never planned |
+| Reviewer agent full wiring | never planned (dropped in v2 rescope) |
+| 50-round "stress run" | deferred to post-hackathon |
 
 ## 13. Risks & Mitigations
 
 | Risk | P | Mitigation |
 |---|---|---|
-| Wed integration misalignment | High | Explicit Tue-EOD interface-sync meeting; A and B each draft the interface doc before Tue |
+| Day-2 integration misalignment | **High** | Explicit Day-1 EOD interface-sync meeting; A and B each write their interface contract to a shared file before parting |
 | Relay-BP not in `ldpc` package | Med | Fall back to reporting only BP+OSD (order 0+10); acknowledge in paper as a limitation |
 | bb72 Stim circuit unavailable | Low | Three candidate sources (`qLDPC`, `stimbposd`, Bravyi github); last resort = 200-LOC hand-build (STRATEGIC §2 noted this is tractable) |
 | Coder Tier-2 custom_fn failure rate too high | Med | Start with Tier-1 only; only enable Tier-2 Thu-Fri if plateau observed |
@@ -728,3 +773,7 @@ autoqec-analyst.md (~200 tokens)
 | Framing A ("SOTA-competitive") | Framing B ("Pareto discovery across triples") | STRATEGIC_ASSESSMENT compute-gap analysis |
 | 6 developer skills | 5 user-facing skills | Project deliverable requirement + "only LLM-reasoning tasks are skills" philosophy |
 | Makefile minimal | Makefile with per-agent backend/model overrides | Ablation-friendly |
+| 5-day × 3-person timeline | **3-day × 3-person timeline (v2.1)** | Project reality |
+| Person C = skills/UX lead (peripheral) | **Person C = DSL + independent_eval + Pareto lead (core infra)** | Engagement + front-loaded novelty-carrying work |
+| Skills written throughout the week | **Skills = Day-3 thin wrappers over working CLIs** | CLIs first, UX second |
+| All 5 demos equal priority | **Demos tagged P0/P1/P2** (1+4 must-ship; 2 must-attempt; 3+5 nice-to-have) | 3-day realism |
