@@ -1,5 +1,9 @@
 knowledge/papers/
 knowledge/download.log
+knowledge/venue_check.log
+knowledge/venue_info.json
+knowledge/retry_*.py
+knowledge/retry_*.log
 __pycache__/
 *.pyc
 .venv/
