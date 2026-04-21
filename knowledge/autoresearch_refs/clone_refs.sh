@@ -19,6 +19,14 @@ REPOS=(
   "karpathy-autoresearch|https://github.com/karpathy/autoresearch.git"
   "rd-agent|https://github.com/microsoft/RD-Agent.git"
   "problem-reductions|https://github.com/CodingThrust/problem-reductions.git"
+  "open-coscientist|https://github.com/conradry/open-coscientist-agents.git"
+  "mlgym|https://github.com/facebookresearch/MLGym.git"
+  "paper-qa|https://github.com/Future-House/paper-qa.git"
+  "openevolve|https://github.com/codelion/openevolve.git"
+  "ml-master|https://github.com/sjtu-sai-agents/ML-Master.git"
+  "internagent|https://github.com/InternScience/InternAgent.git"
+  "dolphin|https://github.com/InternScience/Dolphin.git"
+  "sciagents|https://github.com/lamm-mit/SciAgentsDiscovery.git"
 )
 
 for entry in "${REPOS[@]}"; do

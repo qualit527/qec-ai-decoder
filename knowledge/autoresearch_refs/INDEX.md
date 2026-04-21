@@ -185,15 +185,252 @@ Enterprise-grade auto-research framework. Designed for quant finance and general
 
 ---
 
+---
+
+## 7. `open-coscientist/` — LangGraph reimplementation of Google Co-Scientist ⭐⭐⭐
+
+**Repo**: https://github.com/conradry/open-coscientist-agents • **Clone size**: 13 MB
+
+Open-source LangGraph + GPT-Researcher reimplementation of Google Co-Scientist's hypothesis-evolve-rank loop. **Directly matches our stack choice** (LangGraph DAG). Most aligned reference we have.
+
+### Key files
+| File | LOC | Purpose |
+|---|---|---|
+| `coscientist/framework.py` | 467 | **Main LangGraph state graph** — nodes, edges, state reducers. Direct template for our `autoqec/orchestration/dag.py`. |
+| `coscientist/generation_agent.py` | 282 | Generation agent node. Analog: our Ideator. |
+| `coscientist/evolution_agent.py` | 181 | Evolution operator (crossover/mutate on hypotheses). |
+| `coscientist/literature_review_agent.py` | — | Lit-review node backed by Tavily/web search — analog to our knowledge/INDEX reference. |
+| `coscientist/configuration_agent.py` | — | Per-hypothesis configuration planner. |
+| `coscientist/final_report_agent.py` | — | Report synthesis. |
+| `coscientist/global_state.py` | — | Typed LangGraph state schema. |
+| `coscientist/custom_types.py` | — | Pydantic models for messages between nodes. |
+
+### What to steal ⭐⭐⭐
+- **`framework.py` LangGraph layout** — use nearly verbatim as the skeleton for our DAG; only swap out the agents/state fields for QEC ones
+- `global_state.py` typed-state pattern → `autoqec/orchestration/state.py`
+- `custom_types.py` Pydantic message schemas between nodes → our agent message contracts
+- Evolution operator ideas — later, post-MVP tree search upgrade
+
+### What to skip
+- GPT-Researcher literature integration (we have our own paper corpus)
+- Final-report node (we write our own markdown log)
+
+---
+
+## 8. `mlgym/` — Meta MLGym framework (2025)
+
+**Paper**: https://ai.meta.com/research/publications/mlgym/ • **Repo**: https://github.com/facebookresearch/MLGym • **Clone size**: 400 MB (heavy benchmark data)
+
+Meta's Gym-style framework + benchmark for AI research agents. Clean `Environment` / `Agent` / `Backend` separation we should steal for `EnvSpec` design.
+
+### Key files
+| File | LOC | Purpose |
+|---|---|---|
+| `mlgym/environment/` | — | Environment abstraction — tasks expose `step()` / `reset()` / `reward()`. Directly informs `autoqec/envs/base.py`. |
+| `mlgym/agent/` | — | Agent abstraction. |
+| `mlgym/backend/` | — | LLM provider adapters. |
+| `mlgym/evaluation/` | — | Metric loggers. |
+| `mlgym/tools/` | — | Tool registry pattern. |
+| `configs/` | — | YAML-driven experiment configs — YAML template for our `envs/*.yaml`. |
+
+### What to steal
+- **Environment / Agent separation** as a hard boundary — our `EnvSpec`↔Coder boundary is the same pattern
+- YAML config schema design in `configs/`
+- Tool registry layout in `mlgym/tools/`
+
+### What to skip
+- Benchmark task data (data/, demonstrations/) — large and ML-specific, not QEC
+
+---
+
+## 9. `paper-qa/` — Future-House high-accuracy RAG over scientific PDFs
+
+**Repo**: https://github.com/Future-House/paper-qa • **Clone size**: 60 MB
+
+Production-grade RAG system for scientific papers. Drop-in candidate for grounding our Ideator in the QEC literature we collected (81 markdown papers).
+
+### Key files
+| File | LOC | Purpose |
+|---|---|---|
+| `src/paperqa/docs.py` | 721 | **`Docs` store** — PDF → chunks → embeddings → retrieval pipeline. |
+| `src/paperqa/core.py` | 400 | Core retrieval + synthesis loop. |
+| `src/paperqa/agents/` | — | Agent-based query planning. |
+| `src/paperqa/readers.py` | — | PDF / markdown / HTML readers. |
+| `src/paperqa/clients/` | — | Literature provider clients (Crossref, Semantic Scholar, OpenAlex). |
+| `src/paperqa/settings.py` | — | Pydantic settings hierarchy — nice config pattern. |
+
+### What to steal
+- **`Docs` class** — if we want RAG over `knowledge/papers_md/`, this is essentially turnkey. Our Ideator subagent could call a tool that invokes paper-qa `Docs.aquery()` on a hypothesis.
+- `clients/` API abstractions for later post-MVP automatic paper harvesting
+
+### What to skip
+- For MVP, we don't need RAG (Ideator reads `INDEX.md` directly). Revisit when corpus grows past what fits in one subagent context.
+
+---
+
+## 10. `openevolve/` — AlphaEvolve open-source reimplementation
+
+**Repo**: https://github.com/codelion/openevolve • **Clone size**: 12 MB
+
+Evolutionary program search with LLM mutation operator. A **different paradigm** from chain-of-thought or tree-search: maintain a population of program variants, LLM mutates/crossovers, fitness-based selection. Highly relevant for "evolve a decoder architecture over many generations."
+
+### Key files
+| File | LOC | Purpose |
+|---|---|---|
+| `openevolve/controller.py` | 583 | Main evolution loop — population maintenance, generation scheduling. |
+| `openevolve/iteration.py` | 211 | Single iteration logic (sample parents, mutate, evaluate, insert). |
+| `openevolve/evaluator.py` | 727 | Fitness evaluation with sandboxing. |
+| `openevolve/database.py` | — | Population / archive store (MAP-Elites-like). |
+| `openevolve/novelty_judge.py` | — | Prevents convergence to trivial solutions. |
+| `openevolve/process_parallel.py` | — | Parallelism for batched evaluations. |
+| `configs/` | — | Evolution hyperparams per example. |
+| `examples/` | — | Worked examples (circle-packing, symbolic regression, etc.). |
+
+### What to steal
+- **Evolutionary search paradigm** — AutoQEC post-MVP could add a Layer D (population-based search) alongside B/C (tree search). For decoders, crossing over two architectures is non-trivial but doable with DSL.
+- `novelty_judge.py` — prevent Ideator from proposing near-duplicates of past hypotheses
+- `database.py` MAP-Elites archive — excellent for maintaining Pareto fronts with diverse architectures
+
+### What to skip
+- For MVP, tree search is sufficient — evolutionary search is stretch
+
+---
+
+## 11. `ml-master/` — SJTU ML-Master (MLE-Bench SOTA, 2026-04)
+
+**Repo**: https://github.com/sjtu-sai-agents/ML-Master • **Clone size**: 26 MB
+
+Current #1 on MLE-Bench. Hierarchical MCTS + Cognitive Caching. Relevant for the "long-horizon R&D" aspect.
+
+### Key files
+| File | LOC | Purpose |
+|---|---|---|
+| `main_mcts.py` | 214 | MCTS launch script — entry point. |
+| `agent/mcts_agent.py` | 960 | **Full MCTS agent implementation** — state, action, rollout, backprop. |
+| `interpreter/` | — | Sandboxed Python execution. |
+| `backend/` | — | LLM + judging backends. |
+| `grading_server.py` | — | Isolated grader process (reward-hacking defense). |
+
+### What to steal
+- **`mcts_agent.py`** — more rigorous than AIDE's greedy best-first. Upgrade path for Layer C if BFTS from AI-Scientist-v2 doesn't scale.
+- `grading_server.py` isolated-grader pattern → our `/verify-decoder` uses same idea
+
+### What to skip
+- Dataset loaders tied to Kaggle
+
+---
+
+## 12. `internagent/` — InternScience InternAgent v1.5 (2026)
+
+**Repo**: https://github.com/InternScience/InternAgent • **Clone size**: 17 MB
+
+Unified long-horizon scientific discovery framework across multiple domains. Most complete "end-to-end scientific research agent" OS reference.
+
+### Key files
+| File | LOC | Purpose |
+|---|---|---|
+| `launch_discovery.py` | 324 | **Main CLI** — top-to-bottom flow through stages. |
+| `internagent/mas/` | — | Multi-agent system module. |
+| `internagent/stage.py` | — | **Stage abstraction** — each research phase is a pluggable stage. Very close to our pipeline-stages-as-skills design. |
+| `internagent/experiments_utils_aider.py` | — | Aider-based code editing integration. |
+| `internagent/prompts.py` | — | All role prompts centralized. |
+| `internagent/vis_tree.py` | — | Research tree visualization — useful for our research log. |
+| `tasks/` | — | Per-domain task YAML configs. |
+
+### What to steal
+- **`stage.py`** — clean "stage" abstraction mirrors our `.claude/skills/` pattern at the Python layer
+- `vis_tree.py` — we want something like this for the final Pareto+hypothesis visualization
+
+### What to skip
+- Aider-specific integration (we use Claude Code / Codex CLI instead)
+
+---
+
+## 13. `dolphin/` — ACL'25 closed-loop auto-research (InternScience)
+
+**Repo**: https://github.com/InternScience/Dolphin • **Clone size**: 16 MB
+
+Minimal closed-loop design (think / practice / feedback). Smaller and more readable than InternAgent, good for understanding the core loop.
+
+### Key files
+| File | LOC | Purpose |
+|---|---|---|
+| `launch_dolphin.py` | 267 | Main entry — full loop in <300 LOC. |
+| `dolphin_utils/generate_ideas.py` | 630 | Idea generation with RAG. |
+| `dolphin_utils/rag_tools/` + `rag_utils.py` | — | Lightweight RAG over a paper corpus. |
+| `dolphin_utils/experiments_utils.py` | — | Experiment execution wrappers. |
+| `dolphin_utils/prompts.py` | — | Prompt library. |
+| `examples/` | — | Worked closed-loop examples. |
+
+### What to steal
+- **`launch_dolphin.py`** (267 LOC) as a "minimal closed loop" reference alongside `karpathy-autoresearch/train.py`
+- Lightweight RAG pattern if we decide not to pull in paper-qa
+
+---
+
+## 14. `sciagents/` — MIT SciAgentsDiscovery (materials science, 2024-25)
+
+**Paper**: Multiple Buehler-group publications • **Repo**: https://github.com/lamm-mit/SciAgentsDiscovery • **Clone size**: 223 KB
+
+Knowledge-graph-driven multi-agent discovery for materials science — **closest physical-science analog to QEC** in our collection.
+
+### Key files
+| File | LOC | Purpose |
+|---|---|---|
+| `ScienceDiscovery/agents.py` | 406 | Multi-agent role definitions (materials domain). |
+| `ScienceDiscovery/graph.py` | 19 | Graph / ontology utilities. |
+| `ScienceDiscovery/llm_config.py` | — | LLM configs. |
+| `Notebooks/` | — | End-to-end discovery notebooks. |
+
+### What to steal
+- Approach of using a **domain knowledge graph** to ground the Ideator — for QEC, we could build a graph of (code, noise, decoder_family) relationships over time
+- Multi-agent role layout — lighter weight than Agent Laboratory
+
+### What to skip
+- Materials-specific prompts / ontology
+
+---
+
+## Additional repos surveyed but NOT cloned
+
+The research agent found 13 more projects we chose not to clone. Listed here with reasoning:
+
+| Repo | Reason for skip |
+|---|---|
+| `MASWorks/ML-Agent` | RL-trained Qwen agent — niche; paradigm covered by ml-master |
+| `MLSysOps/MLE-agent` | Mature pair-programming agent — overlaps with AIDE |
+| `openai/mle-bench` | Benchmark (not a harness) — useful as future eval reference but not MVP |
+| `openai/frontier-evals` (PaperBench) | Replication benchmark, not a harness |
+| `MLE-Dojo/MLE-Dojo` | Benchmark only |
+| `aibuildai/AI-Build-AI` | Proprietary-ish recent project, limited docs |
+| `HKUDS/AI-Researcher` | Covered by InternAgent + ai-scientist-v2 combined |
+| `Just-Curieous/Curie` | Overlaps with other scientific agents we have |
+| `ulab-uiuc/research-town` | Community simulator — interesting but orthogonal to MVP |
+| `JinheonBaek/ResearchAgent` | 33 stars, small subset of what InternAgent covers |
+| `gomesgroup/coscientist` | Wet-chemistry lab — too domain-specific |
+| `IntologyAI/Zochi` | Closed-source aspects |
+| `OSU-NLP-Group/ScienceAgentBench` | Benchmark |
+| `Future-House/aviary` | Gym-like; overlaps with MLGym |
+| `findalexli/ai-scientist-v3` | 12-star personal fork |
+| `google-deepmind/funsearch` | Superseded by openevolve (which reimplements it more completely) |
+
+All are mentioned here so anyone looking back knows they were considered.
+
+---
+
 ## Summary — which repo to read in which order
 
 For someone implementing AutoQEC from the design spec:
 
-1. **Read first**: `aide/aide/agent.py` + `aide/aide/journal.py` (531 LOC total) — most digestible full system, inner loop pattern
-2. **Read next**: `rd-agent/rdagent/core/evolving_framework.py` + `proposal.py` + `scenario.py` — clean abstractions for our `EnvSpec` and DAG interfaces
-3. **Read before implementing tree search**: `ai-scientist-v2/ai_scientist/treesearch/parallel_agent.py` + `agent_manager.py` — parallel hypothesis expansion, best-first pruning
-4. **Read for role decomposition**: `agent-laboratory/agents.py` + `ai_lab_repo.py` — how to split one pipeline across role prompts
-5. **Read for minimalist inspiration**: `karpathy-autoresearch/train.py` — when scope creep threatens, re-read this
+1. **Read first**: `aide/aide/agent.py` + `aide/aide/journal.py` (531 LOC total) — most digestible full system, inner-loop pattern
+2. **Read second**: `open-coscientist/coscientist/framework.py` (467 LOC) — LangGraph DAG skeleton we'll copy most directly
+3. **Read third**: `rd-agent/rdagent/core/evolving_framework.py` + `proposal.py` + `scenario.py` — cleanest abstractions for our `EnvSpec` and DAG interfaces
+4. **Read before tree search upgrade**: `ai-scientist-v2/ai_scientist/treesearch/parallel_agent.py` + `agent_manager.py` — parallel hypothesis expansion, best-first pruning
+5. **Read for role decomposition**: `agent-laboratory/agents.py` + `ai_lab_repo.py` — role-split across prompts
+6. **Read for minimalist inspiration**: `karpathy-autoresearch/train.py` + `dolphin/launch_dolphin.py` — when scope creep threatens
+7. **Read for evolutionary upgrade (post-MVP)**: `openevolve/controller.py` + `iteration.py` + `database.py`
+8. **Read for MCTS upgrade (post-MVP)**: `ml-master/agent/mcts_agent.py`
+9. **Read for RAG integration (post-MVP)**: `paper-qa/src/paperqa/docs.py` + `core.py`
 
 ## Update policy
 
@@ -208,6 +445,24 @@ Full clones (`--depth 1` without history) live under `.git/` inside each dir; de
 
 ---
 
-## Additional projects (pending research agent)
+## Quick reference table
 
-A parallel research agent is surveying GitHub/web for other 2025-2026 auto-research repos worth cloning (MLE-STAR, MLE-Solver, ResearchAgent, Co-Scientist, etc.). When it returns, this section will be populated and additional clones added to this folder.
+| # | Name | Size | Paradigm | Stars (Apr 2026) | Why worth reading |
+|---|---|---|---|---|---|
+| 1 | ai-scientist (v1) | 315 MB | Linear pipeline | — | Historical / generate_ideas pattern |
+| 2 | ai-scientist-v2 | 11 MB | BFTS + agent mgr | — | Tree search reference |
+| 3 | aide | 2 MB | Solution tree | — | ⭐ Best inner-loop ref |
+| 4 | agent-laboratory | 3 MB | Role multi-agent | — | Role decomposition |
+| 5 | karpathy-autoresearch | 1 MB | Minimal single-file | — | Minimalism reference |
+| 6 | rd-agent | 21 MB | Abstract framework | — | Cleanest abstractions |
+| 7 | problem-reductions | 18 MB | Skills-as-stages | — | Developer workflow ref |
+| 8 | open-coscientist | 13 MB | LangGraph DAG | — | ⭐⭐⭐ LangGraph template |
+| 9 | mlgym | 400 MB | Gym env/agent | 595 | Env abstraction |
+| 10 | paper-qa | 60 MB | RAG over PDFs | 8397 | Optional RAG backend |
+| 11 | openevolve | 12 MB | Evolutionary search | 6057 | Post-MVP paradigm |
+| 12 | ml-master | 26 MB | MCTS | 398 | MCTS upgrade ref |
+| 13 | internagent | 17 MB | Stage-based | 1277 | Most complete harness |
+| 14 | dolphin | 16 MB | Minimal closed loop | 42 | Readable reference |
+| 15 | sciagents | 223 KB | Knowledge-graph agents | 605 | Closest physical-science analog |
+
+Total: ~915 MB. All cloned `--depth 1`. Regenerate via `bash clone_refs.sh`.
