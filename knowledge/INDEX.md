@@ -22,14 +22,6 @@ Verified via OpenAlex + Semantic Scholar APIs on 2026-04-20. Preprint-only paper
 ---
 
 
-
-
-
-
-
-
-
-
 ## Category 1: Surface-code neural decoders (foundational)
 
 - **2017-Torlai-NeuralDecoderTopologicalCodes** (arXiv:1610.04238) [*PRL* 2017] — First ML decoder. Boltzmann machine on 2D toric code, phase-flip only. Code-capacity threshold ~10% bit-flip. Historical baseline; scales poorly beyond d=6.
