@@ -14,3 +14,7 @@ runs/
 .env
 .DS_Store
 Thumbs.db
+knowledge/papers_md/
+knowledge/convert_with_images.log
+knowledge/convert_markdown.log
+knowledge/markdown_status.json
