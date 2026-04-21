@@ -1,8 +1,9 @@
 # AutoQEC — Design Specification
 
-**Version**: v2
+**Version**: v2.2
 **Date (v1)**: 2026-04-20
 **Date (v2)**: 2026-04-21
+**Date (v2.2)**: 2026-04-21
 **Status**: Draft, ready for team review
 **Authors**: Team (陈嘉汉、谢金谷、林腾祥) + brainstorming with Claude
 **Project**: QEC AI-enhanced decoder (AutoQEC)
@@ -14,8 +15,9 @@
 ## Revision history
 
 - **v1 (2026-04-20)**: initial brainstorming spec. Assumed open-ended timeline; full multi-agent DAG with Reviewer; two reference envs as MVP; dual DSL + PyTorch paths; tree-search upgrade path. See git history.
-- **v2 (2026-04-21 morning)**: rescoped for **1-week, 3-person timeline**. Narrowed search space to **AI predecoder + classical backend** (GNN or Neural-BP → MWPM or OSD). Dropped Reviewer agent, PyTorch C-path, tree-search upgrades, background-mode checkpointing, contributor infrastructure. Added: **Tier-1 rich DSL + Tier-2 custom-fn escape hatch**, `machine_state` tool for self-aware compute budgeting, three-layer memory architecture, 5 skills and 5 demos (per project deliverable requirement), codex-cli as primary production backend. Novelty framing updated per `STRATEGIC_ASSESSMENT.md` to Framing B (generic Pareto discovery, not SOTA-beating).
-- **v2.1 (2026-04-21 afternoon)**: timeline compressed from 5 days to **3 days** (project reality). Redistribution of Person C's work: DSL + independent_eval + Pareto moved to Days 1-2 (core infrastructure) rather than skills; skills consolidated to Day 3 thin wrappers over already-working CLIs. Demos and skills tagged with P0 / P1 / P2 priorities; 5-skill and 5-demo deliverables are preserved but P2 items are minimum-viable.
+- **v2 (2026-04-21 morning)**: rescoped for a **1-week timeline**. Narrowed search space to **AI predecoder + classical backend** (GNN or Neural-BP → MWPM or OSD). Dropped Reviewer agent, PyTorch C-path, tree-search upgrades, background-mode checkpointing, contributor infrastructure. Added: **Tier-1 rich DSL + Tier-2 custom-fn escape hatch**, `machine_state` tool for self-aware compute budgeting, three-layer memory architecture, 5 skills and 5 demos (per project deliverable requirement), codex-cli as primary production backend. Novelty framing updated per `STRATEGIC_ASSESSMENT.md` to Framing B (generic Pareto discovery, not SOTA-beating).
+- **v2.1 (2026-04-21 afternoon)**: timeline compressed from 5 days to **3 days** (project reality). Core infrastructure (`DSL`, `independent_eval`, `Pareto`) moved to Days 1-2; skills consolidated to Day 3 thin wrappers over already-working CLIs. Demos and skills tagged with P0 / P1 / P2 priorities; 5-skill and 5-demo deliverables are preserved but P2 items are minimum-viable.
+- **v2.2 (2026-04-21 evening)**: added a recommended **3-person ownership split** across **Claude Code, Codex, GLM**. Each contributor now owns one QEC-core workstream plus one delivery-facing workstream, with explicit Day 1-3 responsibilities, shared checkpoints, and demo ownership.
 
 ---
 
@@ -297,7 +299,7 @@ Three groups (`code`, `noise`, `constraints`) are decoupled — users recombine 
 - p sweep: `[1e-3, 3e-3, 5e-3]`
 - Baselines: plain BP+OSD (order 0 and 10), Relay-BP
 - Classical backend for predecoder: OSD
-- Stim circuit path TBD by Person B on Day 1 — candidates: (a) `qLDPC` Python package, (b) `stimbposd` examples, (c) Bravyi et al 2024 github. If none usable, hand-construct ~200 LOC (documented in DECODER_ROADMAP.md §3).
+- Stim circuit path TBD during Day-1 environment bring-up — candidates: (a) `qLDPC` Python package, (b) `stimbposd` examples, (c) Bravyi et al 2024 github. If none usable, hand-construct ~200 LOC (documented in DECODER_ROADMAP.md §3).
 
 ### 5.3 User extensions
 
@@ -589,19 +591,65 @@ run-all-claude:  $(MAKE) run AUTOQEC_IDEATOR_BACKEND=claude-cli AUTOQEC_CODER_BA
 run-cheap:       $(MAKE) run AUTOQEC_IDEATOR_MODEL=claude-haiku-4-5
 ```
 
-## 12. Three-day timeline (3 people × 3 days)
+## 12. Three-day delivery timeline
 
-Budget: ~7 net person-days (9 gross − ~25% coordination). Core research artifacts are front-loaded; skills are Day-3 thin wrappers over working CLIs.
+Budget: ~7 net work-days (9 gross team-days − ~25% coordination). Core research artifacts are front-loaded; skills are Day-3 thin wrappers over working CLIs.
 
-### Distribution principle
+### 12.1 Three-person ownership split (recommended)
 
-Person C takes **DSL + independent_eval + Pareto** (the novelty-carrying infrastructure) on Days 1-2, not skills. Skills are Day-3 SKILL.md files that wrap already-functional CLIs. This gives every person hands-on core work rather than peripheral polish.
+Principle: **no one is assigned only "glue work."** Each person owns one QEC-core artifact (`code/noise/baseline/predecoder/verify`) and one delivery-facing artifact (`orchestration/skills/demo/docs`) so all three have visible technical ownership and research participation.
 
-| Day | Person A (Orchestration) | Person B (QEC core) | Person C (DSL + Eval + Pareto) |
+Suggested fixed pairing:
+- **陈嘉汉 → Claude Code**
+- **谢金谷 → GLM**
+- **林腾祥 → Codex**
+
+| Person | Model | Primary ownership | QEC-core responsibility | Delivery-facing responsibility | Demo ownership |
+|---|---|---|---|---|---|
+| **陈嘉汉** | **Claude Code** | Orchestration + `surface_d5` environment bring-up | Build and validate `surface_d5_depol`: Stim circuit generation, sinter data path, syndrome extraction, PyMatching baseline, 1M-shot benchmark, and surface-code `Δ_LER` sanity checks | Own orchestrator skeleton, subagent prompt wiring, `/autoqec-run`, `/add-env`, Demo 1 walkthrough | **Demo 1** primary, Demo 3 secondary |
+| **谢金谷** | **GLM** | Verification + `bb72` / qLDPC evaluation | Own `independent_eval.py`, holdout-seed isolation, bootstrap-CI, ablation sanity check, `bb72_depol` env, BP+OSD / Relay-BP baselines, and qLDPC-side result interpretation | Own `/verify-decoder`, `/review-log`, `/diagnose-failure`, reward-hacking case construction, and final result tables / diagnostic text | **Demo 4** primary, Demo 5 primary, Demo 2 secondary |
+| **林腾祥** | **Codex** | Predecoder stack + Runner | Own `dsl_schema.py`, `dsl_compiler.py`, GNN / Neural-BP templates, Runner training loop, FLOPs counting, and the interface from `hard_flip` / `soft_priors` outputs into MWPM / OSD. This is the main implementation path for the neural QEC predecoder itself | Own Runner integration, config compilation, Makefile / CLI polish, and end-to-end stability for Demo 1 and Demo 2 runs | **Demo 2** primary, Demo 1 secondary |
+
+中文通俗解释：
+- **陈嘉汉（Claude Code）**：负责把整个实验框架和 `surface_d5` 这条 QEC 基础链路搭起来，包括电路生成、syndrome 数据流程、PyMatching 基线，以及把多代理流程串起来。可以把他理解成“总装工程师”，先把实验场地和主流程跑通。
+- **谢金谷（GLM）**：负责验证和 `bb72` / qLDPC 这条线，包括 `independent_eval.py`、holdout seed、bootstrap CI、ablation sanity check，以及 BP+OSD / Relay-BP 基线。可以把他理解成“质量裁判 + 第二赛道负责人”，负责证明结果不是巧合，也不是作弊。
+- **林腾祥（Codex）**：负责 AI predecoder 本体，也就是项目最核心的神经网络解码器部分，包括 DSL、GNN / Neural-BP 模板、训练 Runner，以及把模型输出接到 MWPM / OSD 这些经典 QEC 后端。可以把他理解成“模型主力开发”，负责把预解码器真正做出来并跑起来。
+
+This split ensures all three directly touch QEC content:
+- **Claude Code owner** handles the **surface-code baseline and syndrome pipeline**, not just prompts or docs.
+- **Codex owner** handles the **neural predecoder design / training / backend coupling**, which is the core QEC novelty path.
+- **GLM owner** handles **fair verification and qLDPC benchmarking**, which is necessary to make the QEC claim publishable rather than anecdotal.
+
+### 12.2 Day-by-day breakdown by person
+
+| Day | 陈嘉汉 / Claude Code | 谢金谷 / GLM | 林腾祥 / Codex |
 |---|---|---|---|
-| **Day 1** | Port open-coscientist/framework.py skeleton; draft 3 subagent `.md` stubs; set up Agent-tool dispatch scaffolding | Stim + sinter; surface_d5 circuit; PyMatching baseline wrapper; **1M-shot train benchmark → pin compute numbers** | **DSL schema (pydantic) + `dsl_compiler.py`**; 3 GNN + 3 Neural-BP seed templates for `example_db/`; `machine_state` tool |
-| **Day 2** | **🔴 Main loop integration** — Runner ↔ Orchestrator ↔ Subagents runs 1 round end-to-end | Runner (train + eval + FLOPs) + `RunnerSafety` sentinels; if time, bb72 env wiring (baselines + Stim circuit) | **`independent_eval.py`** with 3 MVP guards + `autoqec verify` CLI; **Pareto maintenance + visualization** + `autoqec pareto` CLI (plain scripts, not skills yet) |
-| **Day 3** | Demo 1: surface_d5 full prod run (~3.3h); help Demo 2 recovery | Demo 2: bb72 full run (P1 stretch); baseline script finalization | **5 SKILL.md thin wrappers** (P0: `/autoqec-run`, `/verify-decoder`; P1: `/add-env`; P2: `/review-log`, `/diagnose-failure`) + Demo 4 cheating-predecoder + walkthroughs + final PR |
+| **Day 1** | Bring up `surface_d5` circuit + PyMatching baseline + 1M-shot benchmark; draft `.claude/agents/autoqec-*.md`; define env/orchestrator input schema | Scout / wire `bb72` source path; wrap BP+OSD baseline; define verify metrics schema and holdout protocol; draft reward-hacking test case | Implement **DSL schema + compiler**; add 3 GNN + 3 Neural-BP seed templates; define Runner config contract and predecoder I/O contract |
+| **Day 2** | Integrate orchestrator with Ideator/Coder/Analyst calls; complete one full dev-profile round on `surface_d5`; own integration debugging on the orchestration side | Implement **`independent_eval.py`** and `autoqec verify`; add bootstrap-CI + ablation sanity; wire Pareto update logic and qLDPC eval if time permits | Implement Runner train/eval/FLOPs + `RunnerSafety`; connect predecoder output to MWPM / OSD; fix compile/runtime failures from first end-to-end round |
+| **Day 3** | Run **Demo 1** full prod on `surface_d5`; package `/autoqec-run` and `/add-env`; produce walkthrough and lab-notebook narrative | Run **Demo 4** cheating-predecoder audit; finalize `/verify-decoder`, `/review-log`, `/diagnose-failure`; summarize result tables and failure analysis for final PR | Support Demo 1 stability; attempt **Demo 2** `bb72` run; finalize Runner / DSL / CLI polish and fallback configs for dev-profile reruns |
+
+### 12.3 Shared checkpoints and backup coverage
+
+- **Day-1 EOD interface sync (mandatory, 30 min)**: Claude owner brings `env_spec` / orchestration contract; Codex owner brings Runner / DSL contract; GLM owner brings `metrics.json` / verify contract. Freeze these before Day 2 integration.
+- **Cross-review rule**: each owner must review one other owner's QEC artifact, not just their prompts or docs.
+- **Experiment participation rule**: each owner must personally run or inspect at least one meaningful QEC experiment:
+  - Claude owner: one `surface_d5` baseline-vs-predecoder comparison.
+  - Codex owner: one predecoder training run with real `Δ_LER` output.
+  - GLM owner: one holdout verification or `bb72` baseline comparison.
+- **Backup coverage**:
+  - Claude owner is backup reader for `independent_eval.py` and demo scripts.
+  - Codex owner is backup reader for orchestrator-to-Runner handoff.
+  - GLM owner is backup reader for env YAMLs and baseline wrappers.
+
+### Execution principle
+
+Days 1-2 prioritize the novelty-carrying infrastructure (`DSL`, `independent_eval`, `Pareto`, orchestration, Runner). Day 3 packages the working system into user-facing skills, demos, walkthroughs, and final polish.
+
+| Day | Primary outcomes |
+|---|---|
+| **Day 1** | Port `open-coscientist/framework.py` skeleton; draft 3 subagent `.md` stubs; set up Agent-tool dispatch scaffolding; bring up Stim + sinter and `surface_d5` circuit; add PyMatching baseline wrapper; run **1M-shot train benchmark** to pin compute numbers; implement **DSL schema (pydantic) + `dsl_compiler.py`**; add 3 GNN + 3 Neural-BP seed templates for `example_db/`; add `machine_state` tool |
+| **Day 2** | **🔴 Main loop integration** so Runner ↔ Orchestrator ↔ Subagents complete 1 round end-to-end; implement Runner (train + eval + FLOPs) + `RunnerSafety` sentinels; wire `bb72` env if time; implement **`independent_eval.py`** with 3 MVP guards + `autoqec verify` CLI; add **Pareto maintenance + visualization** + `autoqec pareto` CLI |
+| **Day 3** | Run Demo 1 (`surface_d5` full prod); attempt Demo 2 (`bb72` full run, P1 stretch); finalize baseline scripts; ship **5 SKILL.md thin wrappers** (P0: `/autoqec-run`, `/verify-decoder`; P1: `/add-env`; P2: `/review-log`, `/diagnose-failure`); finish Demo 4 cheating-predecoder, walkthroughs, and final PR |
 
 ### Skill priority (Day 3)
 
@@ -628,14 +676,14 @@ All 5 SKILL.md files exist at end of Day 3 (deliverable fulfilled); depth varies
 
 ### Key risk: Day-2 integration misalignment
 
-Day 2 morning Person A must have Orchestrator calling subagents and Runner. If Person B's Runner interface isn't matched to Person A's orchestrator invocation, Day 2 afternoon becomes debugging. Mitigation: **Day-1 EOD 30-minute interface sync meeting** — A and B write their interface contracts to a shared file before parting.
+Day 2 morning the Orchestrator must already call subagents and Runner. If the Runner interface does not match the orchestrator invocation, Day 2 afternoon turns into integration debugging. Mitigation: **Day-1 EOD 30-minute interface sync** plus a shared contract file for the orchestration/Runner boundary.
 
 ### Compute wallclock budget
 
 - Dev profile for all iteration work: ~3 min / round × many attempts (fits interactively)
 - Prod profile for demos: 10 rounds × ~20 min = ~3.3h per env
 - 1 env prod + 1 env dev-scale + 1-2h verify → ~5h total, comfortable on overnight 4090
-- **Full 5-demo stretch**: ~7h GPU time; Person B's Day-3 evening run
+- **Full 5-demo stretch**: ~7h GPU time; feasible as an overnight or late-Day-3 run
 
 ### What is cut from the 5-day plan
 
@@ -651,12 +699,12 @@ Day 2 morning Person A must have Orchestrator calling subagents and Runner. If P
 
 | Risk | P | Mitigation |
 |---|---|---|
-| Day-2 integration misalignment | **High** | Explicit Day-1 EOD interface-sync meeting; A and B each write their interface contract to a shared file before parting |
+| Day-2 integration misalignment | **High** | Explicit Day-1 EOD interface-sync meeting; orchestration and Runner contracts written to a shared file |
 | Relay-BP not in `ldpc` package | Med | Fall back to reporting only BP+OSD (order 0+10); acknowledge in paper as a limitation |
 | bb72 Stim circuit unavailable | Low | Three candidate sources (`qLDPC`, `stimbposd`, Bravyi github); last resort = 200-LOC hand-build (STRATEGIC §2 noted this is tractable) |
 | Coder Tier-2 custom_fn failure rate too high | Med | Start with Tier-1 only; only enable Tier-2 Thu-Fri if plateau observed |
 | Agent plateau at baseline with no gains | Med | Framing B defense: "autonomous convergence to SOTA boundary" is itself publishable. Worst case: fallback thesis in STRATEGIC §6 |
-| One person out sick | Med | Cross-training: each person should at least read the others' key files before Wed |
+| One contributor unavailable | Med | Cross-training: core files should each have at least one backup reader/maintainer before Wed |
 | Demo fails live | Low | Pre-record demo videos Thu night as insurance |
 
 ## 14. Deferred to post-MVP (labeled, not forgotten)
@@ -773,7 +821,7 @@ autoqec-analyst.md (~200 tokens)
 | Framing A ("SOTA-competitive") | Framing B ("Pareto discovery across triples") | STRATEGIC_ASSESSMENT compute-gap analysis |
 | 6 developer skills | 5 user-facing skills | Project deliverable requirement + "only LLM-reasoning tasks are skills" philosophy |
 | Makefile minimal | Makefile with per-agent backend/model overrides | Ablation-friendly |
-| 5-day × 3-person timeline | **3-day × 3-person timeline (v2.1)** | Project reality |
-| Person C = skills/UX lead (peripheral) | **Person C = DSL + independent_eval + Pareto lead (core infra)** | Engagement + front-loaded novelty-carrying work |
+| 5-day delivery plan | **3-day delivery timeline (v2.1)** | Project reality |
+| Skills/UX work distributed throughout the week | **Core infrastructure front-loaded into Days 1-2; skills moved to Day-3 wrappers** | Front-load novelty-carrying work before packaging |
 | Skills written throughout the week | **Skills = Day-3 thin wrappers over working CLIs** | CLIs first, UX second |
 | All 5 demos equal priority | **Demos tagged P0/P1/P2** (1+4 must-ship; 2 must-attempt; 3+5 nice-to-have) | 3-day realism |
