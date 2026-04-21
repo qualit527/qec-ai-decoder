@@ -62,7 +62,122 @@ Day 3 的最低交付物：
 - Demo 2 至少有 dev-profile 尝试路径。
 - 别人能够基于你的 DSL 配出一个模型并跑起来。
 
-## 2. 你和另外两个人怎么配合
+## 2. 你实际怎么和 Agent 配合推进
+
+你的工作很适合用 Agent 提速，但前提是你不能把“关键设计决策”一股脑外包出去。
+
+正确方式是：
+- 先让 Agent 实现一小段清晰边界的功能。
+- 你人工确认输入输出、接口和运行结果。
+- 再让 Agent 继续下一段。
+
+你要把自己理解成“模型主设计者 + 代码审核者”，不是“让 Agent 自己发明一套 decoder”。
+
+### 阶段 A: Day 1 先搭 DSL 和 compiler
+
+第一轮先发给 Agent 的 prompt：
+
+```text
+请基于 docs/superpowers/specs/2026-04-20-autoqec-design.md 和当前仓库，实现 AutoQEC predecoder 的最小 DSL + compiler。
+
+目标：
+1. 支持 gnn 和 neural_bp 两个 family 的最小可用配置
+2. 明确 hard_flip 和 soft_priors 的输出契约
+3. 先保证可编译、可实例化，不要先追求最全功能
+4. 改完后告诉我：
+   - 改了哪些文件
+   - 目前支持哪些字段
+   - 哪些地方需要我人工拍板
+```
+
+Agent 做完后，你人工要做的事：
+- 检查 DSL 字段名是否和设计稿一致。
+- 检查 compiler 生成的模块是不是你真的愿意让后续 agent 搜索的结构。
+- 对它列出来的“需要人工拍板”项做决定，比如输出形式、最小字段集合。
+
+第二轮再发给 Agent 的 prompt：
+
+```text
+继续在刚才的实现上，补 3 个 GNN seed template 和 3 个 Neural-BP seed template，并整理一份最小输入输出契约。
+
+要求：
+1. 说明模型输入张量含义
+2. 说明 hard_flip / soft_priors 分别输出什么
+3. 说明这些输出之后怎么接到 classical backend
+4. 如果还接不动 backend，也要先把接口定义清楚
+```
+
+这轮做完后，你人工要做的事：
+- 把输入输出契约同步给陈嘉汉，确保 orchestrator 调 Runner 时不会猜字段。
+- 把 checkpoint / config / metrics 需求同步给谢金谷，确保后面 verify 能复现。
+
+### 阶段 B: Day 2 打通 Runner 和 classical backend
+
+下一轮发给 Agent 的 prompt：
+
+```text
+请在现有 DSL + compiler 基础上，实现 Runner 的最小 train/eval 流程，并打通 predecoder 到 classical backend 的接口。
+
+必须包含：
+1. train / eval 主流程
+2. params 和 FLOPs 统计
+3. checkpoint.pt、metrics.json、config.yaml 的标准输出
+4. RunnerSafety 的最小保护
+5. 优先接通 MWPM；如果 OSD 暂时不完整，也请把接口占位清楚
+```
+
+Agent 做完后，你人工要做的事：
+- 亲自检查 Runner 产物是否完整，而不是只看它说“成功了”。
+- 看 `hard_flip` 和 `soft_priors` 有没有被清楚地区分。
+- 和陈嘉汉对齐 Runner 调用接口，和谢金谷对齐 verify 所需输出。
+
+如果第一轮 end-to-end 出现错误，再发下一轮 prompt：
+
+```text
+下面是当前 end-to-end 暴露的问题，请只做收敛式修复，不做大重构：
+
+[把错误日志、报错栈、字段不一致情况贴进来]
+
+修复优先级：
+1. 保证 demo 可跑
+2. 保证输出文件齐全
+3. 保证 backend 接口清楚
+4. 如果有多种修法，优先最保守方案
+```
+
+### 阶段 C: Day 3 支撑 Demo 1 / Demo 2
+
+发给 Agent 的 prompt：
+
+```text
+请把当前 predecoder 路径整理成最适合 Demo 1 / Demo 2 使用的版本。
+
+输出要求：
+1. 推荐的模型配置
+2. 推荐的运行命令
+3. 如果训练不稳定，fallback config 是什么
+4. 我人工演示时应该怎么解释 hard_flip / soft_priors 和 classical backend 的关系
+5. 给我一段 1 分钟口头说明
+```
+
+Agent 做完后，你人工要做的事：
+- 真正跑一遍它推荐的配置，而不是直接拿去演示。
+- 选出一个“最稳版本”作为保底方案。
+- 把 1 分钟口头说明改成你自己的表达，确保你能解释模型到底做了什么。
+
+如果 Day 3 时间很紧，再发最后一轮 prompt：
+
+```text
+请把 predecoder 演示路径压缩成最稳妥版本。
+
+要求：
+1. 优先保成功率，不追求最复杂模型
+2. 给我一个最小可讲清楚的 config
+3. 列出 demo 现场最容易失败的两个点和对应 fallback
+4. 不新增大功能
+```
+
+## 3. 你和另外两个人怎么配合
 
 - 你要和陈嘉汉对齐 orchestrator 调用 Runner 的接口，因为你的代码最终要被主流程驱动。
 - 你要和谢金谷对齐 checkpoint、metrics、config 落盘格式，因为验证模块要读这些输出。
@@ -74,7 +189,7 @@ Day 3 的最低交付物：
 - 训练产物是否足够让 verify 复现
 - profile 切换时，dev / prod 行为是否一致
 
-## 3. 你会碰到的 QEC 概念解释
+## 4. 你会碰到的 QEC 概念解释
 
 下面这些概念，是你这条线最核心的。你做的是整个项目里最贴近“AI decoder 本体”的部分，所以这些术语你要真正吃透到工程层面。
 
@@ -184,14 +299,14 @@ Day 3 的最低交付物：
 
 它的意义不是限制创新，而是避免 agent 配出一个把机器跑挂、把训练跑炸的配置。比如 OOM、训练 NaN、wall-clock 超时，都需要这里兜住。
 
-## 4. 你这几天最容易踩的坑
+## 5. 你这几天最容易踩的坑
 
 - DSL 写得很漂亮，但 compiler 和实际模型实现对不上。
 - 模型能训练，但输出定义不清，接不上 MWPM / OSD。
 - 只顾着做更复杂的模型，没有优先保证第一条可跑通路径。
 - Runner 没有把 checkpoint、metrics、FLOPs 这些基础产物存好，导致后面无法验证和复盘。
 
-## 5. 你的完成标准
+## 6. 你的完成标准
 
 如果到第 3 天结束，你能做到下面这些，就算你这条线完成得不错：
 - 别人能根据 DSL 配出并实例化一个 predecoder。

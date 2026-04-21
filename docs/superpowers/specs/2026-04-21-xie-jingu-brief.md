@@ -63,7 +63,122 @@ Day 3 的最低交付物：
 - `/verify-decoder` 可用。
 - 最终结果里有一部分是你来负责“可信度解释”的。
 
-## 2. 你和另外两个人怎么配合
+## 2. 你实际怎么和 Agent 配合推进
+
+你的工作非常适合人和 Agent 配合做，但一定不能变成“把 verdict 外包给模型”。
+
+正确方式是：
+- Agent 帮你检查代码、补实现、整理报告和构造样例。
+- 你人工负责定义标准、确认边界、审核证据链。
+
+你要把自己理解成“验证负责人”，不是“让 Agent 帮我猜个结论的人”。
+
+### 阶段 A: Day 1 先明确验证边界和 `bb72` 路线
+
+第一轮先发给 Agent 的 prompt：
+
+```text
+请基于 docs/superpowers/specs/2026-04-20-autoqec-design.md 和当前仓库，聚焦 independent_eval 和 bb72/qLDPC 这条线，先不要动 Runner 和 orchestration。
+
+输出要求：
+1. independent_eval.py 需要读取哪些输入文件和字段
+2. holdout seed isolation 应该怎么落地
+3. bb72 的可行接入路径，按优先级排序
+4. BP+OSD / Relay-BP baseline 的最小实现方案
+5. reward-hacking 检测样例的设计思路
+
+如果仓库里缺关键文件，请区分“现在就该补”和“后面再补”。
+```
+
+Agent 做完后，你人工要做的事：
+- 看它给出的输入输出契约是否真的能从现有 run 目录拿到。
+- 和陈嘉汉确认 `metrics.json`、日志、checkpoint 的落盘路径。
+- 和林腾祥确认模型配置和 checkpoint 信息是否足够支撑 ablation。
+- 对 holdout seed 范围做人工拍板，不要让模型自由决定。
+
+第二轮再发给 Agent 的 prompt：
+
+```text
+基于刚才确认后的人工约束，整理一份最终的 verify 输入输出契约。
+
+要求：
+1. 列出必需字段
+2. 列出可选字段
+3. 明确哪些字段缺失时必须报错
+4. 给出一份 verification_report 的建议结构
+```
+
+这轮做完后，你人工要做的事：
+- 把契约同步给另外两个人，要求后面严格按这个落盘。
+- 亲自判断报告结构是不是能支撑最终展示，不要只追求“字段齐了”。
+
+### 阶段 B: Day 2 实现 verify 主流程
+
+下一轮发给 Agent 的 prompt：
+
+```text
+请根据已经确认的 verify 契约，实现 independent_eval.py 和最小 autoqec verify 流程。
+
+必须包含：
+1. holdout seed isolation 检查
+2. bootstrap 95% confidence interval
+3. ablation sanity check
+4. VERIFIED / SUSPICIOUS / FAILED 的判定逻辑
+
+输出时告诉我：
+1. 改了哪些文件
+2. 哪些判据是硬规则
+3. 哪些情况仍需要人工复核
+```
+
+Agent 做完后，你人工要做的事：
+- 检查它有没有把 verify 逻辑和 Runner 混在一起。
+- 看 verdict 规则是不是清楚，尤其是 `SUSPICIOUS` 不能定义得太随意。
+- 用一个正常 case 和一个异常 case 人工过一遍流程，确认报告能看懂。
+
+如果发现 verdict 太模糊，再发下一轮 prompt：
+
+```text
+请只收紧 verdict 规则和报告解释，不改训练或 Runner 逻辑。
+
+要求：
+1. 明确 VERIFIED / SUSPICIOUS / FAILED 的触发条件
+2. 每种结论给一个最小示例
+3. 报告里要区分“统计波动”和“明显异常”
+```
+
+### 阶段 C: Day 3 构造 Demo 4 和诊断入口
+
+发给 Agent 的 prompt：
+
+```text
+请为 Demo 4 构造一个最小 cheating-predecoder 或可疑样例，并整理 /verify-decoder、/review-log、/diagnose-failure 的演示路径。
+
+输出要求：
+1. 这个异常样例为什么应被判为 FAILED 或 SUSPICIOUS
+2. 我人工需要准备哪些输入文件
+3. 演示时先看哪个文件、再看哪个 verdict、最后怎么解释
+4. 给我一段 1 分钟的可信度讲解提纲
+```
+
+Agent 做完后，你人工要做的事：
+- 真正拿样例跑一次 verify。
+- 检查结果是否符合你的直觉和规则。
+- 把 1 分钟讲解提纲改成你自己会说的话。
+
+如果 Demo 4 还不够稳，再发最后一轮 prompt：
+
+```text
+请把 Demo 4 的演示链路简化成最稳妥版本。
+
+要求：
+1. 少依赖复杂前置条件
+2. 报告结论清楚
+3. 演示重点放在“为什么这个结果可信/不可信”
+4. 不做额外功能扩展
+```
+
+## 3. 你和另外两个人怎么配合
 
 - 你要和陈嘉汉对齐 `metrics.json`、日志、目录落盘格式，因为你的验证模块要直接读这些东西。
 - 你要和林腾祥对齐 checkpoint、模型输出、训练配置格式，因为 ablation 和 holdout verify 会用到这些内容。
@@ -75,7 +190,7 @@ Day 3 的最低交付物：
 - baseline 对比是否公平
 - 最终 verdict 是否有证据支持
 
-## 3. 你会碰到的 QEC 概念解释
+## 4. 你会碰到的 QEC 概念解释
 
 下面这些概念，是你这条线最需要真的理解的。你不一定要会推公式，但必须知道它们在“结果是否可信”这件事里分别扮演什么角色。
 
@@ -172,14 +287,14 @@ Day 3 的最低交付物：
 
 你的工作不是只看一个点好不好，还要判断一个 candidate 有没有资格进最终的 Pareto 集合。
 
-## 4. 你这几天最容易踩的坑
+## 5. 你这几天最容易踩的坑
 
 - 等实验都跑完了才开始想验证标准，结果前面的数据结构根本不够用。
 - 验证逻辑和训练逻辑混在一起，导致“独立验证”名义上存在，实际上不独立。
 - 只看最优数字，不看置信区间和 baseline fairness。
 - 口头上说“可疑”，但没有清晰的证据链和判据。
 
-## 5. 你的完成标准
+## 6. 你的完成标准
 
 如果到第 3 天结束，你能做到下面这些，就算你这条线完成得不错：
 - `autoqec verify` 能独立跑起来。
