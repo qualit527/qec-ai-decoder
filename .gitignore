@@ -18,3 +18,9 @@ knowledge/papers_md/
 knowledge/convert_with_images.log
 knowledge/convert_markdown.log
 knowledge/markdown_status.json
+
+# Full cloned reference repos — large, re-cloneable from clone_refs.sh.
+# Keep INDEX.md committed as a pointer.
+knowledge/autoresearch_refs/*/
+!knowledge/autoresearch_refs/INDEX.md
+!knowledge/autoresearch_refs/clone_refs.sh
