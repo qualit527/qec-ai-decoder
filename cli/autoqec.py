@@ -9,6 +9,7 @@ import click
 import yaml
 
 from autoqec.envs.schema import EnvSpec, load_env_yaml
+from autoqec.orchestration.memory import RunMemory
 from autoqec.runner.runner import run_round
 from autoqec.runner.schema import RunnerConfig
 
@@ -16,6 +17,63 @@ from autoqec.runner.schema import RunnerConfig
 @click.group()
 def main() -> None:
     """AutoQEC CLI."""
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _candidate_pareto(records: list[dict]) -> list[dict]:
+    candidates = []
+    for idx, record in enumerate(records, start=1):
+        if record.get("status") != "ok":
+            continue
+        if any(record.get(key) is None for key in ("delta_ler", "flops_per_syndrome", "n_params")):
+            continue
+        candidates.append(
+            {
+                "round": int(record.get("round", idx)),
+                "delta_ler": float(record["delta_ler"]),
+                "flops_per_syndrome": int(record["flops_per_syndrome"]),
+                "n_params": int(record["n_params"]),
+                "checkpoint_path": record.get("checkpoint_path"),
+                "verified": False,
+            }
+        )
+
+    front: list[dict] = []
+    for cand in candidates:
+        dominated = False
+        for other in candidates:
+            if other is cand:
+                continue
+            no_worse = (
+                other["delta_ler"] >= cand["delta_ler"]
+                and other["flops_per_syndrome"] <= cand["flops_per_syndrome"]
+                and other["n_params"] <= cand["n_params"]
+            )
+            strictly_better = (
+                other["delta_ler"] > cand["delta_ler"]
+                or other["flops_per_syndrome"] < cand["flops_per_syndrome"]
+                or other["n_params"] < cand["n_params"]
+            )
+            if no_worse and strictly_better:
+                dominated = True
+                break
+        if not dominated:
+            front.append(cand)
+
+    front.sort(key=lambda item: (-item["delta_ler"], item["flops_per_syndrome"], item["n_params"], item["round"]))
+
+    unique_front: list[dict] = []
+    seen = set()
+    for item in front:
+        key = (item["delta_ler"], item["flops_per_syndrome"], item["n_params"])
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_front.append(item)
+    return unique_front
 
 
 @main.command(name="run-round")
@@ -48,9 +106,10 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
     run_id = time.strftime("%Y%m%d-%H%M%S")
     run_dir = Path("runs") / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    templates = sorted(Path("autoqec/example_db").glob("*.yaml"))
+    mem = RunMemory(run_dir)
+    templates = sorted((_repo_root() / "autoqec/example_db").glob("*.yaml"))
     dev_safe_templates = {"gnn_small", "gnn_gated", "neural_bp_min"}
-    history = []
+    history: list[dict] = []
     for round_idx in range(1, rounds + 1):
         round_dir = run_dir / f"round_{round_idx}"
         if no_llm:
@@ -69,12 +128,23 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
             round_dir=str(round_dir),
         )
         metrics = run_round(cfg, env)
-        history.append(metrics.model_dump())
-        with (run_dir / "history.jsonl").open("a") as f:
-            f.write(metrics.model_dump_json() + "\n")
+        record = metrics.model_dump()
+        record["round"] = round_idx
+        history.append(record)
+        mem.append_round(record)
+        mem.update_pareto(_candidate_pareto(history))
         click.echo(f"Round {round_idx}: {metrics.status} Δ={metrics.delta_ler}")
     (run_dir / "history.json").write_text(json.dumps(history, indent=2))
-    click.echo(json.dumps({"run_dir": str(run_dir), "rounds": rounds}, indent=2))
+    click.echo(
+        json.dumps(
+            {
+                "run_dir": str(run_dir),
+                "rounds": rounds,
+                "pareto_path": str(run_dir / "pareto.json"),
+            },
+            indent=2,
+        )
+    )
 
 
 @main.command()
