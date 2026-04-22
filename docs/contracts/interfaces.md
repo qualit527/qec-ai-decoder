@@ -176,3 +176,62 @@ the full LLM loop from plain Python. That path is not implemented on
 `main`; the `/autoqec-run` skill is the live LLM-driven surface until a
 subprocess router replaces the Claude-chat orchestrator.
 
+---
+
+## §15 Worktree additions (contract-change)
+
+Added 2026-04-22. All fields are Optional on the legacy path; validators
+make them required on the worktree path. Authoritative source:
+`docs/superpowers/specs/2026-04-20-autoqec-design.md` §15.7.
+
+### `RunnerConfig`
+
+- `code_cwd: Optional[str]` — absolute path to worktree checkout; `None` = legacy in-process path.
+- `branch: Optional[str]` — `exp/<run_id>/<NN>-<slug>`; **required when `code_cwd` is set**.
+- `fork_from: Optional[Union[str, list[str]]]` — list ⇒ compose round.
+- `fork_from_canonical: Optional[str]` — sorted, `|`-joined; dedup key for compose.
+- `fork_from_ordered: Optional[list[str]]` — merge-sequence order (drives `git merge` base); compose only.
+- `compose_mode: Optional[Literal["pure", "with_edit"]]` — **required when `fork_from` is a list**.
+- `round_attempt_id: Optional[str]` — UUID from Ideator; required when `branch` is set.
+- `commit_sha: Optional[str]` — required when `branch` is set.
+- `paired_eval_bundle_id: Optional[str]` — canonical holdout bundle id (§15.6.4).
+
+Validators: `code_cwd` set ⇒ `branch` required; list-form `fork_from` ⇒
+`compose_mode` required; `branch` set ⇒ `round_attempt_id` and
+`commit_sha` required.
+
+### `RoundMetrics`
+
+- `round_attempt_id: Optional[str]` — **required on worktree path**.
+- `reconcile_id: Optional[str]` — UUID from §15.10 startup reconciliation; set **only** for reconciliation-synthetic rows. Mutually exclusive with `round_attempt_id`.
+- `branch: Optional[str]`, `commit_sha: Optional[str]` — paired; `commit_sha` required when `branch` set.
+- `fork_from: Optional[Union[str, list[str]]]`, `fork_from_canonical: Optional[str]`, `fork_from_ordered: Optional[list[str]]`.
+- `compose_mode: Optional[Literal["pure", "with_edit"]]`.
+- `delta_vs_parent: Optional[float]`, `parent_ler: Optional[float]` — training-regime Δ; search-guidance only.
+- `train_seed: Optional[int]` — seed actually used; for Pareto disambiguation.
+- `status_reason: Optional[str]` — short explanation for non-ok / orphaned / branch-manually-deleted statuses.
+- `conflicting_files: Optional[list[str]]` — set iff `status == "compose_conflict"`.
+- `paired_eval_bundle_id: Optional[str]`.
+- `status` Literal gains: `"compose_conflict"`, `"orphaned_branch"`, `"branch_manually_deleted"` (the last two are set by §15.10 startup reconciliation).
+
+Validators: worktree-path rows (`branch` set, `fork_from` set, or
+`status == "compose_conflict"`) need exactly one of `round_attempt_id`
+or `reconcile_id`; `branch` set ⇒ `commit_sha` required;
+`compose_conflict` rows MUST have `branch == None` and
+`commit_sha == None`.
+
+### `VerifyReport`
+
+- `branch: Optional[str]`, `commit_sha: Optional[str]` — paired.
+- `delta_vs_baseline_holdout: Optional[float]` — paired-bundle canonical delta (§15.6.4).
+- `paired_eval_bundle_id: Optional[str]` — required for compose rounds and any Pareto candidate.
+
+### `IdeatorResponse`
+
+- `fork_from: Union[Literal["baseline"], str, list[str]] = "baseline"` — default unblocks legacy responses.
+- `compose_mode: Optional[Literal["pure", "with_edit"]]` — required when `fork_from` is a list.
+
+### `CoderResponse`
+
+- `commit_message: Optional[str]` — filled by Coder on the worktree path; absent tolerated on legacy responses.
+
