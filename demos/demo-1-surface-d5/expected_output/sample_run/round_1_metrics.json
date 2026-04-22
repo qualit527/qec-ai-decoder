@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "status_reason": null,
+  "ler_plain_classical": 0.015625,
+  "ler_predecoder": 0.015625,
+  "delta_ler": 0.0,
+  "delta_ler_ci_low": null,
+  "delta_ler_ci_high": null,
+  "flops_per_syndrome": 1953,
+  "n_params": 6,
+  "train_wallclock_s": 22.986943006515503,
+  "eval_wallclock_s": 124.70525121688843,
+  "vram_peak_gb": 0.0,
+  "checkpoint_path": "runs\\20260422-020006\\round_1\\checkpoint.pt",
+  "training_log_path": "runs\\20260422-020006\\round_1\\train.log"
+}

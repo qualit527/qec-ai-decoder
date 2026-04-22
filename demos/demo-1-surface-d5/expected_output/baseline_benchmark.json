@@ -1,0 +1,13 @@
+{
+  "n_shots": 1000000,
+  "ler": 0.013941,
+  "n_errors": 13941,
+  "t_sample_s": 0.7779679298400879,
+  "t_decode_s": 2.7647013664245605,
+  "detections_shape": [
+    1000000,
+    120
+  ],
+  "circuit_path": "circuits/surface_d5.stim",
+  "seed": 42
+}
