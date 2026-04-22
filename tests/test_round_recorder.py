@@ -10,8 +10,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from autoqec.orchestration.memory import RunMemory
 from autoqec.orchestration.round_recorder import record_round
 

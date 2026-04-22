@@ -192,13 +192,16 @@ make them required on the worktree path. Authoritative source:
 - `fork_from_canonical: Optional[str]` — sorted, `|`-joined; dedup key for compose.
 - `fork_from_ordered: Optional[list[str]]` — merge-sequence order (drives `git merge` base); compose only.
 - `compose_mode: Optional[Literal["pure", "with_edit"]]` — **required when `fork_from` is a list**.
-- `round_attempt_id: Optional[str]` — UUID from Ideator; required when `branch` is set.
-- `commit_sha: Optional[str]` — required when `branch` is set.
-- `paired_eval_bundle_id: Optional[str]` — canonical holdout bundle id (§15.6.4).
 
 Validators: `code_cwd` set ⇒ `branch` required; list-form `fork_from` ⇒
-`compose_mode` required; `branch` set ⇒ `round_attempt_id` and
-`commit_sha` required.
+`compose_mode` required.
+
+> **Note:** `round_attempt_id`, `commit_sha`, and `paired_eval_bundle_id` live
+> on `RoundMetrics` / `VerifyReport` (the *output* surfaces), not on
+> `RunnerConfig` (the *input* surface). The Runner CLI accepts
+> `--round-attempt-id` as a flag and writes it into the emitted
+> `metrics.json`; it is not an input schema field on `RunnerConfig`.
+> See `autoqec/runner/schema.py` for the authoritative shape.
 
 ### `RoundMetrics`
 
@@ -211,8 +214,11 @@ Validators: `code_cwd` set ⇒ `branch` required; list-form `fork_from` ⇒
 - `train_seed: Optional[int]` — seed actually used; for Pareto disambiguation.
 - `status_reason: Optional[str]` — short explanation for non-ok / orphaned / branch-manually-deleted statuses.
 - `conflicting_files: Optional[list[str]]` — set iff `status == "compose_conflict"`.
-- `paired_eval_bundle_id: Optional[str]`.
 - `status` Literal gains: `"compose_conflict"`, `"orphaned_branch"`, `"branch_manually_deleted"` (the last two are set by §15.10 startup reconciliation).
+
+> **Note:** `paired_eval_bundle_id` lives on `VerifyReport` (holdout-eval
+> surface), not on `RoundMetrics` (training-side surface). Pareto admission
+> reads it from the paired `verify_report.json`.
 
 Validators: worktree-path rows (`branch` set, `fork_from` set, or
 `status == "compose_conflict"`) need exactly one of `round_attempt_id`

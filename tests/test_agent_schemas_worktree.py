@@ -1,4 +1,3 @@
-import pytest
 from autoqec.agents.schemas import IdeatorResponse, CoderResponse
 
 
