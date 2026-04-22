@@ -768,7 +768,7 @@ Invariants:
 - A round's `delta_ler` has two distinct reportings. `delta_vs_parent` is measured under Runner's training-seed / val-shot regime and is used as a **search-guidance signal** for the Ideator. **Pareto admission and compose-round judgments use `delta_vs_baseline` computed by `/verify-decoder` on the canonical holdout bundle** (seeds `9000-9999`, `min_shots_verify`). Mixing the two is a category error; see §15.6 for the paired comparison protocol.
 - FAILED branches are retained as named branches (commits are cheap) but their `.worktrees/` checkouts are removed after the round completes. Negative results remain queryable via `history.jsonl` + branch inspection.
 - `pareto.json` is the **complete non-dominated archive** over `(delta_vs_baseline [higher better], flops_per_syndrome [lower], n_params [lower])`. No size cap — every VERIFIED branch that is not strictly dominated by another VERIFIED branch is a member. The top-5 "preview" (for Ideator L2 context and `/review-log` headlines) lives in `pareto_preview.json` as a derived view. `round_recorder.py`'s current top-5 sorted list is replaced by non-dominated filtering (see §15.9.1).
-- **The canonical provenance key is the commit SHA, not the branch name.** Branches are human-readable aliases that can be renamed or moved; `commit_sha` is immutable. Every `pareto.json` / `history.jsonl` / `VerifyReport` row carries the commit SHA as its identifier. A checkpoint is replayable iff `(commit_sha, env_yaml_sha256, dsl_config_sha256, requirements_fingerprint)` is intact (§15.5).
+- **Identifier invariants split by row type.** Every `history.jsonl` / `pareto.json` row carries `round_attempt_id` (UUID minted at Ideator emit-time; always present, immutable). Rows backed by a committed worktree additionally carry `commit_sha` (canonical provenance key; immutable once set) and `branch` (human-readable alias; mutable). Non-commit terminal outcomes — `compose_conflict` — carry `round_attempt_id` only and set `commit_sha=null, branch=null`. A checkpoint is replayable iff `(commit_sha, env_yaml_sha256, dsl_config_sha256, requirements_fingerprint)` is intact (§15.5). A failed attempt is re-identifiable via `round_attempt_id` alone.
 - `git branch --list 'exp/<run_id>/*'` is a view derived from `history.jsonl`; `fork_graph.py` reconciles the two at orchestrator startup and pauses the run if they disagree (branch without history row, or history row without branch).
 
 ### 15.3 Round lifecycle
@@ -806,10 +806,14 @@ Orchestrator runs from `main`'s working directory (read-only during a research r
                        append to pareto.json; evict any existing members now dominated by the new one.
                        Then regenerate pareto_preview.json (top-5 by -delta_vs_baseline) for L2 context.
 10. Bookkeeping      → round_recorder writes history.jsonl row (always, regardless of step-3 outcome)
-                       + log.md line. The row always contains commit_sha, branch, fork_from (or
-                       fork_from_canonical for compose), and status.
+                       + log.md line. Every row carries `round_attempt_id` (UUID minted at Ideator
+                       emit-time, before any git op). Rows backed by a real commit additionally
+                       carry `commit_sha` and `branch`. Rows that ended before commit
+                       (e.g. compose_conflict) carry `commit_sha=null, branch=null` but still have
+                       `round_attempt_id` as the canonical row key.
 10a. Compose_conflict → if step 3 hit a merge conflict: write history.jsonl with
-                        status=compose_conflict, fork_from_canonical (sorted parents), conflicting_files.
+                        status=compose_conflict, fork_from_canonical (sorted parents), conflicting_files,
+                        round_attempt_id (required), commit_sha=null, branch=null.
                         Delete the synthetic branch (`git branch -D <branch>`) so it does NOT silently
                         point at parents[0]. The compose failure lives in history.jsonl only;
                         fork_graph.py surfaces it so the Ideator does not re-propose the same set.
@@ -941,16 +945,19 @@ On `git merge` conflict (step 3 of §15.3 lifecycle):
 4. `round_recorder.append_round(...)` writes a `history.jsonl` row **before** any further cleanup:
 
 ```json
-{"round_idx": 12, "status": "compose_conflict",
+{"round_idx": 12,
+ "round_attempt_id": "8b4f2c1e-...",
+ "status": "compose_conflict",
  "fork_from": ["exp/.../02-gated-mlp", "exp/.../04-neural-bp"],
  "fork_from_canonical": "exp/.../02-gated-mlp|exp/.../04-neural-bp",
  "compose_mode": "pure",
  "conflicting_files": ["autoqec/decoders/modules/gnn.py"],
  "timestamp": "2026-04-22T14:37:22Z",
- "commit_sha": null, "branch": null}
+ "commit_sha": null,
+ "branch": null}
 ```
 
-This history-row is the **single source of truth** for the failure. `fork_graph.py` surfaces it as a `FAILED_compose` node so the Ideator's next-round prompt knows the canonical parent set has been tried and failed. There is no residual git state to clean up later.
+Per §15.2 identifier invariants: `round_attempt_id` is the row key; `commit_sha` and `branch` are null because no commit was made. `fork_graph.py` surfaces this row as a `FAILED_compose` node so the Ideator's next-round prompt knows the canonical parent set has been tried and failed. There is no residual git state to clean up later.
 
 #### 15.6.4 Paired comparison protocol (mandatory for any composition claim)
 
@@ -998,7 +1005,8 @@ class RunnerConfig(BaseModel):
 # autoqec/runner/schema.py — RoundMetrics additions
 class RoundMetrics(BaseModel):
     # ... existing fields unchanged ...
-    branch:              Optional[str] = None                          # None only for the legacy in-process path
+    round_attempt_id:    Optional[str] = None                          # UUID; REQUIRED on worktree path (validator)
+    branch:              Optional[str] = None                          # None for legacy in-process path + compose_conflict
     commit_sha:          Optional[str] = None                          # REQUIRED when branch is set (validator)
     fork_from:           Optional[Union[str, list[str]]] = None
     fork_from_canonical: Optional[str] = None
@@ -1006,13 +1014,21 @@ class RoundMetrics(BaseModel):
     delta_vs_parent:     Optional[float] = None                        # training-regime Δ; search-guidance only
     parent_ler:          Optional[float] = None
     conflicting_files:   Optional[list[str]] = None                    # set iff status=compose_conflict
+    train_seed:          Optional[int] = None                          # seed actually used; for Pareto disambiguation
     # Existing `status` Literal gains one new variant:
     status: Literal["ok", "killed_by_safety", "compile_error", "train_error", "compose_conflict"]
 
     @model_validator(mode="after")
     def _provenance_integrity(self):
-        if self.branch is not None and self.commit_sha is None and self.status != "compose_conflict":
-            raise ValueError("commit_sha is required whenever branch is set (except compose_conflict)")
+        # round_attempt_id is required whenever the worktree path is active (fork_from set or branch set).
+        if (self.branch is not None or self.fork_from is not None) and self.round_attempt_id is None:
+            raise ValueError("round_attempt_id is required on the worktree path")
+        # commit_sha paired with branch for commit-backed rounds
+        if self.branch is not None and self.commit_sha is None:
+            raise ValueError("commit_sha is required whenever branch is set")
+        # compose_conflict must have neither branch nor commit_sha
+        if self.status == "compose_conflict" and (self.branch is not None or self.commit_sha is not None):
+            raise ValueError("compose_conflict rows must have branch=None and commit_sha=None")
         return self
 
 # autoqec/eval/schema.py — VerifyReport additions
@@ -1156,13 +1172,15 @@ Tests gated by each step must pass before the next step lands.
 - Simultaneous worktrees on disk are bounded to `MAX_ACTIVE_WORKTREES = 3` for MVP (current round + at most one compose scratch + one buffer); exceeding this raises and the round is logged as `killed_by_safety`.
 - After every round, `git worktree remove --force <path>` frees the checkout. Branches persist (tiny on-disk cost: just the commit object graph).
 
-**Startup reconciliation** (`fork_graph.py` runs at every orchestrator start before the first round):
+**Startup reconciliation** (`fork_graph.py` runs at every orchestrator start before the first round). Must distinguish "empty synthetic branch from a crash before code commit" from "committed round whose history row never made it to disk" — the two demand opposite actions:
 
 1. List `git branch --list 'exp/<run_id>/*'` → set `B`.
-2. Parse `history.jsonl` → set `H = {row["branch"] for row in rows if row["branch"]}`.
-3. For each `b ∈ B \ H` (branch without history row): the run crashed after `git worktree add -b` but before `round_recorder.append_round`. Action: `git branch -D <b>` + `git worktree prune`. Logged to `log.md` as `reaped: <branch>`.
-4. For each `h ∈ H \ B` (history row without branch): a round was recorded but its branch was manually deleted (rare — usually human cleanup). Action: mark the round `status_reason="branch_orphaned"` if it wasn't already FAILED / compose_conflict; do not remove the history row.
-5. Fail-fast mismatches (e.g. a VERIFIED Pareto member whose commit_sha no longer exists in the reflog) pause the run and require human review.
+2. Parse `history.jsonl` → set `H = {row["branch"] for row in rows if row.get("branch")}`.
+3. For each `b ∈ B \ H` (branch without history row), inspect git state to classify:
+   a. **Empty synthetic branch** — `git rev-list --count <b> ^origin/main` reports 0, no pointer file on HEAD, no artifacts under `runs/<id>/round_N/` matching the branch slug. The lifecycle crashed between step 3 (worktree create) and step 5 (first commit). Action: `git branch -D <b>` + `git worktree prune`. Logged as `reaped: <branch> (empty)`.
+   b. **Committed round without history** — ≥1 commit on the branch or a pointer file exists or artifacts are on disk. The lifecycle crashed between step 5 and step 10. Action: **quarantine, do not delete**. Rename to `quarantine/<run_id>/<N>-<slug>`, write a `history.jsonl` row with `status=orphaned_branch`, `round_attempt_id=<newly minted UUID>`, and links to the available commit_sha + pointer file + artifacts. Operator reviews whether to manually promote or drop.
+4. For each `h ∈ H \ B` (history row with non-null `branch` but no live branch): the branch was manually deleted after recording. Action: append a `status_reason="branch_manually_deleted"` follow-up row referencing the original `round_attempt_id`; do not touch the existing history row.
+5. For every Pareto member, verify the commit is still retrievable via `git rev-parse --verify <commit_sha>^{commit}` (reachable object check, not reflog — reflogs expire). A missing commit pauses the run for human review; do not silently drop from Pareto.
 
 **Branch naming collisions**:
 
@@ -1176,15 +1194,17 @@ Tests gated by each step must pass before the next step lands.
 
 **In MVP** (this PR's scope):
 - Serial execution (`MAX_PARALLEL_ROUNDS = 1`) — one research round at a time; worktrees give branch isolation and history, not throughput.
-- Compose rounds with `conflict = FAIL` handling.
+- Compose rounds with `conflict = FAIL` handling (compose_pure and compose_with_edit flavors).
 - Full fork graph serialization to the Ideator (no pruning).
-- Backward-compatible contract bump (all new fields `Optional`).
+- Pydantic schema fields land as `Optional` to sequence the 8-step rollout (§15.9.3) — but worktree mode itself is **not** backward-compatible. It introduces the hard API changes listed in §15.9.1 (memory.py payload shape, round_recorder Pareto algorithm, agents/schemas.py required fields under `extra="forbid"`, CLI keyword migration).
+- Fixed training-seed regime per round (one model per branch, seed derived from `(run_id, round_idx)`). Training-seed variance across branches is acknowledged as a systematic limitation; post-MVP adds multi-seed retraining for Pareto members (§15.11 post-MVP below).
 
 **Deferred to post-MVP**:
 - `MAX_PARALLEL_ROUNDS > 1`: concurrent worktrees + GPU scheduling. Requires adding `asyncio.gather` inside the round dispatcher and a lightweight GPU reservation queue.
 - LLM-assisted merge-conflict resolution: when `compose_conflict` fires, dispatch Coder with both parent diffs to author a manual reconciliation. Currently the conflict is terminal.
 - Tier-1-only short-circuit: detect when Coder made **zero edits outside `autoqec/example_db/*.yaml`** and skip the subprocess, running Runner in-process for a 5–10× speedup. The policy check is one-line, the risk is a missed code edit silently reverting to main's copy — hold until tests prove the detection is reliable.
 - Automatic **canonical champion** promotion: after a run completes, identify the Pareto-best branch, run it through a multi-env recertification, and open a human-review PR to `main`.
+- **Multi-seed retraining for Pareto members**: MVP trains one model per branch with a deterministic seed. Post-MVP adds a "re-seed" round that re-trains a VERIFIED Pareto member under seeds `{1001, 2001, 3001}` and reports `delta_vs_baseline_holdout` median + IQR so training-seed variance stops being a hidden confound in composition claims.
 
 ---
 
