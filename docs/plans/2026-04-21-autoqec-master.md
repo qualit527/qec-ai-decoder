@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Coordinate 3 owners (陈嘉汉 / 谢金谷 / 林腾祥) to ship the AutoQEC MVP per `docs/superpowers/specs/2026-04-20-autoqec-design.md` v2.2 within ~3 days by freezing interfaces early and running scaffolds in parallel.
+**Goal:** Coordinate 3 owners (Chen Jiahan / Xie Jingu / Lin Tengxiang) to ship the AutoQEC MVP per `docs/specs/2026-04-20-autoqec-design.md` v2.2 within ~3 days by freezing interfaces early and running scaffolds in parallel.
 
 **Architecture:** 3 owners work in parallel after a Phase-0 contract freeze. Each owns one QEC-core workstream + one delivery-facing workstream (see spec §12.1). A single Python package `autoqec/` is shared; each owner owns a disjoint subtree so merges don't collide.
 
@@ -13,12 +13,12 @@
 ## 0. Reading order
 
 Read in this order before starting work:
-1. `docs/superpowers/specs/2026-04-20-autoqec-design.md` (the spec — source of truth)
+1. `docs/specs/2026-04-20-autoqec-design.md` (the spec — source of truth)
 2. **This file** — master coordination
 3. Your own plan:
-   - 陈嘉汉 → `docs/superpowers/plans/2026-04-21-autoqec-person-a-chen.md`
-   - 谢金谷 → `docs/superpowers/plans/2026-04-21-autoqec-person-b-xie.md`
-   - 林腾祥 → `docs/superpowers/plans/2026-04-21-autoqec-person-c-lin.md`
+   - Chen Jiahan → `docs/plans/2026-04-21-autoqec-person-a-chen.md`
+   - Xie Jingu → `docs/plans/2026-04-21-autoqec-person-b-xie.md`
+   - Lin Tengxiang → `docs/plans/2026-04-21-autoqec-person-c-lin.md`
 4. Companion knowledge: `knowledge/DECODER_ROADMAP.md` (DSL building blocks), `knowledge/STRATEGIC_ASSESSMENT.md` (novelty/venue), `knowledge/AUTORESEARCH_PATTERNS.md` (what to port from AIDE / open-coscientist).
 
 ---
@@ -40,7 +40,7 @@ The plan is **phase-driven**, not day-driven. Each phase has a gate; downstream 
 
 After Phase 0 these six interfaces are **frozen**. Subsequent changes require a PR with all 3 owners signing off. Contracts live in a single file `docs/contracts/interfaces.md` (written in Phase 0 Task M0.1).
 
-### 2.1 `EnvSpec` (陈嘉汉 drafts)
+### 2.1 `EnvSpec` (Chen Jiahan drafts)
 
 ```python
 # autoqec/envs/schema.py
@@ -85,7 +85,7 @@ class EnvSpec(BaseModel):
     eval_protocol: EvalProtocol = Field(default_factory=EvalProtocol)
 ```
 
-### 2.2 `RunnerConfig` + `RoundMetrics` (林腾祥 drafts)
+### 2.2 `RunnerConfig` + `RoundMetrics` (Lin Tengxiang drafts)
 
 ```python
 # autoqec/runner/schema.py
@@ -116,7 +116,7 @@ class RoundMetrics(BaseModel):
     training_log_path:   Optional[str] = None
 ```
 
-### 2.3 `VerifyReport` (谢金谷 drafts)
+### 2.3 `VerifyReport` (Xie Jingu drafts)
 
 ```python
 # autoqec/eval/schema.py
@@ -136,7 +136,7 @@ class VerifyReport(BaseModel):
     notes: str  # free-form, short
 ```
 
-### 2.4 Predecoder I/O contract (林腾祥 drafts)
+### 2.4 Predecoder I/O contract (Lin Tengxiang drafts)
 
 Every predecoder is an `nn.Module` implementing:
 
@@ -168,7 +168,7 @@ def decode_with_predecoder(predecoder_output, env_spec, syndrome_raw) -> correct
         return pymatching_or_osd(syndrome_raw, prior=predecoder_output)
 ```
 
-### 2.5 Subagent message format (陈嘉汉 drafts)
+### 2.5 Subagent message format (Chen Jiahan drafts)
 
 Inline mode calls subagents via Claude Code's `Agent` tool. Each subagent receives a single string prompt; the orchestrator parses its response. All three subagents must respond with a JSON object inside a fenced `` ```json `` block:
 
@@ -176,7 +176,7 @@ Inline mode calls subagents via Claude Code's `Agent` tool. Each subagent receiv
 - **Coder →** `{"dsl_config": {...}, "tier": "1" | "2", "rationale": str}`
 - **Analyst →** `{"summary_1line": str, "verdict": "candidate" | "ignore", "next_hypothesis_seed": str}`
 
-### 2.6 Skill CLI contract (陈嘉汉 drafts, 谢金谷/林腾祥 consume)
+### 2.6 Skill CLI contract (Chen Jiahan drafts, Xie Jingu/Lin Tengxiang consume)
 
 Each `/skill-name` wraps a single CLI:
 - `/autoqec-run` → `python -m autoqec run <env.yaml> --rounds N`
@@ -250,11 +250,11 @@ All CLIs must be registered in `cli/autoqec.py` via `click`. Each CLI writes str
 | Risk | P | Owner | Mitigation |
 |---|---|---|---|
 | Phase-0 contract drift (someone edits without PR) | Med | All | Contract file tracked in Git; CI blocks merges to `autoqec/envs/schema.py`, `autoqec/runner/schema.py`, `autoqec/eval/schema.py` without label `contract-change` |
-| bb72 Stim circuit unavailable | Med | 谢金谷 | Three candidate sources already scouted (`qLDPC`, `stimbposd`, Bravyi github); fallback = hand-build (~200 LOC) |
-| Coder Tier-2 failure rate too high | Med | 林腾祥 | Start Tier-1 only in first 5 rounds; enable Tier-2 only if plateau detected. Strict AST + smoke-test pipeline |
-| Orchestrator ↔ Runner API mismatch | High | 陈嘉汉 + 林腾祥 | Integration handshake at Phase-2 kickoff; use shared stub config in `runs/handshake/` |
+| bb72 Stim circuit unavailable | Med | Xie Jingu | Three candidate sources already scouted (`qLDPC`, `stimbposd`, Bravyi github); fallback = hand-build (~200 LOC) |
+| Coder Tier-2 failure rate too high | Med | Lin Tengxiang | Start Tier-1 only in first 5 rounds; enable Tier-2 only if plateau detected. Strict AST + smoke-test pipeline |
+| Orchestrator ↔ Runner API mismatch | High | Chen Jiahan + Lin Tengxiang | Integration handshake at Phase-2 kickoff; use shared stub config in `runs/handshake/` |
 | One owner unavailable | Med | All | Backup readers assigned per spec §12.3; contracts + tests let anyone resume another's module |
-| Reward-hacking case too easy / too hard | Med | 谢金谷 | Hand-craft 2 cheating predecoders (memorized-syndrome + label-noise); one must fail, one must pass — calibrates `SUSPICIOUS` threshold |
+| Reward-hacking case too easy / too hard | Med | Xie Jingu | Hand-craft 2 cheating predecoders (memorized-syndrome + label-noise); one must fail, one must pass — calibrates `SUSPICIOUS` threshold |
 | Demo fails live | Low | All | Pre-record each demo after Phase-3 morning smoke test |
 
 ## 7. Branching and commit discipline
@@ -272,7 +272,7 @@ All CLIs must be registered in `cli/autoqec.py` via `click`. Each CLI writes str
 
 ## 8. Tasks (master-level coordination only)
 
-These are tasks only the coordinator (陈嘉汉, as orchestration owner) executes to unblock the team. Per-owner plans contain the bulk of the work.
+These are tasks only the coordinator (Chen Jiahan, as orchestration owner) executes to unblock the team. Per-owner plans contain the bulk of the work.
 
 ### Task M0.1: Write `docs/contracts/interfaces.md`
 
@@ -478,7 +478,7 @@ git commit -m "chore: scaffold autoqec package + CLI stubs"
 
 ## 10. Execution handoff
 
-**Plan saved to `docs/superpowers/plans/2026-04-21-autoqec-master.md`. Two execution options:**
+**Plan saved to `docs/plans/2026-04-21-autoqec-master.md`. Two execution options:**
 
 **1. Subagent-Driven (recommended)** — I dispatch a fresh subagent per Phase (Phase 0 first; then 3 subagents in parallel for Phase 1; then integration).
 

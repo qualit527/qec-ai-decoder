@@ -190,7 +190,7 @@ quote https://openai.com/index/harness-engineering/
 The raw prompts above are useful, but the following versions are more directly actionable for `qec-ai-decoder`:
 
 ```text
-Read the design document at docs/superpowers/specs/2026-04-20-autoqec-rust-mvp-design.md.
+Read the design document at docs/specs/2026-04-20-autoqec-design.md.
 Use a reflect-style critique on the design and identify:
 1. scope risks,
 2. missing interfaces,

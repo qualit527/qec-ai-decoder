@@ -1,6 +1,6 @@
 """Smoke test for scripts.benchmark_surface_baseline (Task A1.4).
 
-The 1M-shot production run is manual (see docs/superpowers/plans/
+The 1M-shot production run is manual (see docs/plans/
 2026-04-21-autoqec-person-a-chen.md). This test exercises the same
 function with a tiny shot count so the logic is covered in CI.
 """

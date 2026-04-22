@@ -1,4 +1,4 @@
-# AutoQEC — 林腾祥 Execution Plan (Codex owner)
+# AutoQEC — Lin Tengxiang Execution Plan (Codex owner)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -14,8 +14,8 @@
 
 ## Reading order
 
-1. `docs/superpowers/specs/2026-04-20-autoqec-design.md` §4.1, §4.5, §6 (DSL), Appendix A
-2. `docs/superpowers/plans/2026-04-21-autoqec-master.md`
+1. `docs/specs/2026-04-20-autoqec-design.md` §4.1, §4.5, §6 (DSL), Appendix A
+2. `docs/plans/2026-04-21-autoqec-master.md`
 3. `knowledge/DECODER_ROADMAP.md` §5 (canonical building blocks — full enum)
 4. `knowledge/AUTORESEARCH_PATTERNS.md` — the `aide/interpreter.py` (~311 LOC → 280 LOC) port recipe for the Runner subprocess pattern
 

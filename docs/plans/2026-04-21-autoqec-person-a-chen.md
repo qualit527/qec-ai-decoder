@@ -1,4 +1,4 @@
-# AutoQEC — 陈嘉汉 Execution Plan (Claude Code owner)
+# AutoQEC — Chen Jiahan Execution Plan (Claude Code owner)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -14,8 +14,8 @@
 
 ## Reading order
 
-1. `docs/superpowers/specs/2026-04-20-autoqec-design.md` §4.1–§4.3, §5, §8, §10
-2. `docs/superpowers/plans/2026-04-21-autoqec-master.md` (this plan's parent)
+1. `docs/specs/2026-04-20-autoqec-design.md` §4.1–§4.3, §5, §8, §10
+2. `docs/plans/2026-04-21-autoqec-master.md` (this plan's parent)
 3. `knowledge/AUTORESEARCH_PATTERNS.md` — the `open-coscientist/framework.py` (~467 LOC → ~300 LOC) port recipe
 
 ---
@@ -811,7 +811,7 @@ def main(env_yaml: str, run_dir: str, round_idx: int):
     ms = machine_state(rd)
     kb = (Path("knowledge/DECODER_ROADMAP.md").read_text()[:3000]
           if Path("knowledge/DECODER_ROADMAP.md").exists() else "")
-    dsl_md = Path("docs/superpowers/specs/2026-04-20-autoqec-design.md").read_text()
+    dsl_md = Path("docs/specs/2026-04-20-autoqec-design.md").read_text()
     plan = run_round_plan(env, rd, round_idx, ms, kb, dsl_md)
     print(json.dumps(plan, indent=2))
 

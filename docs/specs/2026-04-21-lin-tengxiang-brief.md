@@ -1,4 +1,4 @@
-# 林腾祥任务说明书
+# Lin Tengxiang任务说明书
 
 你对应的模型是 `Codex`。
 
@@ -78,7 +78,7 @@ Day 3 的最低交付物：
 第一轮先发给 Agent 的 prompt：
 
 ```text
-请基于 docs/superpowers/specs/2026-04-20-autoqec-design.md 和当前仓库，实现 AutoQEC predecoder 的最小 DSL + compiler。
+请基于 docs/specs/2026-04-20-autoqec-design.md 和当前仓库，实现 AutoQEC predecoder 的最小 DSL + compiler。
 
 目标：
 1. 支持 gnn 和 neural_bp 两个 family 的最小可用配置
@@ -108,8 +108,8 @@ Agent 做完后，你人工要做的事：
 ```
 
 这轮做完后，你人工要做的事：
-- 把输入输出契约同步给陈嘉汉，确保 orchestrator 调 Runner 时不会猜字段。
-- 把 checkpoint / config / metrics 需求同步给谢金谷，确保后面 verify 能复现。
+- 把输入输出契约同步给Chen Jiahan，确保 orchestrator 调 Runner 时不会猜字段。
+- 把 checkpoint / config / metrics 需求同步给Xie Jingu，确保后面 verify 能复现。
 
 ### 阶段 B: Day 2 打通 Runner 和 classical backend
 
@@ -129,7 +129,7 @@ Agent 做完后，你人工要做的事：
 Agent 做完后，你人工要做的事：
 - 亲自检查 Runner 产物是否完整，而不是只看它说“成功了”。
 - 看 `hard_flip` 和 `soft_priors` 有没有被清楚地区分。
-- 和陈嘉汉对齐 Runner 调用接口，和谢金谷对齐 verify 所需输出。
+- 和Chen Jiahan对齐 Runner 调用接口，和Xie Jingu对齐 verify 所需输出。
 
 如果第一轮 end-to-end 出现错误，再发下一轮 prompt：
 
@@ -179,8 +179,8 @@ Agent 做完后，你人工要做的事：
 
 ## 3. 你和另外两个人怎么配合
 
-- 你要和陈嘉汉对齐 orchestrator 调用 Runner 的接口，因为你的代码最终要被主流程驱动。
-- 你要和谢金谷对齐 checkpoint、metrics、config 落盘格式，因为验证模块要读这些输出。
+- 你要和Chen Jiahan对齐 orchestrator 调用 Runner 的接口，因为你的代码最终要被主流程驱动。
+- 你要和Xie Jingu对齐 checkpoint、metrics、config 落盘格式，因为验证模块要读这些输出。
 - 你是模型主实现负责人，所以当“模型为什么接不上 classical backend”时，这个问题主要是你来收口。
 
 最需要你盯住的协作点：
