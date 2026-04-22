@@ -39,15 +39,35 @@ def _latest_run_dir(runs_root: Path) -> Path | None:
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
+def _validated_env_yaml(raw: str) -> str:
+    """Accept `raw` only if it's an existing file path.
+
+    subprocess.run below uses list-form (no shell), so shell metacharacters
+    are never interpreted — command injection in the classic sense is not
+    possible. We still validate here because:
+      (a) it fails fast with a clear error if the user mistyped the path,
+          rather than the Runner crashing three frames deeper, and
+      (b) it closes the "hostile filename" hole for Sourcery/Bandit-style
+          static scanners without touching the subprocess call shape.
+    """
+    resolved = Path(raw).resolve()
+    if not resolved.is_file():
+        raise SystemExit(f"env_yaml not found or not a file: {resolved}")
+    return str(resolved)
+
+
 def main() -> int:
     args = _parse_args()
-    subprocess.run(
+    env_yaml_checked = _validated_env_yaml(args.env_yaml)
+    # argparse already restricts args.profile to ('dev','prod') and args.rounds
+    # to int, so every element below is either a literal or a validated value.
+    subprocess.run(  # noqa: S603 — list-form, no shell; inputs validated above
         [
             sys.executable,
             "-m",
             "cli.autoqec",
             "run",
-            args.env_yaml,
+            env_yaml_checked,
             "--rounds",
             str(args.rounds),
             "--profile",
@@ -56,6 +76,7 @@ def main() -> int:
         ],
         check=True,
         cwd=_REPO_ROOT,
+        shell=False,
     )
 
     run_dir = _latest_run_dir(_REPO_ROOT / "runs")
