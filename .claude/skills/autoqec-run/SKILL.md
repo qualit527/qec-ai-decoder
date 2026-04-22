@@ -9,6 +9,12 @@ One-shot orchestration recipe for Claude Code chat. The orchestrator (you)
 drives the loop; three `autoqec-{ideator,coder,analyst}` subagents live
 behind the `Agent` tool.
 
+All shell commands below are written as `python -c "..."` one-liners so
+the recipe is identical on PowerShell (Windows) and bash / zsh
+(macOS / Linux). The helpers resolve every path relative to the repo
+root via `_REPO_ROOT = Path(__file__).resolve().parents[...]` — no cwd
+assumptions.
+
 ## When to use
 
 - The user says "run AutoQEC", "start a research round", or provides an
@@ -25,6 +31,17 @@ behind the `Agent` tool.
 - `profile` — `dev` (fast, 256/64 shots, 1 epoch) or `prod` (longer
   training). Default `dev`.
 
+## Working scratch directory
+
+Use Python `tempfile.gettempdir()` when you need to stash intermediate
+subagent responses. Never hard-code `/tmp/...`.
+
+```bash
+python -c "import tempfile,os; print(os.path.join(tempfile.gettempdir(), 'autoqec-run'))"
+```
+
+Create it once per run; the steps below refer to it as `<SCRATCH>`.
+
 ## The loop (per round)
 
 Do these steps in order. If any step fails, halt and report the failure
@@ -38,72 +55,76 @@ Python helper — do NOT write `history.jsonl` / `pareto.json` / `log.md`
 by hand:
 
 ```bash
-python -c "
-from autoqec.orchestration.memory import RunMemory
-mem = RunMemory('runs/<run_id>')
-print('run_dir:', mem.run_dir)
-"
+python -c "from autoqec.orchestration.memory import RunMemory; print(RunMemory('runs/<run_id>').run_dir)"
 ```
 
 ### 2. Build the Ideator prompt
 
 ```bash
-python scripts/run_single_round.py \
-  --env-yaml <env_yaml> \
-  --run-dir runs/<run_id> \
-  --round-idx <N> > /tmp/plan_<N>.json
+python scripts/run_single_round.py --env-yaml <env_yaml> --run-dir runs/<run_id> --round-idx <N>
 ```
 
-Read the JSON and extract `ideator_prompt`. That string is ready to
-hand to the subagent.
+Capture stdout into a JSON variable (the whole plan dict). The
+`ideator_prompt` key inside is the string to hand to the subagent.
 
 ### 3. Dispatch the Ideator
 
 Use the `Agent` tool with `subagent_type="autoqec-ideator"` and pass the
 `ideator_prompt` verbatim. The subagent returns exactly one fenced
-```json block. Parse it via:
+```json block. Validate + parse via:
 
 ```bash
 python -c "
-import sys
+import sys, json
 from autoqec.agents.dispatch import parse_response
-resp = open('/tmp/ideator_raw.txt', encoding='utf-8').read()
-print(parse_response('ideator', resp))
+raw = sys.stdin.read()
+parsed = parse_response('ideator', raw)
+print(json.dumps(parsed))
 "
 ```
 
-Required keys: `hypothesis`, `expected_delta_ler`, `expected_cost_s`,
-`rationale`. Optional: `dsl_hint`. If `parse_response` raises, the
-response is malformed — re-dispatch once with a "your last response
-failed §2.5 validation; try again" addendum, then give up if it fails
-again.
+Pipe the subagent's raw response on stdin. Required keys (validated
+automatically by `parse_response`): `hypothesis`, `expected_delta_ler`,
+`expected_cost_s`, `rationale`. Optional: `dsl_hint`.
+
+If `parse_response` raises `ValueError: Invalid ideator response
+payload:`, the response is malformed — re-dispatch once with the
+pydantic error appended to the prompt, then give up if it fails again.
 
 ### 4. Build the Coder prompt
 
-```python
+```bash
+python -c "
+import json, sys
+from pathlib import Path
 from autoqec.orchestration.memory import RunMemory
 from autoqec.orchestration.loop import build_coder_prompt
-from pathlib import Path
-
-mem = RunMemory("runs/<run_id>")
-dsl_schema_md = Path("docs/superpowers/specs/2026-04-20-autoqec-design.md").read_text(encoding="utf-8")
-coder_prompt = build_coder_prompt(
-    hypothesis=<ideator-response-dict>,
-    mem=mem,
-    dsl_schema_md=dsl_schema_md,
-)
+hypothesis = json.loads(sys.stdin.read())
+mem = RunMemory('runs/<run_id>')
+schema_md = Path('autoqec/decoders/dsl_schema.py').read_text(encoding='utf-8')
+print(build_coder_prompt(hypothesis=hypothesis, mem=mem, dsl_schema_md=schema_md))
+"
 ```
+
+Pipe the parsed Ideator JSON on stdin.
 
 ### 5. Dispatch the Coder
 
 `Agent` tool with `subagent_type="autoqec-coder"`. Required response
-keys (validated): `tier`, `dsl_config`, `rationale`. `tier` is
-`"1"` or `"2"`. `dsl_config` must validate against
-`autoqec.decoders.dsl_schema.PredecoderDSL` — verify with:
+keys (validated by `parse_response`): `tier`, `dsl_config`, `rationale`.
+`tier` is `"1"` or `"2"`.
 
-```python
+Double-check `dsl_config` against `PredecoderDSL`:
+
+```bash
+python -c "
+import json, sys
+from autoqec.agents.dispatch import parse_response
 from autoqec.decoders.dsl_schema import PredecoderDSL
-PredecoderDSL(**coder_response["dsl_config"])  # raises on drift
+parsed = parse_response('coder', sys.stdin.read())
+PredecoderDSL(**parsed['dsl_config'])   # raises on schema drift
+print(json.dumps(parsed))
+"
 ```
 
 If validation fails, re-dispatch once with the pydantic error as
@@ -112,35 +133,36 @@ feedback. Give up after one retry.
 ### 6. Write `round_<N>/config.yaml` and invoke the Runner
 
 ```bash
-mkdir -p runs/<run_id>/round_<N>
 python -c "
-import yaml
-import sys, json
-cfg = json.loads(sys.stdin.read())
-with open('runs/<run_id>/round_<N>/config.yaml', 'w', encoding='utf-8') as f:
-    yaml.safe_dump(cfg, f, sort_keys=False)
-" <<< '<json-dump-of-coder.dsl_config>'
+import json, sys, yaml
+from pathlib import Path
+parsed = json.loads(sys.stdin.read())
+out = Path('runs/<run_id>/round_<N>')
+out.mkdir(parents=True, exist_ok=True)
+with (out / 'config.yaml').open('w', encoding='utf-8') as f:
+    yaml.safe_dump(parsed['dsl_config'], f, sort_keys=False)
+"
 
-python -m cli.autoqec run-round \
-  <env_yaml> \
-  runs/<run_id>/round_<N>/config.yaml \
-  runs/<run_id>/round_<N> \
-  --profile <profile>
+python -m cli.autoqec run-round <env_yaml> runs/<run_id>/round_<N>/config.yaml runs/<run_id>/round_<N> --profile <profile>
 ```
 
 The CLI prints the `RoundMetrics` JSON on stdout. Save it — you also
-need it for the Analyst. If `metrics.status != "ok"`, skip the Analyst
-for this round; record the round with `verdict="ignore"` and move on.
+need it for the Analyst.
 
-### 7. Build the Analyst prompt
+**If `metrics.status != "ok"`**, skip the Analyst for this round. Do not
+call `build_analyst_prompt` or dispatch the `autoqec-analyst` subagent.
+Pass `summary_1line=None` to `record_round()` at step 9; it will
+synthesise a fallback summary from `metrics.status` / `status_reason`.
 
-```python
+### 7. Build the Analyst prompt (only if `metrics.status == "ok"`)
+
+```bash
+python -c "
+from autoqec.orchestration.memory import RunMemory
 from autoqec.orchestration.loop import build_analyst_prompt
-analyst_prompt = build_analyst_prompt(
-    mem=mem,
-    round_dir="runs/<run_id>/round_<N>",
-    prev_summary="<the previous round's summary_1line, or ''>",
-)
+mem = RunMemory('runs/<run_id>')
+print(build_analyst_prompt(mem=mem, round_dir='runs/<run_id>/round_<N>', prev_summary='<prev or empty>'))
+"
 ```
 
 ### 8. Dispatch the Analyst
@@ -151,18 +173,29 @@ keys (validated): `summary_1line`, `verdict` (`"candidate"` or
 
 ### 9. Record the round
 
-```python
+```bash
+python -c "
+import json, sys
+from autoqec.orchestration.memory import RunMemory
 from autoqec.orchestration.round_recorder import record_round
+payload = json.loads(sys.stdin.read())
+mem = RunMemory('runs/<run_id>')
 row = record_round(
     mem=mem,
-    round_idx=<N>,
-    hypothesis=<ideator-response-dict>["hypothesis"],
-    dsl_config=<coder-response-dict>["dsl_config"],
-    metrics=<metrics-dict>,
-    verdict=<analyst-response-dict>["verdict"],
-    summary_1line=<analyst-response-dict>["summary_1line"],
+    round_idx=payload['round_idx'],
+    hypothesis=payload['hypothesis'],
+    dsl_config=payload['dsl_config'],
+    metrics=payload['metrics'],
+    verdict=payload['verdict'],
+    summary_1line=payload.get('summary_1line'),  # None on runner-failure path
 )
+print(json.dumps(row['summary_1line']))
+"
 ```
+
+Pipe one JSON object on stdin with keys: `round_idx`, `hypothesis`,
+`dsl_config`, `metrics`, `verdict`, `summary_1line` (may be `null` on
+the runner-failure path — the recorder synthesises a fallback).
 
 This writes the round to `history.jsonl`, appends to `log.md`, and
 refreshes `pareto.json` (top-5 by Δ LER, candidates only).
@@ -181,12 +214,14 @@ Run complete. Path: runs/<run_id>/
 
 ## Failure handling
 
-- **Malformed subagent response** — retry once with the pydantic error
-  appended to the prompt; give up after a second failure.
-- **Runner `compile_error`** — record the round with `verdict="ignore"`,
-  surface the `status_reason` in the chat, continue.
-- **Runner `killed_by_safety`** — same as compile_error but the user
-  should be told which safety fired (VRAM, NaN, wall-clock).
+- **Malformed subagent response** — `parse_response` raises with the
+  pydantic error in the message. Retry once with that error appended to
+  the prompt; give up after a second failure.
+- **Runner `compile_error`** — record the round with `verdict="ignore"`
+  and `summary_1line=None`; surface the `status_reason` in the chat;
+  continue.
+- **Runner `killed_by_safety`** — same as compile_error; the recorder's
+  fallback summary shows which safety fired.
 - **3 consecutive ignored rounds** — halt and ask the user to inspect;
   likely a DSL schema drift or Runner regression.
 

@@ -132,11 +132,47 @@ class PredecoderModule(nn.Module):
 - Coder: `{"dsl_config": {...}, "tier": "1" | "2", "rationale": str}`
 - Analyst: `{"summary_1line": str, "verdict": "candidate" | "ignore", "next_hypothesis_seed": str}`
 
-## 2.6 Skill CLI contract
+## 2.6 Skill surface
 
-- `/autoqec-run` -> `python -m autoqec run <env.yaml> --rounds N`
-- `/add-env` -> `python -m autoqec add-env --out <env.yaml>`
-- `/verify-decoder` -> `python -m autoqec verify <round_dir>`
-- `/review-log` -> `python -m autoqec review-log <run_dir>`
-- `/diagnose-failure` -> `python -m autoqec diagnose <run_dir>`
+Two surfaces, distinguished by who is driving:
+
+### 2.6.1 Claude-Code-driven skills (recipes in `.claude/skills/<name>/SKILL.md`)
+
+The orchestrator is Claude Code chat. It dispatches subagents via the
+`Agent` tool and shells out to per-step Python helpers. These are the
+skills that need LLM reasoning at runtime.
+
+- `/autoqec-run` — Ideator → Coder → Runner → Analyst → record loop.
+  Recipe: `.claude/skills/autoqec-run/SKILL.md`. Shells out to
+  `python -m cli.autoqec run-round <env> <config> <round_dir>` once per
+  round.
+- `/add-env` *(planned)* — dialog-driven env YAML composer.
+- `/verify-decoder` *(planned, owned by Xie)* — holdout evaluation of a
+  Pareto candidate.
+- `/review-log` *(planned, owned by Xie)* — retrospective over a whole
+  `runs/<run_id>/`.
+- `/diagnose-failure` *(planned, owned by Xie)* — root-cause a broken or
+  stalled round.
+
+### 2.6.2 Pure-CLI commands (no LLM in the loop)
+
+These are Python entry points callable from any shell or skill recipe.
+All are registered in `cli/autoqec.py`.
+
+- `python -m cli.autoqec run-round <env.yaml> <config.yaml> <round_dir> [--profile dev|prod]`
+  — one Runner round from a hand-written DSL config. Primary building
+  block the `/autoqec-run` skill calls per round.
+- `python -m cli.autoqec run <env.yaml> --rounds N --profile dev --no-llm`
+  — N-round random-template smoke loop. **No LLM.** Writes
+  `runs/<id>/history.jsonl + history.json`; does **not** write
+  `log.md` / `pareto.json` (those are orchestration-side, only produced
+  by `/autoqec-run`).
+- `python -m cli.autoqec add-env --out <env.yaml>`
+  — interactive EnvSpec YAML composer (no LLM; just click prompts).
+
+**Historical note:** earlier drafts of this contract promised a
+`python -m autoqec run <env> --rounds N` entrypoint that would drive
+the full LLM loop from plain Python. That path is not implemented on
+`main`; the `/autoqec-run` skill is the live LLM-driven surface until a
+subprocess router replaces the Claude-chat orchestrator.
 

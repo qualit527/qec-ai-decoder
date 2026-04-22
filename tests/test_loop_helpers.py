@@ -16,16 +16,20 @@ def test_build_coder_prompt_contains_hypothesis_and_rules(tmp_path: Path) -> Non
         "expected_cost_s": 120,
         "rationale": "Pareto has no entry with gated_mlp yet",
     }
+    # sentinel that a regression dropping dsl_schema_md routing would also wipe
+    schema_md = "## PredecoderDSL authoritative source (sentinel-CA7E5F)"
     prompt = build_coder_prompt(
         hypothesis=hypothesis,
         mem=mem,
-        dsl_schema_md="## PredecoderDSL\n...",
+        dsl_schema_md=schema_md,
     )
     assert "CODER" in prompt
     assert "gated_mlp" in prompt
     # tier2_validator_rules must reach the Coder so it can honour its contract
     assert "slot_signatures" in prompt
     assert "forbidden_names" in prompt
+    # dsl_schema_md must actually land in the prompt payload
+    assert "sentinel-CA7E5F" in prompt
 
 
 def test_build_analyst_prompt_has_absolute_metrics_path(tmp_path: Path) -> None:

@@ -28,11 +28,17 @@ _PARETO_FIELDS = (
 
 
 def _pareto_key(entry: dict) -> tuple:
-    """Sort key: maximise delta_ler, then minimise flops, then minimise n_params."""
+    """Sort key: maximise delta_ler, then minimise flops, then n_params.
+
+    `round` is appended as a final deterministic tie-break so identical
+    metric triples produce a stable pareto.json ordering independent of
+    insertion order. Reproducibility > cosmetics.
+    """
     return (
         -float(entry.get("delta_ler") or 0),
         int(entry.get("flops_per_syndrome") or 0),
         int(entry.get("n_params") or 0),
+        int(entry.get("round") or 0),
     )
 
 
@@ -46,6 +52,19 @@ def _refresh_pareto(mem: RunMemory, row: dict) -> None:
     mem.update_pareto(pareto[:_PARETO_CAP])
 
 
+def _synthesise_summary(round_idx: int, metrics: dict) -> str:
+    """Fall-back narrative when the Analyst was skipped (Runner non-ok status).
+
+    The skill's failure-path (step 6 in SKILL.md) records the round even
+    when `metrics.status != "ok"`; the Analyst never runs in that branch,
+    so `summary_1line` is unavailable from the subagent. Compose one here
+    from what the Runner did report.
+    """
+    status = metrics.get("status", "unknown")
+    reason = metrics.get("status_reason") or "no reason provided"
+    return f"round {round_idx} {status}: {reason}"
+
+
 def record_round(
     mem: RunMemory,
     round_idx: int,
@@ -53,19 +72,25 @@ def record_round(
     dsl_config: dict,
     metrics: dict,
     verdict: str,
-    summary_1line: str,
+    summary_1line: str | None = None,
 ) -> dict:
-    """Persist one completed round and return the row written to `history.jsonl`."""
+    """Persist one completed round and return the row written to `history.jsonl`.
+
+    `summary_1line=None` is the skill's failure-path signal — the Analyst
+    was skipped because `metrics.status != "ok"`. We synthesise a summary
+    from the Runner's status + reason so the row is still well-formed.
+    """
+    summary = summary_1line or _synthesise_summary(round_idx, metrics)
     row: dict = {
         "round": round_idx,
         "hypothesis": hypothesis,
         "dsl_config": dsl_config,
         "verdict": verdict,
-        "summary_1line": summary_1line,
+        "summary_1line": summary,
         **metrics,
     }
     mem.append_round(row)
-    mem.append_log(f"### round {round_idx} — {summary_1line}")
+    mem.append_log(f"### round {round_idx} — {summary}")
 
     # pareto only tracks verified-or-candidate rounds with a positive delta
     if verdict == "candidate" and (metrics.get("delta_ler") or 0) > 0:

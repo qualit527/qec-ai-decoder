@@ -53,6 +53,29 @@ def test_record_round_writes_history_and_updates_pareto(tmp_path: Path) -> None:
     assert pareto[0]["delta_ler"] == 8e-5
 
 
+def test_pareto_deterministic_tiebreak_on_equal_metrics(tmp_path: Path) -> None:
+    """Codex LOW: equal (delta_ler, flops, n_params) points must not rely on
+    insertion order — tie-break on `round` so pareto.json is reproducible."""
+    from autoqec.orchestration.memory import RunMemory
+    from autoqec.orchestration.round_recorder import record_round
+
+    mem = RunMemory(tmp_path / "run")
+    metrics = _mk_metrics(delta_ler=1e-4, n_params=5000, flops=10000)
+    # Record 3 candidates with identical metrics, different round indices
+    for idx in (5, 2, 4):
+        record_round(
+            mem=mem,
+            round_idx=idx,
+            hypothesis=f"h{idx}",
+            dsl_config={"type": "gnn"},
+            metrics=dict(metrics),
+            verdict="candidate",
+            summary_1line=f"round {idx} tied",
+        )
+    pareto = json.loads((tmp_path / "run" / "pareto.json").read_text(encoding="utf-8"))
+    assert [e["round"] for e in pareto] == [2, 4, 5]  # ascending round as final tie-break
+
+
 def test_pareto_sorted_desc_by_delta_ler_and_capped_at_five(tmp_path: Path) -> None:
     from autoqec.orchestration.memory import RunMemory
     from autoqec.orchestration.round_recorder import record_round
@@ -114,3 +137,64 @@ def test_record_round_also_appends_log_md(tmp_path: Path) -> None:
     log_text = (tmp_path / "run" / "log.md").read_text(encoding="utf-8")
     assert "round 3" in log_text
     assert "attention" in log_text
+
+
+def test_record_round_synthesises_summary_on_compile_error(tmp_path: Path) -> None:
+    """Codex HIGH: skill step 6 says skip the Analyst on non-ok status.
+    record_round must accept that — otherwise the error path stalls on the
+    API it is supposed to handle."""
+    from autoqec.orchestration.memory import RunMemory
+    from autoqec.orchestration.round_recorder import record_round
+
+    mem = RunMemory(tmp_path / "run")
+    failed_metrics = {
+        "status": "compile_error",
+        "status_reason": "pydantic ValidationError on gnn.hidden_dim < 4",
+        "ler_plain_classical": None,
+        "ler_predecoder": None,
+        "delta_ler": None,
+        "n_params": None,
+        "flops_per_syndrome": None,
+        "checkpoint_path": None,
+        "train_wallclock_s": 0.0,
+        "eval_wallclock_s": 0.0,
+        "vram_peak_gb": 0.0,
+    }
+    row = record_round(
+        mem=mem,
+        round_idx=7,
+        hypothesis="h7",
+        dsl_config={"type": "gnn"},
+        metrics=failed_metrics,
+        verdict="ignore",
+        summary_1line=None,  # Analyst skipped
+    )
+    assert "compile_error" in row["summary_1line"]
+    assert "pydantic" in row["summary_1line"] or "hidden_dim" in row["summary_1line"]
+    log_text = (tmp_path / "run" / "log.md").read_text(encoding="utf-8")
+    assert "round 7" in log_text
+    # pareto must stay empty — failed rounds never enter
+    pareto = json.loads((tmp_path / "run" / "pareto.json").read_text(encoding="utf-8"))
+    assert pareto == []
+
+
+def test_record_round_synthesises_summary_on_killed_by_safety(tmp_path: Path) -> None:
+    from autoqec.orchestration.memory import RunMemory
+    from autoqec.orchestration.round_recorder import record_round
+
+    mem = RunMemory(tmp_path / "run")
+    row = record_round(
+        mem=mem,
+        round_idx=1,
+        hypothesis="too big",
+        dsl_config={"type": "gnn"},
+        metrics={
+            "status": "killed_by_safety",
+            "status_reason": "VRAM estimate 40.00 > free 20.00",
+            "delta_ler": None,
+        },
+        verdict="ignore",
+        summary_1line=None,
+    )
+    assert "killed_by_safety" in row["summary_1line"]
+    assert "VRAM" in row["summary_1line"]

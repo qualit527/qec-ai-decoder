@@ -107,24 +107,49 @@ touches `history.jsonl`.
 **Path B: no-LLM baseline** (pure CLI, no Claude Code needed)
 
 ```bash
-bash demos/demo-1-surface-d5/run_quick.sh   # 3 dev-profile rounds, random templates
+python scripts/run_quick.py                       # cross-platform
+# or, on macOS/Linux with bash:
+bash demos/demo-1-surface-d5/run_quick.sh
 ```
 
-Under the hood: `python -m cli.autoqec run <env> --rounds 3 --profile dev --no-llm`.
+Both call `python -m cli.autoqec run <env> --rounds 3 --profile dev --no-llm`.
 Useful as a smoke test for the training path without an LLM in the loop.
 
 ### Where results land
 
+The two run paths produce **different** run-root layouts. Both write the
+same per-round contents under `round_<N>/`.
+
+**Path A (`/autoqec-run` LLM loop)** — full orchestration-side bookkeeping:
+
 ```
 runs/<YYYYMMDD-HHMMSS>/
-├── log.md               # narrative, one line per round (Analyst output)
-├── history.jsonl        # machine-readable, one record per round
-├── pareto.json          # top-5 candidates by Δ LER (verdict="candidate" only)
-└── round_<N>/
-    ├── config.yaml      # the Coder-emitted DSL config
-    ├── train.log        # per-step training loss
-    ├── checkpoint.pt    # trained weights + dsl_config
-    └── metrics.json     # RoundMetrics (§2.2): status, Δ LER, FLOPs, n_params, …
+├── log.md               # narrative, one line per round (Analyst verdict)
+├── history.jsonl        # one enriched record per round (hypothesis + DSL +
+│                        # RoundMetrics + verdict + summary_1line)
+├── pareto.json          # top-5 candidates by −Δ LER (verdict="candidate" only)
+└── round_<N>/           # see below
+```
+
+**Path B (`run_quick.sh` no-LLM)** — bare Runner output, no Analyst/Pareto:
+
+```
+runs/<YYYYMMDD-HHMMSS>/
+├── history.jsonl        # one RoundMetrics record per round (no hypothesis,
+│                        # no verdict — no LLM ran)
+├── history.json         # aggregate of above
+└── round_<N>/           # see below
+```
+
+**Both paths — per-round contents**:
+
+```
+round_<N>/
+├── config.yaml          # the DSL config the Runner trained (Coder's, or
+│                        # random template in Path B)
+├── train.log            # per-step training loss
+├── checkpoint.pt        # trained weights + dsl_config
+└── metrics.json         # RoundMetrics (§2.2): status, Δ LER, FLOPs, n_params, …
 ```
 
 ### How to read the output
