@@ -56,11 +56,18 @@ def test_empty_synthetic_branch_is_reaped(repo_with_run: tuple[Path, Path]) -> N
     assert "exp/t/01-x" not in branches
 
 
-def test_committed_orphan_is_quarantined(repo_with_run: tuple[Path, Path]) -> None:
+def test_committed_orphan_without_pointer_emits_pause(repo_with_run: tuple[Path, Path]) -> None:
+    """Per §15.10 Auto-heal vs pause: branch with real commits but no recoverable
+    round_N_pointer.json must PAUSE for human review, not auto-quarantine.
+
+    This was the pre-codex-review policy — the old tests asserted auto-rename
+    to `quarantine/<run_id>/<remainder>` plus a synthetic history row. The
+    spec §15.10 "Paused for human review" bullet explicitly covers this case.
+    """
     from autoqec.orchestration.reconcile import reconcile_at_startup
 
     repo, run_dir = repo_with_run
-    # Create a branch with a real commit — simulates a crash after Runner wrote a commit.
+    # Create a branch with a real commit BUT no round_N_pointer.json.
     subprocess.run(
         ["git", "worktree", "add", ".worktrees/exp-t-02-y", "-b", "exp/t/02-y", "main"],
         cwd=repo,
@@ -77,22 +84,133 @@ def test_committed_orphan_is_quarantined(repo_with_run: tuple[Path, Path]) -> No
     )
 
     actions = reconcile_at_startup(repo_root=repo, run_id="t", run_dir=run_dir)
-    quarantined = [a for a in actions if a["kind"] == "quarantined"]
-    assert any("exp/t/02-y" in a["original_branch"] for a in quarantined)
 
+    # Must emit a pause action — the orchestrator, not reconcile, decides.
+    paused = [a for a in actions if a["kind"] == "pause"]
+    assert any(a.get("branch") == "exp/t/02-y" for a in paused), actions
+    pause = next(a for a in paused if a.get("branch") == "exp/t/02-y")
+    assert pause.get("reason") == "orphan_branch_without_pointer"
+
+    # The branch MUST NOT be renamed to quarantine/*.
     branches = subprocess.check_output(["git", "branch", "--list"], cwd=repo, text=True)
-    assert "quarantine/t/02-y" in branches
+    assert "exp/t/02-y" in branches
+    assert "quarantine/t/02-y" not in branches
 
-    # An orphaned_branch history row must be appended.
+    # No history row must be written — the operator decides the disposition.
     rows = [
         json.loads(line)
         for line in (run_dir / "history.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     orphan_rows = [r for r in rows if r.get("status") == "orphaned_branch"]
-    assert orphan_rows, "expected an orphaned_branch history row"
-    assert orphan_rows[0]["branch"] == "quarantine/t/02-y"
-    assert orphan_rows[0].get("commit_sha")
+    assert orphan_rows == []
+
+
+def test_committed_orphan_with_pointer_auto_heals(repo_with_run: tuple[Path, Path]) -> None:
+    """§15.10 case 3b-with-recoverable-id: pointer JSON carries round_attempt_id
+    → reconcile writes an auto-healed history row preserving that UUID.
+
+    No branch rename, no fresh reconcile_id — the pointer commit is already
+    canonical provenance.
+    """
+    from autoqec.orchestration.reconcile import reconcile_at_startup
+
+    repo, run_dir = repo_with_run
+    subprocess.run(
+        ["git", "worktree", "add", ".worktrees/exp-t-04-with-ptr", "-b", "exp/t/04-with-ptr", "main"],
+        cwd=repo,
+        check=True,
+    )
+    wt = repo / ".worktrees" / "exp-t-04-with-ptr"
+    # Write a proper round_N_pointer.json at round_04/.
+    round_dir = wt / "round_04"
+    round_dir.mkdir(parents=True)
+    pointer = {
+        "run_id": "t",
+        "round_idx": 4,
+        "round_attempt_id": "orig-uuid-abc-123",
+        "branch": "exp/t/04-with-ptr",
+        "commit_sha": "will-be-replaced",
+        "fork_from": "baseline",
+    }
+    (round_dir / "round_04_pointer.json").write_text(json.dumps(pointer))
+    subprocess.run(["git", "add", "."], cwd=wt, check=True)
+    subprocess.run(["git", "commit", "-m", "round 4 pointer"], cwd=wt, check=True)
+    commit_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=wt, text=True
+    ).strip()
+    subprocess.run(
+        ["git", "worktree", "remove", "--force", ".worktrees/exp-t-04-with-ptr"],
+        cwd=repo,
+        check=True,
+    )
+
+    actions = reconcile_at_startup(repo_root=repo, run_id="t", run_dir=run_dir)
+
+    # Reconcile reaps (auto-heal), does NOT pause.
+    paused = [a for a in actions if a["kind"] == "pause"]
+    assert paused == []
+    reaped = [a for a in actions if a["kind"] == "reaped"]
+    assert any(
+        a.get("branch") == "exp/t/04-with-ptr"
+        and a.get("round_attempt_id") == "orig-uuid-abc-123"
+        for a in reaped
+    ), actions
+
+    # Branch is NOT renamed.
+    branches = subprocess.check_output(["git", "branch", "--list"], cwd=repo, text=True)
+    assert "exp/t/04-with-ptr" in branches
+    assert "quarantine/t/04-with-ptr" not in branches
+
+    # A history row is written preserving the original round_attempt_id.
+    rows = [
+        json.loads(line)
+        for line in (run_dir / "history.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    orphan_rows = [r for r in rows if r.get("status") == "orphaned_branch"]
+    assert len(orphan_rows) == 1
+    assert orphan_rows[0]["round_attempt_id"] == "orig-uuid-abc-123"
+    assert orphan_rows[0]["branch"] == "exp/t/04-with-ptr"
+    assert orphan_rows[0]["commit_sha"] == commit_sha
+
+
+def test_committed_orphan_with_malformed_pointer_emits_pause(repo_with_run: tuple[Path, Path]) -> None:
+    """§15.10: malformed pointer JSON is equivalent to no pointer — pause."""
+    from autoqec.orchestration.reconcile import reconcile_at_startup
+
+    repo, run_dir = repo_with_run
+    subprocess.run(
+        ["git", "worktree", "add", ".worktrees/exp-t-05-bad-ptr", "-b", "exp/t/05-bad-ptr", "main"],
+        cwd=repo,
+        check=True,
+    )
+    wt = repo / ".worktrees" / "exp-t-05-bad-ptr"
+    round_dir = wt / "round_05"
+    round_dir.mkdir(parents=True)
+    (round_dir / "round_05_pointer.json").write_text("{not valid json")
+    subprocess.run(["git", "add", "."], cwd=wt, check=True)
+    subprocess.run(["git", "commit", "-m", "bad pointer"], cwd=wt, check=True)
+    subprocess.run(
+        ["git", "worktree", "remove", "--force", ".worktrees/exp-t-05-bad-ptr"],
+        cwd=repo,
+        check=True,
+    )
+
+    actions = reconcile_at_startup(repo_root=repo, run_id="t", run_dir=run_dir)
+    paused = [a for a in actions if a["kind"] == "pause"]
+    assert any(a.get("branch") == "exp/t/05-bad-ptr" for a in paused), actions
+
+    # No rename, no history row.
+    branches = subprocess.check_output(["git", "branch", "--list"], cwd=repo, text=True)
+    assert "exp/t/05-bad-ptr" in branches
+    assert "quarantine/t/05-bad-ptr" not in branches
+    rows = [
+        json.loads(line)
+        for line in (run_dir / "history.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [r for r in rows if r.get("status") == "orphaned_branch"] == []
 
 
 def test_history_row_without_live_branch_emits_followup(repo_with_run: tuple[Path, Path]) -> None:

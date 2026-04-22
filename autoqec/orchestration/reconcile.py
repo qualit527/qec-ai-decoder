@@ -1,8 +1,9 @@
 """§15.10 startup reconciliation.
 
-Auto-heal empty synthetic branches; quarantine branches with real commits but
-no history row. Pause only for ambiguous cases (no recoverable round_attempt_id,
-or missing Pareto commit).
+Auto-heal empty synthetic branches and committed orphans whose
+``round_N_pointer.json`` carries a recoverable ``round_attempt_id``;
+pause for human review whenever the pointer is missing, malformed, or
+when a Pareto commit is unreachable.
 
 Policy summary:
   * Let ``B`` = set of ``exp/<run_id>/*`` branches currently in git.
@@ -10,12 +11,18 @@ Policy summary:
   * ``B \\ H`` — branches with no history row:
       - If the branch tip equals ``merge-base(branch, main)`` (empty synthetic),
         delete it silently. Emit ``{"kind": "reaped"}``.
-      - Otherwise the branch has real commits; rename it to
-        ``quarantine/<run_id>/<remainder>``, append an ``orphaned_branch``
-        history row, and emit ``{"kind": "quarantined"}``.
+      - Otherwise the branch has real commits. Try to read
+        ``round_N_pointer.json`` from the branch tip. If it has a
+        recoverable ``round_attempt_id``, auto-heal: write an
+        ``orphaned_branch`` history row preserving the UUID, emit
+        ``{"kind": "reaped", "source": "pointer"}``. **Do not rename
+        the branch** — the pointer commit is canonical provenance.
+      - If the pointer is absent or malformed, emit
+        ``{"kind": "pause", "reason": "orphan_branch_without_pointer"}``
+        and leave the branch untouched. The orchestrator decides.
   * ``H \\ B`` — history rows whose branch was manually deleted:
-      - Append a ``branch_manually_deleted`` follow-up row and emit
-        ``{"kind": "follow_up"}``.
+      - Append a ``branch_manually_deleted`` follow-up row (only once per
+        branch across reconcile runs) and emit ``{"kind": "follow_up"}``.
   * Pareto-commit reachability check: every ``pareto.json`` entry's
     ``commit_sha`` must resolve via ``git rev-parse``. Otherwise emit
     ``{"kind": "pause", "reason": ...}`` — caller decides whether to halt.
@@ -24,10 +31,10 @@ Policy summary:
 from __future__ import annotations
 
 import json
+import re
 import subprocess
-import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 def _run_git(cwd: str | Path, *args: str) -> str:
@@ -83,8 +90,78 @@ def _is_empty_synthetic(repo_root: Path, branch: str) -> bool:
         return tip == base
     except subprocess.CalledProcessError:
         # If something's broken (e.g. main missing), don't treat as empty —
-        # err on the side of quarantine so no real commits are discarded.
+        # err on the side of pause so no real commits are touched.
         return False
+
+
+_BRANCH_ROUND_RE = re.compile(r"^exp/[^/]+/(\d+)(?:-|$)")
+
+
+def _try_read_pointer(repo_root: Path, branch: str) -> Optional[dict[str, Any]]:
+    """Try to read and parse a ``round_N_pointer.json`` from the branch tip.
+
+    Strategy:
+      1. If the branch name matches ``exp/<run_id>/<NN>-<slug>``, infer
+         ``N`` and try ``git show <branch>:round_<NN>/round_<NN>_pointer.json``
+         and a zero-padded variant. Return the parsed dict on success.
+      2. Fallback: list the branch tip's tree and look for any
+         ``round_*_pointer.json`` file. Read and parse the first match.
+
+    Returns
+    -------
+    dict | None
+        The parsed pointer dict, or None on any failure (JSON decode
+        error, missing file, git error).
+    """
+    # Infer round index from the branch name.
+    candidates: list[str] = []
+    match = _BRANCH_ROUND_RE.match(branch)
+    if match:
+        raw = match.group(1)
+        padded = raw.zfill(2)
+        # Try both padded and unpadded (the slug convention uses padded).
+        for n in {raw, padded}:
+            candidates.append(f"round_{n}/round_{n}_pointer.json")
+            candidates.append(f"round_{n}_pointer.json")
+
+    for rel in candidates:
+        try:
+            raw = _run_git(repo_root, "show", f"{branch}:{rel}")
+        except subprocess.CalledProcessError:
+            continue
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(data, dict):
+            return data
+
+    # Fallback: scan the whole tree for any round_*_pointer.json.
+    try:
+        tree = _run_git(repo_root, "ls-tree", "-r", "--name-only", branch)
+    except subprocess.CalledProcessError:
+        return None
+    for path in tree.splitlines():
+        name = path.strip()
+        if not name:
+            continue
+        if not name.endswith("_pointer.json"):
+            continue
+        # Only accept names that look like "round_<digits>_pointer.json".
+        leaf = name.rsplit("/", 1)[-1]
+        if not re.match(r"^round_\d+_pointer\.json$", leaf):
+            continue
+        try:
+            raw = _run_git(repo_root, "show", f"{branch}:{name}")
+        except subprocess.CalledProcessError:
+            continue
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(data, dict):
+            return data
+    return None
 
 
 def _append_history_row(run_dir: Path, row: dict[str, Any]) -> None:
@@ -141,30 +218,43 @@ def reconcile_at_startup(
         if _is_empty_synthetic(repo_root, branch):
             _run_git_checked(repo_root, "branch", "-D", branch)
             actions.append({"kind": "reaped", "branch": branch})
-        else:
-            remainder = branch[len(f"exp/{run_id}/"):]
-            new_branch = f"quarantine/{run_id}/{remainder}"
-            _run_git_checked(repo_root, "branch", "-m", branch, new_branch)
-            commit_sha = _run_git(repo_root, "rev-parse", new_branch).strip()
-            actions.append(
-                {
-                    "kind": "quarantined",
-                    "original_branch": branch,
-                    "quarantine_branch": new_branch,
-                    "commit_sha": commit_sha,
-                }
-            )
+            continue
+
+        # Committed orphan — try to read round_N_pointer.json for auto-heal.
+        pointer = _try_read_pointer(repo_root, branch)
+        try:
+            commit_sha = _run_git(repo_root, "rev-parse", branch).strip()
+        except subprocess.CalledProcessError:
+            commit_sha = None
+
+        if pointer is not None and pointer.get("round_attempt_id"):
+            # Case 3b-with-recoverable-id: auto-heal, no rename.
             row = {
                 "status": "orphaned_branch",
-                "round_attempt_id": None,
-                "reconcile_id": str(uuid.uuid4()),
-                "branch": new_branch,
+                "round_attempt_id": pointer["round_attempt_id"],
+                "branch": branch,
                 "commit_sha": commit_sha,
-                "status_reason": (
-                    f"branch {branch} had real commits but no history row at startup"
-                ),
+                "status_reason": "auto-healed from pointer",
             }
             _append_history_row(run_dir, row)
+            actions.append(
+                {
+                    "kind": "reaped",
+                    "branch": branch,
+                    "round_attempt_id": pointer["round_attempt_id"],
+                    "source": "pointer",
+                }
+            )
+        else:
+            # Case 3b-without-recoverable-id OR malformed pointer: pause.
+            actions.append(
+                {
+                    "kind": "pause",
+                    "branch": branch,
+                    "commit_sha": commit_sha,
+                    "reason": "orphan_branch_without_pointer",
+                }
+            )
 
     # 4. History rows whose branch was manually deleted.
     for branch in sorted(branches_in_history - branches_in_git):
