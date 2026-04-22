@@ -6,7 +6,7 @@ output would slip through silently.
 """
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
 
@@ -20,6 +20,10 @@ class IdeatorResponse(BaseModel):
     rationale: str
     dsl_hint: Optional[dict] = None
 
+    # §15 additions — fork_from defaults to "baseline" so legacy responses validate.
+    fork_from: Union[str, list[str]] = "baseline"
+    compose_mode: Optional[Literal["pure", "with_edit"]] = None
+
 
 class CoderResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -27,6 +31,9 @@ class CoderResponse(BaseModel):
     tier: Literal["1", "2"]
     dsl_config: dict
     rationale: str
+
+    # §15 addition — Coder sets this on the worktree path; Optional so legacy works.
+    commit_message: Optional[str] = None
 
 
 class AnalystResponse(BaseModel):
