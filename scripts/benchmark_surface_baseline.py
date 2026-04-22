@@ -75,7 +75,7 @@ def main() -> None:
     if args.output:
         out = Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(text)
+        out.write_text(text, encoding="utf-8")
 
 
 if __name__ == "__main__":

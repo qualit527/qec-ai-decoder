@@ -20,6 +20,33 @@ import json
 from pathlib import Path
 
 
+def tier2_validator_rules() -> dict:
+    """Summarise `custom_fn_validator` constraints so the Coder subagent
+    can honour its contract (see .claude/agents/autoqec-coder.md).
+
+    Synthesised from `custom_fn_rules` (torch-free) so this works in lean
+    environments that don't have pytorch installed.
+    """
+    from autoqec.decoders.custom_fn_rules import (
+        ALLOWED_FROM_IMPORTS,
+        ALLOWED_TOP_IMPORTS,
+        FORBIDDEN_NAMES,
+        SLOT_SIGNATURES,
+    )
+
+    return {
+        "slot_signatures": dict(SLOT_SIGNATURES),
+        "allowed_top_imports": sorted(ALLOWED_TOP_IMPORTS),
+        "allowed_from_imports": sorted(ALLOWED_FROM_IMPORTS),
+        "forbidden_names": sorted(FORBIDDEN_NAMES),
+        "output_shape": {
+            "type": "custom",
+            "code": "<python source defining exactly one function with the slot signature>",
+            "params_declared": {"<name>": "<type-hint str>"},
+        },
+    }
+
+
 class RunMemory:
     """L1/L2 bridge. L3 is assembled on the fly when dispatching."""
 
@@ -30,14 +57,15 @@ class RunMemory:
         self.log_path = self.run_dir / "log.md"
         self.pareto_path = self.run_dir / "pareto.json"
         if not self.pareto_path.exists():
-            self.pareto_path.write_text("[]")
+            self.pareto_path.write_text("[]", encoding="utf-8")
 
     # ─── L1 writes ───────────────────────────────────────────────────
 
     def append_round(self, record: dict) -> None:
         """Append one round record to history.jsonl (one JSON object per line)."""
         with self.history_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record, default=str) + "\n")
+            # ensure_ascii=False so Chinese / Δ / other non-ASCII survives
+            f.write(json.dumps(record, default=str, ensure_ascii=False) + "\n")
 
     def append_log(self, md: str) -> None:
         """Append a markdown snippet to the run's narrative log."""
@@ -46,7 +74,10 @@ class RunMemory:
 
     def update_pareto(self, pareto: list[dict]) -> None:
         """Replace the pareto.json file with the given front."""
-        self.pareto_path.write_text(json.dumps(pareto, indent=2))
+        self.pareto_path.write_text(
+            json.dumps(pareto, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     # ─── L2 summary (rebuilt each round from L1) ─────────────────────
 
@@ -58,7 +89,7 @@ class RunMemory:
 
     def l2_snapshot(self, k_last: int = 3) -> dict:
         history = self._load_history()
-        pareto = json.loads(self.pareto_path.read_text() or "[]")
+        pareto = json.loads(self.pareto_path.read_text(encoding="utf-8") or "[]")
         return {
             "rounds_so_far": len(history),
             "pareto": pareto[:5],
@@ -79,7 +110,7 @@ class RunMemory:
         avoid re-proposing killed hypotheses without explicit justification.
         """
         history = self._load_history()
-        pareto = json.loads(self.pareto_path.read_text() or "[]")
+        pareto = json.loads(self.pareto_path.read_text(encoding="utf-8") or "[]")
         last_5 = [
             {
                 "hypothesis": r.get("hypothesis"),
@@ -106,6 +137,7 @@ class RunMemory:
             "hypothesis": hypothesis,
             "dsl_schema": schema_md,
             "best_so_far": best_so_far,
+            "tier2_validator_rules": tier2_validator_rules(),
         }
 
     def l3_for_analyst(
@@ -114,8 +146,11 @@ class RunMemory:
         prev_summary: str,
         pareto: list[dict],
     ) -> dict:
+        # analyst.md declares metrics_path as absolute; resolve() guarantees it
+        # even when the caller passed a relative round_dir.
+        metrics_abs = (Path(round_dir) / "metrics.json").resolve()
         return {
-            "metrics_path": str(Path(round_dir) / "metrics.json"),
+            "metrics_path": str(metrics_abs),
             "previous_summary": prev_summary,
             "pareto_front": pareto,
         }

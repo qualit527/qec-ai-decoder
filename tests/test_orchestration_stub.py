@@ -79,21 +79,40 @@ def test_l3_for_ideator_contains_required_keys(tmp_path: Path) -> None:
     assert ctx["last_5_hypotheses"][-1]["status"] == "killed_by_safety"
 
 
-def test_l3_for_coder_and_analyst(tmp_path: Path) -> None:
+def test_l3_for_coder_includes_tier2_validator_rules(tmp_path: Path) -> None:
+    """Codex review (medium): coder.md declares `tier2_validator_rules` as input,
+    so l3_for_coder must provide it or the subagent cannot honour its own contract."""
     from autoqec.orchestration.memory import RunMemory
 
     mem = RunMemory(tmp_path / "run5")
     coder_ctx = mem.l3_for_coder(
         hypothesis={"hypothesis": "try GNN"}, schema_md="...", best_so_far=[]
     )
-    assert "hypothesis" in coder_ctx and "dsl_schema" in coder_ctx
+    assert {"hypothesis", "dsl_schema", "best_so_far", "tier2_validator_rules"} <= set(coder_ctx)
+    rules = coder_ctx["tier2_validator_rules"]
+    # must tell the Coder the exact slot signatures and the CustomFn object shape
+    assert "slot_signatures" in rules
+    assert rules["slot_signatures"]["message_fn"] == ["x_src", "x_dst", "e_ij", "params"]
+    assert "forbidden_names" in rules and "os" in rules["forbidden_names"]
+    assert "output_shape" in rules and rules["output_shape"]["type"] == "custom"
 
+
+def test_l3_for_analyst_metrics_path_is_absolute(tmp_path: Path) -> None:
+    """Codex review (medium): analyst.md says `metrics_path` is absolute;
+    l3_for_analyst must resolve before serialising, even when given a
+    relative round_dir."""
+    from autoqec.orchestration.memory import RunMemory
+
+    mem = RunMemory(tmp_path / "run5b")
+    # deliberately pass a relative path — this is what triggered the finding
+    relative_round_dir = Path("runs") / "any" / "round_1"
     analyst_ctx = mem.l3_for_analyst(
-        round_dir=tmp_path / "run5" / "round_1",
+        round_dir=relative_round_dir,
         prev_summary="prior summary",
         pareto=[{"round": 1}],
     )
     assert analyst_ctx["metrics_path"].endswith("metrics.json")
+    assert Path(analyst_ctx["metrics_path"]).is_absolute()
     assert analyst_ctx["previous_summary"] == "prior summary"
 
 
@@ -130,6 +149,62 @@ def test_parse_response_errors_when_no_block() -> None:
 
     with pytest.raises(ValueError, match="No JSON block"):
         parse_response("coder", "sorry, no fenced block here")
+
+
+def test_parse_response_enforces_ideator_schema() -> None:
+    """Codex open-question: validate §2.5 shape, not just JSON well-formedness."""
+    from autoqec.agents.dispatch import parse_response
+
+    good = (
+        "```json\n"
+        '{"hypothesis": "h", "expected_delta_ler": 1e-4, '
+        '"expected_cost_s": 10, "rationale": "r"}\n'
+        "```"
+    )
+    parsed = parse_response("ideator", good)
+    assert parsed["hypothesis"] == "h"
+
+    missing_field = '```json\n{"hypothesis": "h"}\n```'
+    with pytest.raises(ValueError, match="ideator response"):
+        parse_response("ideator", missing_field)
+
+
+def test_parse_response_enforces_coder_tier_value() -> None:
+    from autoqec.agents.dispatch import parse_response
+
+    bad_tier = (
+        '```json\n{"tier": "3", "dsl_config": {"type": "gnn"}, "rationale": "r"}\n```'
+    )
+    with pytest.raises(ValueError, match="coder response"):
+        parse_response("coder", bad_tier)
+
+
+def test_parse_response_enforces_analyst_verdict() -> None:
+    from autoqec.agents.dispatch import parse_response
+
+    bad_verdict = (
+        '```json\n{"summary_1line": "s", "verdict": "maybe", '
+        '"next_hypothesis_seed": "x"}\n```'
+    )
+    with pytest.raises(ValueError, match="analyst response"):
+        parse_response("analyst", bad_verdict)
+
+
+# ─── UTF-8 encoding ───────────────────────────────────────────────────
+
+
+def test_run_memory_append_log_roundtrips_utf8(tmp_path: Path) -> None:
+    """Codex review (medium): log.md / jsonl must be UTF-8 on Windows too."""
+    from autoqec.orchestration.memory import RunMemory
+
+    mem = RunMemory(tmp_path / "run_utf8")
+    chinese = "第 1 轮：尝试 GNN 带门控消息 — Δ LER ≈ 5e-5"
+    mem.append_log(chinese)
+    mem.append_round({"round": 1, "note": chinese})
+
+    assert mem.log_path.read_text(encoding="utf-8").strip() == chinese
+    snap = mem.l2_snapshot()
+    assert snap["last_rounds"][-1]["note"] == chinese
 
 
 # ─── Loop skeleton ────────────────────────────────────────────────────

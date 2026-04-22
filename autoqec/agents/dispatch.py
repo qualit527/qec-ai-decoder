@@ -18,6 +18,10 @@ import json
 import re
 from typing import Literal
 
+from pydantic import ValidationError
+
+from autoqec.agents.schemas import ROLE_SCHEMAS
+
 Role = Literal["ideator", "coder", "analyst"]
 
 
@@ -39,10 +43,24 @@ def build_prompt(role: Role, context: dict) -> str:
 _JSON_BLOCK_RE = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
 
 
-def parse_response(role: Role, text: str) -> dict:
-    """Extract the first fenced ```json block from the subagent's response."""
+def parse_response(role: Role, text: str, *, validate: bool = True) -> dict:
+    """Extract the first fenced ```json block from the subagent's response.
+
+    When `validate` is True (default), the block is checked against the
+    per-role pydantic schema in `autoqec.agents.schemas` (see §2.5). Set
+    `validate=False` only in dev tooling where shape drift is expected.
+    """
     match = _JSON_BLOCK_RE.search(text)
     if not match:
         snippet = text[:500].replace("\n", " ⏎ ")
         raise ValueError(f"No JSON block in {role} response: {snippet!r}")
-    return json.loads(match.group(1))
+    payload = json.loads(match.group(1))
+    if validate:
+        schema = ROLE_SCHEMAS.get(role)
+        if schema is None:
+            raise ValueError(f"Unknown role: {role!r}")
+        try:
+            schema.model_validate(payload)
+        except ValidationError as exc:
+            raise ValueError(f"Invalid {role} response payload: {exc}") from exc
+    return payload
