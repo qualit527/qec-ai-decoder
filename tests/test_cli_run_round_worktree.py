@@ -104,6 +104,127 @@ def test_run_round_internal_flag_skips_subprocess_dispatch(tmp_path):
     assert result.exit_code == 0, result.output
 
 
+def test_fork_from_malformed_json_is_bad_parameter(tmp_path):
+    """Broken JSON in --fork-from must surface as click.BadParameter, not JSONDecodeError."""
+    import click
+    import sys
+    import types
+
+    from cli.autoqec import run_round_cmd
+    from autoqec.runner.schema import RoundMetrics
+
+    env_yaml = str(Path("autoqec/envs/builtin/surface_d5_depol.yaml").absolute())
+    cfg_yaml_path = tmp_path / "cfg.yaml"
+    cfg_yaml_path.write_text("type: gnn\noutput_mode: soft_priors\n")
+    round_dir = str(tmp_path / "round_1")
+
+    fake_metrics = RoundMetrics(status="ok", ler_plain_classical=1e-3, ler_predecoder=5e-4, delta_ler=5e-4)
+    fake_runner_mod = types.ModuleType("autoqec.runner.runner")
+    fake_runner_mod.run_round = lambda *_a, **_kw: fake_metrics
+    original = sys.modules.get("autoqec.runner.runner")
+    sys.modules["autoqec.runner.runner"] = fake_runner_mod
+
+    try:
+        cli_runner = CliRunner()
+        result = cli_runner.invoke(
+            run_round_cmd,
+            [
+                env_yaml, str(cfg_yaml_path), round_dir,
+                "--fork-from", "[malformed",
+            ],
+            catch_exceptions=True,
+        )
+    finally:
+        if original is not None:
+            sys.modules["autoqec.runner.runner"] = original
+        else:
+            sys.modules.pop("autoqec.runner.runner", None)
+
+    assert result.exit_code != 0
+    # BadParameter surfaces to the user with a friendly message, not a raw trace.
+    assert isinstance(result.exception, (click.BadParameter, SystemExit)), type(result.exception)
+    combined = (result.output or "") + (str(result.exception) if result.exception else "")
+    assert "fork-from" in combined.lower() or "json" in combined.lower()
+
+
+def test_fork_from_json_list_non_strings_rejected(tmp_path):
+    """--fork-from JSON must be a list of strings."""
+    import click
+    import sys
+    import types
+
+    from cli.autoqec import run_round_cmd
+    from autoqec.runner.schema import RoundMetrics
+
+    env_yaml = str(Path("autoqec/envs/builtin/surface_d5_depol.yaml").absolute())
+    cfg_yaml_path = tmp_path / "cfg.yaml"
+    cfg_yaml_path.write_text("type: gnn\noutput_mode: soft_priors\n")
+    round_dir = str(tmp_path / "round_1")
+
+    fake_metrics = RoundMetrics(status="ok", ler_plain_classical=1e-3, ler_predecoder=5e-4, delta_ler=5e-4)
+    fake_runner_mod = types.ModuleType("autoqec.runner.runner")
+    fake_runner_mod.run_round = lambda *_a, **_kw: fake_metrics
+    original = sys.modules.get("autoqec.runner.runner")
+    sys.modules["autoqec.runner.runner"] = fake_runner_mod
+
+    try:
+        cli_runner = CliRunner()
+        result = cli_runner.invoke(
+            run_round_cmd,
+            [env_yaml, str(cfg_yaml_path), round_dir, "--fork-from", "[1,2]"],
+            catch_exceptions=True,
+        )
+    finally:
+        if original is not None:
+            sys.modules["autoqec.runner.runner"] = original
+        else:
+            sys.modules.pop("autoqec.runner.runner", None)
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, (click.BadParameter, SystemExit))
+
+
+def test_fork_from_valid_json_list_parses(tmp_path):
+    """A well-formed JSON list of strings parses without error."""
+    import sys
+    import types
+
+    from cli.autoqec import run_round_cmd
+    from autoqec.runner.schema import RoundMetrics
+
+    env_yaml = str(Path("autoqec/envs/builtin/surface_d5_depol.yaml").absolute())
+    cfg_yaml_path = tmp_path / "cfg.yaml"
+    cfg_yaml_path.write_text("type: gnn\noutput_mode: soft_priors\n")
+    round_dir = str(tmp_path / "round_1")
+
+    fake_metrics = RoundMetrics(
+        status="ok", ler_plain_classical=1e-3, ler_predecoder=5e-4, delta_ler=5e-4,
+    )
+    fake_runner_mod = types.ModuleType("autoqec.runner.runner")
+    fake_runner_mod.run_round = lambda *_a, **_kw: fake_metrics
+    original = sys.modules.get("autoqec.runner.runner")
+    sys.modules["autoqec.runner.runner"] = fake_runner_mod
+
+    try:
+        cli_runner = CliRunner()
+        result = cli_runner.invoke(
+            run_round_cmd,
+            [
+                env_yaml, str(cfg_yaml_path), round_dir,
+                "--fork-from", '["exp/a", "exp/b"]',
+                "--compose-mode", "pure",
+            ],
+            catch_exceptions=False,
+        )
+    finally:
+        if original is not None:
+            sys.modules["autoqec.runner.runner"] = original
+        else:
+            sys.modules.pop("autoqec.runner.runner", None)
+
+    assert result.exit_code == 0, result.output
+
+
 def test_subprocess_runner_injects_internal_flag(tmp_path):
     """The argv emitted by run_round_in_subprocess must carry the guard flag."""
     from autoqec.orchestration import subprocess_runner

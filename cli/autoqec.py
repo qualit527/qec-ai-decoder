@@ -79,9 +79,22 @@ def run_round_cmd(
     # Parse fork_from: JSON list -> list[str]; bare string -> str.
     parsed_fork_from: str | list[str] | None = None
     if fork_from is not None:
-        parsed_fork_from = (
-            json.loads(fork_from) if fork_from.strip().startswith("[") else fork_from
-        )
+        if fork_from.strip().startswith("["):
+            try:
+                parsed = json.loads(fork_from)
+            except json.JSONDecodeError as e:
+                raise click.BadParameter(
+                    f"--fork-from looks like JSON but failed to parse: {e}"
+                ) from e
+            if not isinstance(parsed, list) or not all(
+                isinstance(x, str) for x in parsed
+            ):
+                raise click.BadParameter(
+                    "--fork-from JSON must be a list of strings"
+                )
+            parsed_fork_from = parsed
+        else:
+            parsed_fork_from = fork_from
 
     cfg = RunnerConfig(
         env_name=env.name,
