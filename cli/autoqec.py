@@ -9,7 +9,6 @@ import click
 import yaml
 
 from autoqec.envs.schema import EnvSpec, load_env_yaml
-from autoqec.runner.runner import run_round
 from autoqec.runner.schema import RunnerConfig
 
 
@@ -23,18 +22,103 @@ def main() -> None:
 @click.argument("config_yaml")
 @click.argument("round_dir")
 @click.option("--profile", type=click.Choice(["dev", "prod"]), default="dev")
-def run_round_cmd(env_yaml: str, config_yaml: str, round_dir: str, profile: str) -> None:
+@click.option(
+    "--code-cwd",
+    default=None,
+    help="Absolute path to a worktree checkout; when set, Runner runs in that cwd",
+)
+@click.option(
+    "--branch",
+    default=None,
+    help="Branch name (exp/<run_id>/<N>-<slug>); required when --code-cwd is set",
+)
+@click.option(
+    "--fork-from",
+    default=None,
+    help='Parent branch name, or JSON list like \'["exp/.../a", "exp/.../b"]\' for compose rounds',
+)
+@click.option(
+    "--compose-mode",
+    type=click.Choice(["pure", "with_edit"]),
+    default=None,
+    help="Required when --fork-from is a list",
+)
+@click.option(
+    "--round-attempt-id",
+    default=None,
+    help="UUID minted at Ideator emit-time; required on the worktree path",
+)
+@click.option(
+    "--_internal-execute-locally",
+    "_internal_execute_locally",
+    is_flag=True,
+    default=False,
+    hidden=True,
+    help=(
+        "Internal: skip subprocess dispatch and run in-process even when "
+        "--code-cwd is set. subprocess_runner sets this on the child argv "
+        "to prevent run_round_cmd from re-entering itself."
+    ),
+)
+def run_round_cmd(
+    env_yaml: str,
+    config_yaml: str,
+    round_dir: str,
+    profile: str,
+    code_cwd: str | None,
+    branch: str | None,
+    fork_from: str | None,
+    compose_mode: str | None,
+    round_attempt_id: str | None,
+    _internal_execute_locally: bool,
+) -> None:
     env = load_env_yaml(env_yaml)
     with open(config_yaml) as f:
         cfg_dict = yaml.safe_load(f)
+
+    # Parse fork_from: JSON list -> list[str]; bare string -> str.
+    parsed_fork_from: str | list[str] | None = None
+    if fork_from is not None:
+        if fork_from.strip().startswith("["):
+            try:
+                parsed = json.loads(fork_from)
+            except json.JSONDecodeError as e:
+                raise click.BadParameter(
+                    f"--fork-from looks like JSON but failed to parse: {e}"
+                ) from e
+            if not isinstance(parsed, list) or not all(
+                isinstance(x, str) for x in parsed
+            ):
+                raise click.BadParameter(
+                    "--fork-from JSON must be a list of strings"
+                )
+            parsed_fork_from = parsed
+        else:
+            parsed_fork_from = fork_from
+
     cfg = RunnerConfig(
         env_name=env.name,
         predecoder_config=cfg_dict,
         training_profile=profile,
         seed=0,
         round_dir=round_dir,
+        code_cwd=code_cwd,
+        branch=branch,
+        fork_from=parsed_fork_from,
+        compose_mode=compose_mode,
     )
-    metrics = run_round(cfg, env)
+
+    # Worktree-path runs go through subprocess_runner; in-process runs use the legacy Runner.
+    # --_internal-execute-locally is the recursion guard: when subprocess_runner spawns us,
+    # it sets this flag so this branch collapses back to the in-process Runner.
+    if code_cwd is not None and not _internal_execute_locally:
+        from autoqec.orchestration.subprocess_runner import run_round_in_subprocess
+
+        metrics = run_round_in_subprocess(cfg, env, round_attempt_id=round_attempt_id)
+    else:
+        from autoqec.runner.runner import run_round
+
+        metrics = run_round(cfg, env)
     click.echo(metrics.model_dump_json(indent=2))
 
 
@@ -44,6 +128,8 @@ def run_round_cmd(env_yaml: str, config_yaml: str, round_dir: str, profile: str)
 @click.option("--profile", type=click.Choice(["dev", "prod"]), default="dev")
 @click.option("--no-llm", is_flag=True, help="Pick random seed templates instead of calling subagents")
 def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
+    from autoqec.runner.runner import run_round
+
     env = load_env_yaml(env_yaml)
     run_id = time.strftime("%Y%m%d-%H%M%S")
     run_dir = Path("runs") / run_id

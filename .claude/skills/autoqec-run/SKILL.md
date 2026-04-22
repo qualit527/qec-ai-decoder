@@ -130,6 +130,30 @@ print(json.dumps(parsed))
 If validation fails, re-dispatch once with the pydantic error as
 feedback. Give up after one retry.
 
+## Fork-from decision (§15.2)
+
+After the Ideator responds, read its `fork_from` field:
+
+| `fork_from` value | Action |
+|---|---|
+| `"baseline"` | Call `create_round_worktree(repo_root, run_id, N, slug, fork_from="main")`. |
+| `"exp/<run_id>/<M>-<slug>"` (string) | Call `create_round_worktree(..., fork_from=<that branch name>)`. |
+| list of ≥2 branch names | **Compose round**: call `create_compose_worktree(repo_root, run_id, N, slug, parents=<list>)`. If it returns `status="compose_conflict"`: write a `history.jsonl` row via `record_round` with `status=compose_conflict`, `round_attempt_id=<UUID>`, `conflicting_files=<list>`, and skip to the next round (no Runner invocation). |
+
+Mint `round_attempt_id` as `str(uuid.uuid4())` **before** calling the Ideator prompt is assembled, and pass it through every subsequent call (Coder prompt, Runner subprocess, Analyst prompt, record_round).
+
+## Runner invocation (worktree path)
+
+Use `subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id=<uuid>)` with:
+- `cfg.code_cwd = <worktree_dir>` (from the worktree plan dict)
+- `cfg.branch = <branch>` (from the plan)
+- `cfg.fork_from = <Ideator's fork_from value>`
+- `cfg.compose_mode = <Ideator's compose_mode>` (only for compose rounds)
+
+On success (metrics.status == "ok"), the subprocess has already committed the pointer file in the worktree. Proceed to Analyst dispatch.
+
+On `status=compose_conflict` or any non-ok status, call `cleanup_round_worktree` (removes the checkout; branch persists unless it was a compose_conflict, in which case `create_compose_worktree` already deleted the branch).
+
 ### 6. Write `round_<N>/config.yaml` and invoke the Runner
 
 ```bash
@@ -151,8 +175,9 @@ need it for the Analyst.
 
 **If `metrics.status != "ok"`**, skip the Analyst for this round. Do not
 call `build_analyst_prompt` or dispatch the `autoqec-analyst` subagent.
-Pass `summary_1line=None` to `record_round()` at step 9; it will
-synthesise a fallback summary from `metrics.status` / `status_reason`.
+Call `record_round()` at step 9 with only `round_metrics=<metrics>` (omit
+`verify_verdict`); the recorder synthesises a fallback summary from
+`metrics.status` / `status_reason`.
 
 ### 7. Build the Analyst prompt (only if `metrics.status == "ok"`)
 
@@ -182,23 +207,22 @@ payload = json.loads(sys.stdin.read())
 mem = RunMemory('runs/<run_id>')
 row = record_round(
     mem=mem,
-    round_idx=payload['round_idx'],
-    hypothesis=payload['hypothesis'],
-    dsl_config=payload['dsl_config'],
-    metrics=payload['metrics'],
-    verdict=payload['verdict'],
-    summary_1line=payload.get('summary_1line'),  # None on runner-failure path
+    round_metrics=payload['round_metrics'],
+    verify_verdict=payload.get('verify_verdict'),  # 'VERIFIED' | 'FAILED' | None
 )
 print(json.dumps(row['summary_1line']))
 "
 ```
 
-Pipe one JSON object on stdin with keys: `round_idx`, `hypothesis`,
-`dsl_config`, `metrics`, `verdict`, `summary_1line` (may be `null` on
-the runner-failure path — the recorder synthesises a fallback).
+Pipe one JSON object on stdin with keys: `round_metrics` (the full
+`RoundMetrics` dict including `branch`, `commit_sha`, `fork_from`,
+`round_attempt_id`, `status`, `status_reason`, etc.) and optional
+`verify_verdict` (`"VERIFIED"` / `"FAILED"` / `None`). The recorder
+synthesises a fallback `summary_1line` on the runner-failure path.
 
 This writes the round to `history.jsonl`, appends to `log.md`, and
-refreshes `pareto.json` (top-5 by Δ LER, candidates only).
+refreshes `pareto.json` (full non-dominated archive) alongside
+`pareto_preview.json` (top-5 projection for humans).
 
 ### 10. Loop or stop
 
@@ -217,13 +241,21 @@ Run complete. Path: runs/<run_id>/
 - **Malformed subagent response** — `parse_response` raises with the
   pydantic error in the message. Retry once with that error appended to
   the prompt; give up after a second failure.
-- **Runner `compile_error`** — record the round with `verdict="ignore"`
-  and `summary_1line=None`; surface the `status_reason` in the chat;
+- **Runner `compile_error`** — call `record_round(mem, round_metrics=<metrics>)`
+  without `verify_verdict`; surface the `status_reason` in the chat;
   continue.
 - **Runner `killed_by_safety`** — same as compile_error; the recorder's
   fallback summary shows which safety fired.
 - **3 consecutive ignored rounds** — halt and ask the user to inspect;
   likely a DSL schema drift or Runner regression.
+
+## Compose conflict handling (§15.6.3)
+
+If a compose round returns `status="compose_conflict"`:
+- `record_round` writes the `compose_conflict` row BEFORE any cleanup
+- The synthetic branch is already deleted by `create_compose_worktree`
+- Ideator on the next round will see the `FAILED_compose` node in `fork_graph` and must not re-propose the same `fork_from_canonical` set
+- Do NOT invoke `/verify-decoder` for compose_conflict rounds — there's no checkpoint
 
 ## Tool-use rules
 

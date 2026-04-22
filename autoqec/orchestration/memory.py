@@ -103,26 +103,25 @@ class RunMemory:
         env_spec: dict,
         kb_excerpt: str,
         machine_state: dict,
+        run_id: str | None = None,
     ) -> dict:
-        """Assemble the Ideator context.
+        """Assemble the Ideator context including the full fork_graph (§15.4).
 
-        `last_5_hypotheses` carries status + delta_ler so the Ideator can
-        avoid re-proposing killed hypotheses without explicit justification.
+        The fork_graph replaces the previous `last_5_hypotheses` + `pareto_front`
+        shape. It gives the Ideator a branch-aware view of the run so it can
+        steer forks deliberately (pick a parent, see what worked on each
+        branch, avoid dead ends).
         """
+        from autoqec.orchestration.fork_graph import build_fork_graph
+
         history = self._load_history()
         pareto = json.loads(self.pareto_path.read_text(encoding="utf-8") or "[]")
-        last_5 = [
-            {
-                "hypothesis": r.get("hypothesis"),
-                "status": r.get("status"),
-                "delta_ler": r.get("delta_ler"),
-            }
-            for r in history[-5:]
-        ]
+        fork_graph = build_fork_graph(
+            history=history, pareto=pareto, run_id=run_id or ""
+        )
         return {
             "env_spec": env_spec,
-            "pareto_front": pareto[:5],
-            "last_5_hypotheses": last_5,
+            "fork_graph": fork_graph,
             "knowledge_excerpts": kb_excerpt,
             "machine_state_hint": machine_state,
         }

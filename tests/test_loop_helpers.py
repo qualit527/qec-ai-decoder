@@ -32,6 +32,36 @@ def test_build_coder_prompt_contains_hypothesis_and_rules(tmp_path: Path) -> Non
     assert "sentinel-CA7E5F" in prompt
 
 
+def test_run_round_plan_threads_fork_from(tmp_path: Path) -> None:
+    from autoqec.envs.schema import (
+        CodeSpec,
+        ConstraintsSpec,
+        EnvSpec,
+        NoiseSpec,
+        SeedPolicy,
+    )
+    from autoqec.orchestration.loop import run_round_plan
+
+    env = EnvSpec(
+        name="test",
+        code=CodeSpec(type="stim_circuit", source="circuits/surface_d5.stim"),
+        noise=NoiseSpec(type="depolarizing", p=[1e-3], seed_policy=SeedPolicy()),
+        constraints=ConstraintsSpec(),
+        baseline_decoders=["pymatching"],
+        classical_backend="mwpm",
+    )
+    plan = run_round_plan(
+        env_spec=env,
+        run_dir=tmp_path,
+        round_idx=1,
+        machine_state={"gpu": {}},
+        kb_excerpt="",
+        dsl_schema_md="",
+        fork_from="exp/t/02-a",  # NEW param
+    )
+    assert plan["fork_from"] == "exp/t/02-a"
+
+
 def test_build_analyst_prompt_has_absolute_metrics_path(tmp_path: Path) -> None:
     from autoqec.orchestration.loop import build_analyst_prompt
     from autoqec.orchestration.memory import RunMemory
