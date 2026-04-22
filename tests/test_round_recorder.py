@@ -3,7 +3,8 @@
 The recorder now takes a single `round_metrics` dict (flattened row shape
 matching `RoundMetrics` plus the superset fields from §15.7) and a
 separate `verify_verdict` gate — "VERIFIED" is the only value that admits
-the row into the Pareto archive.
+the row into the Pareto archive. Per §15.2/§15.7 Pareto rows are built
+from BOTH RoundMetrics (cost/provenance) AND VerifyReport (holdout quality).
 """
 from __future__ import annotations
 
@@ -15,11 +16,15 @@ from autoqec.orchestration.round_recorder import record_round
 
 
 def _admit(mem: RunMemory, **overrides) -> None:
-    """Helper: simulate a VERIFIED candidate admission."""
+    """Helper: simulate a VERIFIED candidate admission (full superset row).
+
+    Populates both the RoundMetrics-side cost/provenance fields AND a
+    fabricated VerifyReport-side payload so Pareto admission works under
+    the §15.2/§15.7 contract.
+    """
     base = {
         "status": "ok",
         "hypothesis": "h",
-        "verdict": "candidate",
         "delta_ler": 1e-4,
         "flops_per_syndrome": 100_000,
         "n_params": 50_000,
@@ -30,7 +35,22 @@ def _admit(mem: RunMemory, **overrides) -> None:
         "round_attempt_id": None,
     }
     base.update(overrides)
-    record_round(mem, round_metrics=base, verify_verdict="VERIFIED")
+    # Default VerifyReport mirrors delta_ler into holdout space unless overridden.
+    holdout_delta = overrides.pop("delta_vs_baseline_holdout", base.get("delta_ler"))
+    verify_report = {
+        "verdict": "VERIFIED",
+        "delta_vs_baseline_holdout": holdout_delta,
+        "ler_holdout": overrides.get("ler_holdout", 5e-4),
+        "paired_eval_bundle_id": overrides.get(
+            "paired_eval_bundle_id", "bundle-default"
+        ),
+    }
+    record_round(
+        mem,
+        round_metrics=base,
+        verify_verdict="VERIFIED",
+        verify_report=verify_report,
+    )
 
 
 # ─── §15.2 non-dominated Pareto tests ────────────────────────────────────
@@ -38,6 +58,7 @@ def _admit(mem: RunMemory, **overrides) -> None:
 
 def test_pareto_keeps_dominated_points_no_more(tmp_path: Path) -> None:
     # Three points: a and b are non-dominated, c is dominated by a.
+    # Holdout delta mirrors training delta_ler via the _admit helper default.
     mem = RunMemory(tmp_path)
     _admit(mem, round=1, delta_ler=4e-4, flops_per_syndrome=200_000, n_params=40_000,
            branch="exp/t/01-a", commit_sha="a1", round_attempt_id="u1")
@@ -68,7 +89,8 @@ def test_pareto_has_no_size_cap(tmp_path: Path) -> None:
     assert len(pareto) == 7  # no truncation to 5
 
 
-def test_pareto_preview_is_top_5_by_delta(tmp_path: Path) -> None:
+def test_pareto_preview_is_top_5_by_holdout_delta(tmp_path: Path) -> None:
+    """Preview sort key is -delta_vs_baseline_holdout per §15.7."""
     mem = RunMemory(tmp_path)
     for i in range(7):
         _admit(
@@ -83,8 +105,132 @@ def test_pareto_preview_is_top_5_by_delta(tmp_path: Path) -> None:
         )
     preview = json.loads((tmp_path / "pareto_preview.json").read_text())
     assert len(preview) == 5
-    deltas = [row["delta_ler"] for row in preview]
-    assert deltas == sorted(deltas, reverse=True)
+    holdout_deltas = [row["delta_vs_baseline_holdout"] for row in preview]
+    assert holdout_deltas == sorted(holdout_deltas, reverse=True)
+
+
+# ─── Fix 2 — Pareto uses VerifyReport holdout fields, not training delta ──
+
+
+def test_pareto_row_uses_verify_report_holdout_delta(tmp_path: Path) -> None:
+    """Row's delta_vs_baseline_holdout comes from verify_report, not round_metrics."""
+    mem = RunMemory(tmp_path)
+    round_metrics = {
+        "round": 1,
+        "status": "ok",
+        "hypothesis": "h",
+        "delta_ler": 9e-4,  # training-side — must NOT be used for Pareto axis
+        "flops_per_syndrome": 100_000,
+        "n_params": 50_000,
+        "branch": "exp/t/01-a",
+        "commit_sha": "sha_a",
+        "round_attempt_id": "u1",
+    }
+    verify_report = {
+        "verdict": "VERIFIED",
+        "delta_vs_baseline_holdout": 3e-4,  # holdout-side — this is what counts
+        "ler_holdout": 4e-4,
+        "paired_eval_bundle_id": "bundle-1",
+    }
+    record_round(
+        mem,
+        round_metrics=round_metrics,
+        verify_verdict="VERIFIED",
+        verify_report=verify_report,
+    )
+    pareto = json.loads((tmp_path / "pareto.json").read_text())
+    assert len(pareto) == 1
+    row = pareto[0]
+    assert row["delta_vs_baseline_holdout"] == 3e-4
+    assert row["paired_eval_bundle_id"] == "bundle-1"
+    assert row["verdict"] == "VERIFIED"
+    assert row["ler_holdout"] == 4e-4
+
+
+def test_pareto_dominance_uses_holdout_not_training_delta(tmp_path: Path) -> None:
+    """Training delta inverts under holdout — dominance must rank on holdout."""
+    mem = RunMemory(tmp_path)
+    # Point A: high training delta, low holdout delta (worse in the space that matters).
+    record_round(
+        mem,
+        round_metrics={
+            "round": 1, "status": "ok", "hypothesis": "a",
+            "delta_ler": 9e-4, "flops_per_syndrome": 100_000, "n_params": 50_000,
+            "branch": "exp/t/01-a", "commit_sha": "sha_a", "round_attempt_id": "u1",
+        },
+        verify_verdict="VERIFIED",
+        verify_report={
+            "verdict": "VERIFIED", "delta_vs_baseline_holdout": 1e-4,
+            "ler_holdout": 5e-4, "paired_eval_bundle_id": "b1",
+        },
+    )
+    # Point B: low training delta, HIGH holdout delta (dominates A on every axis).
+    record_round(
+        mem,
+        round_metrics={
+            "round": 2, "status": "ok", "hypothesis": "b",
+            "delta_ler": 1e-4, "flops_per_syndrome": 50_000, "n_params": 20_000,
+            "branch": "exp/t/02-b", "commit_sha": "sha_b", "round_attempt_id": "u2",
+        },
+        verify_verdict="VERIFIED",
+        verify_report={
+            "verdict": "VERIFIED", "delta_vs_baseline_holdout": 9e-4,
+            "ler_holdout": 3e-4, "paired_eval_bundle_id": "b2",
+        },
+    )
+    pareto = json.loads((tmp_path / "pareto.json").read_text())
+    branches = {r["branch"] for r in pareto}
+    # Under holdout dominance, B dominates A → only B survives.
+    # Under training-delta dominance (the bug), A and B would both be kept.
+    assert branches == {"exp/t/02-b"}
+
+
+def test_pareto_skips_verified_round_without_verify_report(tmp_path: Path) -> None:
+    """VERIFIED verdict without verify_report cannot be admitted — no holdout axis."""
+    mem = RunMemory(tmp_path)
+    record_round(
+        mem,
+        round_metrics={
+            "round": 1, "status": "ok", "hypothesis": "h",
+            "delta_ler": 1e-4, "flops_per_syndrome": 100_000, "n_params": 50_000,
+            "branch": "exp/t/01-a", "commit_sha": "sha_a", "round_attempt_id": "u1",
+        },
+        verify_verdict="VERIFIED",
+        verify_report=None,
+    )
+    # History row was still written.
+    history_rows = (tmp_path / "history.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(history_rows) == 1
+    # But Pareto was skipped because there's no holdout delta to compare.
+    pareto = json.loads((tmp_path / "pareto.json").read_text())
+    assert pareto == []
+
+
+def test_pareto_row_contains_worktree_provenance_fields(tmp_path: Path) -> None:
+    """§15.7 superset: row must carry compose_mode, fork_from_ordered, etc."""
+    mem = RunMemory(tmp_path)
+    record_round(
+        mem,
+        round_metrics={
+            "round": 1, "status": "ok", "hypothesis": "h",
+            "delta_ler": 1e-4, "flops_per_syndrome": 100_000, "n_params": 50_000,
+            "branch": "exp/t/05-compose", "commit_sha": "sha_c",
+            "round_attempt_id": "u5",
+            "fork_from": ["exp/t/02-a", "exp/t/03-b"],
+            "fork_from_ordered": ["exp/t/02-a", "exp/t/03-b"],
+            "compose_mode": "pure",
+        },
+        verify_verdict="VERIFIED",
+        verify_report={
+            "verdict": "VERIFIED", "delta_vs_baseline_holdout": 5e-4,
+            "ler_holdout": 4e-4, "paired_eval_bundle_id": "b5",
+        },
+    )
+    pareto = json.loads((tmp_path / "pareto.json").read_text())
+    row = pareto[0]
+    assert row["compose_mode"] == "pure"
+    assert row["fork_from"] == ["exp/t/02-a", "exp/t/03-b"]
+    assert row["fork_from_ordered"] == ["exp/t/02-a", "exp/t/03-b"]
 
 
 # ─── Regression tests for history/log/verdict-gating ────────────────────
