@@ -36,9 +36,9 @@ The classical backend guarantees structural validity; the predecoder contributes
 
 | Owner | Model binding | Primary responsibility | Plan file |
 |---|---|---|---|
-| **陈嘉汉 (team leader / repo maintainer)** | Claude Code | Orchestration + `surface_d5` env bring-up + `/autoqec-run` + `/add-env` + Demo 1 | [`person-a-chen.md`](docs/superpowers/plans/2026-04-21-autoqec-person-a-chen.md) |
-| **谢金谷** | GLM | `independent_eval` + `bb72` qLDPC benchmarking + 3 audit/triage skills + Demo 4 & 5 | [`person-b-xie.md`](docs/superpowers/plans/2026-04-21-autoqec-person-b-xie.md) |
-| **林腾祥** | Codex | DSL + Runner + predecoder templates + Makefile + Demo 2 | [`person-c-lin.md`](docs/superpowers/plans/2026-04-21-autoqec-person-c-lin.md) |
+| **Chen Jiahan (team leader / repo maintainer)** | Claude Code | Orchestration + `surface_d5` env bring-up + `/autoqec-run` + `/add-env` + Demo 1 | [`person-a-chen.md`](docs/superpowers/plans/2026-04-21-autoqec-person-a-chen.md) |
+| **Xie Jingu** | GLM | `independent_eval` + `bb72` qLDPC benchmarking + 3 audit/triage skills + Demo 4 & 5 | [`person-b-xie.md`](docs/superpowers/plans/2026-04-21-autoqec-person-b-xie.md) |
+| **Lin Tengxiang** | Codex | DSL + Runner + predecoder templates + Makefile + Demo 2 | [`person-c-lin.md`](docs/superpowers/plans/2026-04-21-autoqec-person-c-lin.md) |
 
 Phase-0 contract file (once created): `docs/contracts/interfaces.md` — edits require 3-of-3 owner sign-off.
 
@@ -48,41 +48,41 @@ Phase-0 contract file (once created): `docs/contracts/interfaces.md` — edits r
 
 | # | Feature | Owner | Status |
 |---|---|---|---|
-| **F1** | End-to-end research loop over any `(code, noise, constraints)` triple | 陈嘉汉 | planned |
-| **F2** | Tier-1 canonical DSL + Tier-2 `custom_fn` escape hatch with AST+smoke validation | 林腾祥 | planned |
-| **F3** | Independent verification module with 3 fair-baseline guards (seed isolation, bootstrap CI, ablation sanity) | 谢金谷 | planned |
-| **F4** | Multi-agent orchestration (Ideator / Coder / Analyst) with tool whitelisting + 3-layer memory + `machine_state` tool | 陈嘉汉 | planned |
-| **F5** | Pareto-front maintenance across (Δ_LER, FLOPs, n_params) with verify-admitted candidates | 谢金谷 | planned |
+| **F1** | End-to-end research loop over any `(code, noise, constraints)` triple | Chen Jiahan | planned |
+| **F2** | Tier-1 canonical DSL + Tier-2 `custom_fn` escape hatch with AST+smoke validation | Lin Tengxiang | planned |
+| **F3** | Independent verification module with 3 fair-baseline guards (seed isolation, bootstrap CI, ablation sanity) | Xie Jingu | planned |
+| **F4** | Multi-agent orchestration (Ideator / Coder / Analyst) with tool whitelisting + 3-layer memory + `machine_state` tool | Chen Jiahan | planned |
+| **F5** | Pareto-front maintenance across (Δ_LER, FLOPs, n_params) with verify-admitted candidates | Xie Jingu | planned |
 
 ### 5 Demos (each produces a reproducible artifact)
 
 | # | Demo | Proves | Owner | Priority |
 |---|---|---|---|---|
-| **D1** | `surface_d5` full research run | End-to-end harness works | 陈嘉汉 | **P0** |
-| **D2** | `bb72` qLDPC research run | Genericity across codes / backends | 林腾祥 | P1 |
-| **D3** | `/add-env` onboarding | Non-coder can add environments | 陈嘉汉 | P2 |
-| **D4** | Reward-hacking detection | Memorizer cheater gets `FAILED` verdict | 谢金谷 | **P0** |
-| **D5** | Failure recovery | `/diagnose-failure` identifies broken-config root cause | 谢金谷 | P2 |
+| **D1** | `surface_d5` full research run | End-to-end harness works | Chen Jiahan | **P0** |
+| **D2** | `bb72` qLDPC research run | Genericity across codes / backends | Lin Tengxiang | P1 |
+| **D3** | `/add-env` onboarding | Non-coder can add environments | Chen Jiahan | P2 |
+| **D4** | Reward-hacking detection | Memorizer cheater gets `FAILED` verdict | Xie Jingu | **P0** |
+| **D5** | Failure recovery | `/diagnose-failure` identifies broken-config root cause | Xie Jingu | P2 |
 
 ### 5 Skills (LLM-reasoning user surfaces, exposed as `/<name>`)
 
 | # | Skill | Purpose | Owner |
 |---|---|---|---|
-| **S1** | `/autoqec-run` | Run the full research loop on an env YAML | 陈嘉汉 |
-| **S2** | `/add-env` | Interactively create a new env YAML | 陈嘉汉 |
-| **S3** | `/verify-decoder` | Audit a Pareto candidate against holdout seeds | 谢金谷 |
-| **S4** | `/review-log` | Read an entire research notebook, flag stuck hypotheses / overfitting | 谢金谷 |
-| **S5** | `/diagnose-failure` | Root-cause a broken or stalled round, recommend a fix | 谢金谷 |
+| **S1** | `/autoqec-run` | Run the full research loop on an env YAML | Chen Jiahan |
+| **S2** | `/add-env` | Interactively create a new env YAML | Chen Jiahan |
+| **S3** | `/verify-decoder` | Audit a Pareto candidate against holdout seeds | Xie Jingu |
+| **S4** | `/review-log` | Read an entire research notebook, flag stuck hypotheses / overfitting | Xie Jingu |
+| **S5** | `/diagnose-failure` | Root-cause a broken or stalled round, recommend a fix | Xie Jingu |
 
 ## Day-1 first PR — substantive vertical slices
 
-Every member submits **one meaningful PR** via their bound agent (Claude Code / GLM / Codex) on Day 1. Team leader **陈嘉汉** verifies and merges. Each PR delivers a usable system increment (not just a schema), so by end of Day 1 the team has **baseline + verifier + GNN factory** — the three pillars.
+Every member submits **one meaningful PR** via their bound agent (Claude Code / GLM / Codex) on Day 1. Team leader **Chen Jiahan** verifies and merges. Each PR delivers a usable system increment (not just a schema), so by end of Day 1 the team has **baseline + verifier + GNN factory** — the three pillars.
 
 | Owner | Task | Deliverables | PR size | Plan reference |
 |---|---|---|---|---|
-| **陈嘉汉** (leader) | **Scaffold + `surface_d5` baseline end-to-end**. Everything needed to say "here's the classical LER we beat": package tree, `pyproject.toml`, CLI stubs, Stim circuit generator, env YAML, PyMatching baseline wrapper, tests. | `autoqec/` package dirs, `pyproject.toml`, `cli/autoqec.py`, `autoqec/envs/schema.py` (EnvSpec), `scripts/generate_surface_circuit.py`, `circuits/surface_d5.stim`, `autoqec/envs/builtin/surface_d5_depol.yaml`, `autoqec/decoders/baselines/pymatching_wrap.py`, `tests/test_surface_circuit.py`, `tests/test_pymatching_baseline.py` | ~400 LOC | [master M0.3](docs/superpowers/plans/2026-04-21-autoqec-master.md#task-m03-create-skeleton-autoqec-package) + [A1.1–A1.3](docs/superpowers/plans/2026-04-21-autoqec-person-a-chen.md#task-a11-generate-surface_d5-stim-circuit--save-circuitssurface_d5stim) |
-| **谢金谷** | **`independent_eval` with 3 fair-baseline guards + reward-hacking probe**. The publishability gate: seed isolation, bootstrap 95% CI, ablation sanity. Plus a hand-crafted Memorizer cheater whose verdict test confirms the guards fire. | `autoqec/eval/schema.py` (VerifyReport), `autoqec/eval/bootstrap.py`, `autoqec/eval/independent_eval.py`, `autoqec/cheaters/memorize.py`, `tests/test_bootstrap.py`, `tests/test_independent_eval.py`, `tests/test_isolation_rule.py` (CI lint blocking `from autoqec.runner` imports), `tests/test_reward_hacking.py` | ~300 LOC | [person-b B0.1–B1.3, B1.6](docs/superpowers/plans/2026-04-21-autoqec-person-b-xie.md#task-b01-draft-verifyreport-schema) |
-| **林腾祥** | **DSL (schema + compiler) + BipartiteGNN module + 3 GNN seed templates**. The neural-predecoder core: feed YAML → get trainable `nn.Module`. Completes the `compile_predecoder(cfg, n_var, n_check)` path end-to-end. | `autoqec/runner/schema.py` (RunnerConfig + RoundMetrics), `autoqec/decoders/modules/base.py` (PredecoderBase), `autoqec/decoders/dsl_schema.py`, `autoqec/decoders/modules/gnn.py` (BipartiteGNN), `autoqec/decoders/dsl_compiler.py`, `autoqec/example_db/gnn_{small,medium,gated}.yaml`, `tests/test_dsl_schema.py`, `tests/test_gnn_module.py`, `tests/test_dsl_compiler.py`, `tests/test_seed_templates.py` | ~500 LOC | [person-c C0.1–C0.2, C1.1–C1.2, C1.4, C1.6 (GNN only)](docs/superpowers/plans/2026-04-21-autoqec-person-c-lin.md#task-c01-draft-runnerconfig--roundmetrics) |
+| **Chen Jiahan** (leader) | **Scaffold + `surface_d5` baseline end-to-end**. Everything needed to say "here's the classical LER we beat": package tree, `pyproject.toml`, CLI stubs, Stim circuit generator, env YAML, PyMatching baseline wrapper, tests. | `autoqec/` package dirs, `pyproject.toml`, `cli/autoqec.py`, `autoqec/envs/schema.py` (EnvSpec), `scripts/generate_surface_circuit.py`, `circuits/surface_d5.stim`, `autoqec/envs/builtin/surface_d5_depol.yaml`, `autoqec/decoders/baselines/pymatching_wrap.py`, `tests/test_surface_circuit.py`, `tests/test_pymatching_baseline.py` | ~400 LOC | [master M0.3](docs/superpowers/plans/2026-04-21-autoqec-master.md#task-m03-create-skeleton-autoqec-package) + [A1.1–A1.3](docs/superpowers/plans/2026-04-21-autoqec-person-a-chen.md#task-a11-generate-surface_d5-stim-circuit--save-circuitssurface_d5stim) |
+| **Xie Jingu** | **`independent_eval` with 3 fair-baseline guards + reward-hacking probe**. The publishability gate: seed isolation, bootstrap 95% CI, ablation sanity. Plus a hand-crafted Memorizer cheater whose verdict test confirms the guards fire. | `autoqec/eval/schema.py` (VerifyReport), `autoqec/eval/bootstrap.py`, `autoqec/eval/independent_eval.py`, `autoqec/cheaters/memorize.py`, `tests/test_bootstrap.py`, `tests/test_independent_eval.py`, `tests/test_isolation_rule.py` (CI lint blocking `from autoqec.runner` imports), `tests/test_reward_hacking.py` | ~300 LOC | [person-b B0.1–B1.3, B1.6](docs/superpowers/plans/2026-04-21-autoqec-person-b-xie.md#task-b01-draft-verifyreport-schema) |
+| **Lin Tengxiang** | **DSL (schema + compiler) + BipartiteGNN module + 3 GNN seed templates**. The neural-predecoder core: feed YAML → get trainable `nn.Module`. Completes the `compile_predecoder(cfg, n_var, n_check)` path end-to-end. | `autoqec/runner/schema.py` (RunnerConfig + RoundMetrics), `autoqec/decoders/modules/base.py` (PredecoderBase), `autoqec/decoders/dsl_schema.py`, `autoqec/decoders/modules/gnn.py` (BipartiteGNN), `autoqec/decoders/dsl_compiler.py`, `autoqec/example_db/gnn_{small,medium,gated}.yaml`, `tests/test_dsl_schema.py`, `tests/test_gnn_module.py`, `tests/test_dsl_compiler.py`, `tests/test_seed_templates.py` | ~500 LOC | [person-c C0.1–C0.2, C1.1–C1.2, C1.4, C1.6 (GNN only)](docs/superpowers/plans/2026-04-21-autoqec-person-c-lin.md#task-c01-draft-runnerconfig--roundmetrics) |
 
 **Acceptance for each PR** (leader merges when all satisfied):
 1. Pydantic contract fields match `docs/superpowers/plans/2026-04-21-autoqec-master.md` §2 verbatim.
@@ -90,9 +90,9 @@ Every member submits **one meaningful PR** via their bound agent (Claude Code / 
 3. New LOC carries working tests, not placeholders.
 4. Commit message follows `<type>: <description>` format.
 
-**Merge order** (because 谢金谷 and 林腾祥 import from 陈嘉汉's `EnvSpec`):
-1. **陈嘉汉's PR merges first** (scaffold + `EnvSpec` + surface baseline).
-2. **谢金谷 + 林腾祥 rebase onto main, open PRs in parallel.** Their work doesn't cross — merge in either order.
+**Merge order** (because Xie Jingu and Lin Tengxiang import from Chen Jiahan's `EnvSpec`):
+1. **Chen Jiahan's PR merges first** (scaffold + `EnvSpec` + surface baseline).
+2. **Xie Jingu + Lin Tengxiang rebase onto main, open PRs in parallel.** Their work doesn't cross — merge in either order.
 
 **Why these tasks and not bigger/smaller**:
 - Smaller (schema-only): leaves Day 1 afternoon empty; three tiny PRs that don't stress the agent-driven workflow.

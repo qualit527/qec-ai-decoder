@@ -5,7 +5,7 @@
 **Date (v2)**: 2026-04-21
 **Date (v2.2)**: 2026-04-21
 **Status**: Draft, ready for team review
-**Authors**: Team (陈嘉汉、谢金谷、林腾祥) + brainstorming with Claude
+**Authors**: Team (Chen Jiahan、Xie Jingu、Lin Tengxiang) + brainstorming with Claude
 **Project**: QEC AI-enhanced decoder (AutoQEC)
 **Repo**: `qec-ai-decoder`
 **Companion docs**: `knowledge/DECODER_ROADMAP.md` · `knowledge/STRATEGIC_ASSESSMENT.md` · `knowledge/AUTORESEARCH_PATTERNS.md`
@@ -600,20 +600,20 @@ Budget: ~7 net work-days (9 gross team-days − ~25% coordination). Core researc
 Principle: **no one is assigned only "glue work."** Each person owns one QEC-core artifact (`code/noise/baseline/predecoder/verify`) and one delivery-facing artifact (`orchestration/skills/demo/docs`) so all three have visible technical ownership and research participation.
 
 Suggested fixed pairing:
-- **陈嘉汉 → Claude Code**
-- **谢金谷 → GLM**
-- **林腾祥 → Codex**
+- **Chen Jiahan → Claude Code**
+- **Xie Jingu → GLM**
+- **Lin Tengxiang → Codex**
 
 | Person | Model | Primary ownership | QEC-core responsibility | Delivery-facing responsibility | Demo ownership |
 |---|---|---|---|---|---|
-| **陈嘉汉** | **Claude Code** | Orchestration + `surface_d5` environment bring-up | Build and validate `surface_d5_depol`: Stim circuit generation, sinter data path, syndrome extraction, PyMatching baseline, 1M-shot benchmark, and surface-code `Δ_LER` sanity checks | Own orchestrator skeleton, subagent prompt wiring, `/autoqec-run`, `/add-env`, Demo 1 walkthrough | **Demo 1** primary, Demo 3 secondary |
-| **谢金谷** | **GLM** | Verification + `bb72` / qLDPC evaluation | Own `independent_eval.py`, holdout-seed isolation, bootstrap-CI, ablation sanity check, `bb72_depol` env, BP+OSD / Relay-BP baselines, and qLDPC-side result interpretation | Own `/verify-decoder`, `/review-log`, `/diagnose-failure`, reward-hacking case construction, and final result tables / diagnostic text | **Demo 4** primary, Demo 5 primary, Demo 2 secondary |
-| **林腾祥** | **Codex** | Predecoder stack + Runner | Own `dsl_schema.py`, `dsl_compiler.py`, GNN / Neural-BP templates, Runner training loop, FLOPs counting, and the interface from `hard_flip` / `soft_priors` outputs into MWPM / OSD. This is the main implementation path for the neural QEC predecoder itself | Own Runner integration, config compilation, Makefile / CLI polish, and end-to-end stability for Demo 1 and Demo 2 runs | **Demo 2** primary, Demo 1 secondary |
+| **Chen Jiahan** | **Claude Code** | Orchestration + `surface_d5` environment bring-up | Build and validate `surface_d5_depol`: Stim circuit generation, sinter data path, syndrome extraction, PyMatching baseline, 1M-shot benchmark, and surface-code `Δ_LER` sanity checks | Own orchestrator skeleton, subagent prompt wiring, `/autoqec-run`, `/add-env`, Demo 1 walkthrough | **Demo 1** primary, Demo 3 secondary |
+| **Xie Jingu** | **GLM** | Verification + `bb72` / qLDPC evaluation | Own `independent_eval.py`, holdout-seed isolation, bootstrap-CI, ablation sanity check, `bb72_depol` env, BP+OSD / Relay-BP baselines, and qLDPC-side result interpretation | Own `/verify-decoder`, `/review-log`, `/diagnose-failure`, reward-hacking case construction, and final result tables / diagnostic text | **Demo 4** primary, Demo 5 primary, Demo 2 secondary |
+| **Lin Tengxiang** | **Codex** | Predecoder stack + Runner | Own `dsl_schema.py`, `dsl_compiler.py`, GNN / Neural-BP templates, Runner training loop, FLOPs counting, and the interface from `hard_flip` / `soft_priors` outputs into MWPM / OSD. This is the main implementation path for the neural QEC predecoder itself | Own Runner integration, config compilation, Makefile / CLI polish, and end-to-end stability for Demo 1 and Demo 2 runs | **Demo 2** primary, Demo 1 secondary |
 
 中文通俗解释：
-- **陈嘉汉（Claude Code）**：负责把整个实验框架和 `surface_d5` 这条 QEC 基础链路搭起来，包括电路生成、syndrome 数据流程、PyMatching 基线，以及把多代理流程串起来。可以把他理解成“总装工程师”，先把实验场地和主流程跑通。
-- **谢金谷（GLM）**：负责验证和 `bb72` / qLDPC 这条线，包括 `independent_eval.py`、holdout seed、bootstrap CI、ablation sanity check，以及 BP+OSD / Relay-BP 基线。可以把他理解成“质量裁判 + 第二赛道负责人”，负责证明结果不是巧合，也不是作弊。
-- **林腾祥（Codex）**：负责 AI predecoder 本体，也就是项目最核心的神经网络解码器部分，包括 DSL、GNN / Neural-BP 模板、训练 Runner，以及把模型输出接到 MWPM / OSD 这些经典 QEC 后端。可以把他理解成“模型主力开发”，负责把预解码器真正做出来并跑起来。
+- **Chen Jiahan（Claude Code）**：负责把整个实验框架和 `surface_d5` 这条 QEC 基础链路搭起来，包括电路生成、syndrome 数据流程、PyMatching 基线，以及把多代理流程串起来。可以把他理解成“总装工程师”，先把实验场地和主流程跑通。
+- **Xie Jingu（GLM）**：负责验证和 `bb72` / qLDPC 这条线，包括 `independent_eval.py`、holdout seed、bootstrap CI、ablation sanity check，以及 BP+OSD / Relay-BP 基线。可以把他理解成“质量裁判 + 第二赛道负责人”，负责证明结果不是巧合，也不是作弊。
+- **Lin Tengxiang（Codex）**：负责 AI predecoder 本体，也就是项目最核心的神经网络解码器部分，包括 DSL、GNN / Neural-BP 模板、训练 Runner，以及把模型输出接到 MWPM / OSD 这些经典 QEC 后端。可以把他理解成“模型主力开发”，负责把预解码器真正做出来并跑起来。
 
 This split ensures all three directly touch QEC content:
 - **Claude Code owner** handles the **surface-code baseline and syndrome pipeline**, not just prompts or docs.
@@ -622,7 +622,7 @@ This split ensures all three directly touch QEC content:
 
 ### 12.2 Day-by-day breakdown by person
 
-| Day | 陈嘉汉 / Claude Code | 谢金谷 / GLM | 林腾祥 / Codex |
+| Day | Chen Jiahan / Claude Code | Xie Jingu / GLM | Lin Tengxiang / Codex |
 |---|---|---|---|
 | **Day 1** | Bring up `surface_d5` circuit + PyMatching baseline + 1M-shot benchmark; draft `.claude/agents/autoqec-*.md`; define env/orchestrator input schema | Scout / wire `bb72` source path; wrap BP+OSD baseline; define verify metrics schema and holdout protocol; draft reward-hacking test case | Implement **DSL schema + compiler**; add 3 GNN + 3 Neural-BP seed templates; define Runner config contract and predecoder I/O contract |
 | **Day 2** | Integrate orchestrator with Ideator/Coder/Analyst calls; complete one full dev-profile round on `surface_d5`; own integration debugging on the orchestration side | Implement **`independent_eval.py`** and `autoqec verify`; add bootstrap-CI + ablation sanity; wire Pareto update logic and qLDPC eval if time permits | Implement Runner train/eval/FLOPs + `RunnerSafety`; connect predecoder output to MWPM / OSD; fix compile/runtime failures from first end-to-end round |
