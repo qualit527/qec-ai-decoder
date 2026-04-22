@@ -74,22 +74,32 @@ Phase-0 contract file (once created): `docs/contracts/interfaces.md` — edits r
 | **S4** | `/review-log` | Read an entire research notebook, flag stuck hypotheses / overfitting | 谢金谷 |
 | **S5** | `/diagnose-failure` | Root-cause a broken or stalled round, recommend a fix | 谢金谷 |
 
-## Morning task (Day 1) — Phase-0 contract freeze
+## Day-1 first PR — substantive vertical slices
 
-Every member submits **one PR** via their agent (codex / claude / GLM) today. Team leader **陈嘉汉** verifies and merges. These three tasks together freeze the interface contracts that unblock Phase-1 parallel work.
+Every member submits **one meaningful PR** via their bound agent (Claude Code / GLM / Codex) on Day 1. Team leader **陈嘉汉** verifies and merges. Each PR delivers a usable system increment (not just a schema), so by end of Day 1 the team has **baseline + verifier + GNN factory** — the three pillars.
 
-| Owner | Task | File to create | PR size | Plan reference |
+| Owner | Task | Deliverables | PR size | Plan reference |
 |---|---|---|---|---|
-| **陈嘉汉** (leader) | Scaffold `autoqec/` package tree + `pyproject.toml` + `cli/autoqec.py` stubs (5 subcommands: `run`, `verify`, `review-log`, `diagnose`, `add-env`) | package dirs + `pyproject.toml` + `cli/autoqec.py` | ~100 LOC | [master M0.3](docs/superpowers/plans/2026-04-21-autoqec-master.md#task-m03-create-skeleton-autoqec-package) |
-| **谢金谷** | Write `VerifyReport` pydantic schema | `autoqec/eval/schema.py` | ~15 LOC | [person-b B0.1](docs/superpowers/plans/2026-04-21-autoqec-person-b-xie.md#task-b01-draft-verifyreport-schema) |
-| **林腾祥** | Write `RunnerConfig` + `RoundMetrics` pydantic schemas | `autoqec/runner/schema.py` | ~30 LOC | [person-c C0.1](docs/superpowers/plans/2026-04-21-autoqec-person-c-lin.md#task-c01-draft-runnerconfig--roundmetrics) |
+| **陈嘉汉** (leader) | **Scaffold + `surface_d5` baseline end-to-end**. Everything needed to say "here's the classical LER we beat": package tree, `pyproject.toml`, CLI stubs, Stim circuit generator, env YAML, PyMatching baseline wrapper, tests. | `autoqec/` package dirs, `pyproject.toml`, `cli/autoqec.py`, `autoqec/envs/schema.py` (EnvSpec), `scripts/generate_surface_circuit.py`, `circuits/surface_d5.stim`, `autoqec/envs/builtin/surface_d5_depol.yaml`, `autoqec/decoders/baselines/pymatching_wrap.py`, `tests/test_surface_circuit.py`, `tests/test_pymatching_baseline.py` | ~400 LOC | [master M0.3](docs/superpowers/plans/2026-04-21-autoqec-master.md#task-m03-create-skeleton-autoqec-package) + [A1.1–A1.3](docs/superpowers/plans/2026-04-21-autoqec-person-a-chen.md#task-a11-generate-surface_d5-stim-circuit--save-circuitssurface_d5stim) |
+| **谢金谷** | **`independent_eval` with 3 fair-baseline guards + reward-hacking probe**. The publishability gate: seed isolation, bootstrap 95% CI, ablation sanity. Plus a hand-crafted Memorizer cheater whose verdict test confirms the guards fire. | `autoqec/eval/schema.py` (VerifyReport), `autoqec/eval/bootstrap.py`, `autoqec/eval/independent_eval.py`, `autoqec/cheaters/memorize.py`, `tests/test_bootstrap.py`, `tests/test_independent_eval.py`, `tests/test_isolation_rule.py` (CI lint blocking `from autoqec.runner` imports), `tests/test_reward_hacking.py` | ~300 LOC | [person-b B0.1–B1.3, B1.6](docs/superpowers/plans/2026-04-21-autoqec-person-b-xie.md#task-b01-draft-verifyreport-schema) |
+| **林腾祥** | **DSL (schema + compiler) + BipartiteGNN module + 3 GNN seed templates**. The neural-predecoder core: feed YAML → get trainable `nn.Module`. Completes the `compile_predecoder(cfg, n_var, n_check)` path end-to-end. | `autoqec/runner/schema.py` (RunnerConfig + RoundMetrics), `autoqec/decoders/modules/base.py` (PredecoderBase), `autoqec/decoders/dsl_schema.py`, `autoqec/decoders/modules/gnn.py` (BipartiteGNN), `autoqec/decoders/dsl_compiler.py`, `autoqec/example_db/gnn_{small,medium,gated}.yaml`, `tests/test_dsl_schema.py`, `tests/test_gnn_module.py`, `tests/test_dsl_compiler.py`, `tests/test_seed_templates.py` | ~500 LOC | [person-c C0.1–C0.2, C1.1–C1.2, C1.4, C1.6 (GNN only)](docs/superpowers/plans/2026-04-21-autoqec-person-c-lin.md#task-c01-draft-runnerconfig--roundmetrics) |
 
-**Acceptance for each PR**:
-1. The file matches §2 of the master plan verbatim (pydantic models).
-2. `pytest tests/test_contracts.py -v` passes locally after all three PRs merge (coordinator test lives in the scaffold PR).
-3. Commit message follows `<type>: <description>` format (see `git-workflow.md`).
+**Acceptance for each PR** (leader merges when all satisfied):
+1. Pydantic contract fields match `docs/superpowers/plans/2026-04-21-autoqec-master.md` §2 verbatim.
+2. `pytest tests/ -m "not integration" -v` passes on the PR branch.
+3. New LOC carries working tests, not placeholders.
+4. Commit message follows `<type>: <description>` format.
 
-**Merge order**: 陈嘉汉's scaffold PR first (creates the package dirs that 谢金谷 and 林腾祥 write into) → 谢金谷 + 林腾祥 in parallel.
+**Merge order** (because 谢金谷 and 林腾祥 import from 陈嘉汉's `EnvSpec`):
+1. **陈嘉汉's PR merges first** (scaffold + `EnvSpec` + surface baseline).
+2. **谢金谷 + 林腾祥 rebase onto main, open PRs in parallel.** Their work doesn't cross — merge in either order.
+
+**Why these tasks and not bigger/smaller**:
+- Smaller (schema-only): leaves Day 1 afternoon empty; three tiny PRs that don't stress the agent-driven workflow.
+- Bigger (full Day-1 plan): risks one person blocking the merge queue; leader has to review ~1500 LOC in one sitting.
+- **These three deliverables** each exercise one vertical of the system (baseline / verifier / GNN factory) and unblock Phase-2 integration without becoming a review bottleneck.
+
+Defered to Day-1 afternoon or Day 2: Neural-BP module (C1.3), 1M-shot benchmark (A1.4), bb72 env (B1.4–B1.5), orchestration skeleton (A1.5–A1.6), Runner + RunnerSafety (C1.7).
 
 ## Quick start (after Phase-0 contracts merge)
 
