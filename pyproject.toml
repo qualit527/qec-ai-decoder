@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autoqec"
+version = "0.1.0"
+description = "AutoQEC MVP research harness"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "click>=8.1",
+  "fvcore>=0.1.5.post20221221",
+  "ldpc>=2.4.1",
+  "numpy>=2.0",
+  "pydantic>=2.8",
+  "PyYAML>=6.0",
+  "pymatching>=2.3",
+  "stim>=1.15",
+  "torch>=2.11.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.0",
+  "ruff>=0.15",
+]
+
+[tool.setuptools.packages.find]
+include = ["autoqec*", "cli*"]
+
+[tool.pytest.ini_options]
+markers = [
+  "integration: marks tests that exercise the end-to-end runner",
+]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
