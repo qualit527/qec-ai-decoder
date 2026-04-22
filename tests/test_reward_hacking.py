@@ -3,28 +3,24 @@ import torch
 from pathlib import Path
 
 
-def test_memorizer_fails_independent_verify(tmp_path):
-    """Memorizer trained on train seeds must fail on holdout seeds
-    because it has never seen those syndromes."""
+def test_memorizer_empty_table_is_suspicious(tmp_path):
+    """Memorizer with empty table = identity fallback → SUSPICIOUS."""
     from autoqec.cheaters.memorize import save_memorizer_ckpt
     from autoqec.eval.independent_eval import independent_verify
     from autoqec.envs.schema import load_env_yaml
 
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
-    ckpt = tmp_path / "memorizer.pt"
-    # Fill the table from training data
-    save_memorizer_ckpt(ckpt, env_spec=env, artifacts=None)
-    # save_memorizer_ckpt with artifacts=None saves empty table,
-    # so we also need to test with filled table
+    ckpt = tmp_path / "memorizer_empty.pt"
+    save_memorizer_ckpt(ckpt)  # artifacts=None → empty table
     report = independent_verify(ckpt, env, holdout_seeds=list(range(9000, 9020)),
                                 n_shots=5000, n_bootstrap=200)
-    # Empty-table memorizer = identity → SUSPICIOUS
     assert report.verdict in ("SUSPICIOUS", "FAILED"), f"got {report.verdict}"
 
 
-def test_memorizer_with_filled_table_still_fails(tmp_path):
-    """Even with a filled table from training data, the memorizer should
-    fail on holdout because holdout syndromes are unseen."""
+def test_memorizer_filled_table_fails_on_holdout(tmp_path):
+    """Memorizer with filled table still fails on holdout because holdout
+    syndromes are unseen. Ablation (table cleared) should show degraded
+    performance."""
     from autoqec.cheaters.memorize import save_memorizer_ckpt
     from autoqec.eval.independent_eval import independent_verify
     from autoqec.envs.schema import load_env_yaml
@@ -48,26 +44,41 @@ def test_memorizer_table_actually_memorizes():
     corrections = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
     m.memorize(syndromes, corrections)
 
-    # Query a known syndrome
     query = torch.tensor([[1.0, 0.0, 0.0]])
     result = m(query)
-    # Last-write-wins: [0, 0, 1] was written for key (1, 0, 0)
-    assert result[0, 0].item() == 0.0 or result[0, 0].item() == 1.0  # table hit
+    # Table hit: last-write-wins gave [0, 0, 1] for key (1, 0, 0)
+    assert result.sum().item() > 0, "Should return memorized correction"
 
-    # Query an unseen syndrome → zeros
     unseen = torch.tensor([[0.0, 0.0, 1.0]])
     result_unseen = m(unseen)
     assert (result_unseen == 0).all(), "Unseen syndrome should return zeros"
 
 
+def test_memorizer_ablate_clears_table():
+    """Ablation must clear the table, making the memorizer return zeros."""
+    from autoqec.cheaters.memorize import MemorizerPredecoder
+
+    m = MemorizerPredecoder()
+    syndromes = np.array([[1, 0, 0]], dtype=np.float32)
+    corrections = np.array([[1, 0, 0]], dtype=np.float32)
+    m.memorize(syndromes, corrections)
+
+    assert len(m.table) == 1
+    m.ablate()
+    assert len(m.table) == 0
+
+    query = torch.tensor([[1.0, 0.0, 0.0]])
+    result = m(query)
+    assert (result == 0).all(), "After ablate, should return zeros"
+
+
 def test_control_honest_identity_is_suspicious(tmp_path):
-    """Control test: identity (no model) checkpoint must be SUSPICIOUS,
-    never VERIFIED."""
+    """Control: identity (no model) checkpoint must be SUSPICIOUS."""
     from autoqec.eval.independent_eval import independent_verify
     from autoqec.envs.schema import load_env_yaml
 
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
-    ckpt = tmp_path / "nonexistent.pt"  # file doesn't exist → identity
+    ckpt = tmp_path / "nonexistent.pt"
     report = independent_verify(ckpt, env, holdout_seeds=list(range(9000, 9010)),
                                 n_shots=3000, n_bootstrap=200)
     assert report.verdict == "SUSPICIOUS"

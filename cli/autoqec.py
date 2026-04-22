@@ -121,14 +121,15 @@ def add_env(out: str, name: str, code_source: str, noise_p: str, backend: str) -
 @click.argument("round_dir")
 @click.option("--env", required=True, help="Env YAML path")
 @click.option("--n-shots", type=int, default=None)
-def verify(round_dir: str, env: str, n_shots: int | None) -> None:
+@click.option("--n-seeds", type=int, default=50, help="Number of holdout seeds to sample")
+def verify(round_dir: str, env: str, n_shots: int | None, n_seeds: int) -> None:
     from autoqec.eval.independent_eval import independent_verify
 
     rd = Path(round_dir)
     env_spec = load_env_yaml(env)
     ckpt = rd / "checkpoint.pt"
     holdout = list(range(env_spec.noise.seed_policy.holdout[0],
-                          env_spec.noise.seed_policy.holdout[1] + 1))[:100]
+                          env_spec.noise.seed_policy.holdout[1] + 1))[:n_seeds]
     report = independent_verify(ckpt, env_spec, holdout_seeds=holdout, n_shots=n_shots)
     (rd / "verification_report.json").write_text(report.model_dump_json(indent=2))
     (rd / "verification_report.md").write_text(
@@ -169,14 +170,18 @@ def review_log(run_dir: str) -> None:
 @click.argument("run_dir")
 def diagnose(run_dir: str) -> None:
     rd = Path(run_dir)
-    round_dirs = sorted(rd.glob("round_*"))
-    if not round_dirs:
-        click.echo("No round dirs")
-        return
-    latest = round_dirs[-1]
-    out: dict = {"round": latest.name}
+    # Accept either a run_dir (contains round_*) or a round_dir directly
+    if (rd / "metrics.json").exists() or (rd / "train.log").exists():
+        target = rd
+    else:
+        round_dirs = sorted(rd.glob("round_*"))
+        if not round_dirs:
+            click.echo("No round dirs found and no metrics in given path")
+            return
+        target = round_dirs[-1]
+    out: dict = {"path": str(target)}
     for fn in ("config.yaml", "metrics.json", "train.log"):
-        p = latest / fn
+        p = target / fn
         out[f"has_{fn}"] = p.exists()
         if fn == "metrics.json" and p.exists():
             out["metrics"] = json.loads(p.read_text())

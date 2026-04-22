@@ -16,7 +16,6 @@ class MemorizerPredecoder(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.table: dict[tuple, list[float]] = {}
-        # Dummy parameter so ablation shuffle has something to permute
         self.dummy = torch.nn.Parameter(torch.zeros(1))
 
     def forward(self, syndrome: torch.Tensor, ctx=None):
@@ -28,15 +27,18 @@ class MemorizerPredecoder(torch.nn.Module):
         return out
 
     def memorize(self, syndromes: np.ndarray, corrections: np.ndarray) -> None:
-        """Fill the lookup table from training data.
-
-        For each unique syndrome, store the first matching correction.
-        Collisions are overwritten (last-write-wins), which is fine for
-        a cheating predecoder — it only needs to look good on train.
-        """
+        """Fill the lookup table from training data."""
         for i in range(syndromes.shape[0]):
             key = tuple(syndromes[i].tolist())
             self.table[key] = corrections[i].tolist()
+
+    def ablate(self) -> None:
+        """Destroy learned knowledge for ablation testing.
+
+        For a memorizer the 'learned' thing is the table, not weights.
+        Clearing it turns the model into a zero-output identity.
+        """
+        self.table.clear()
 
 
 def train_memorizer(
@@ -45,10 +47,7 @@ def train_memorizer(
     n_shots: int = 10_000,
 ) -> "MemorizerPredecoder":
     """Build a memorizer by reading train-seed syndromes and their
-    perfect corrections (error patterns).
-
-    Uses the data pipeline but with a large sample so the table is dense.
-    """
+    perfect corrections (error patterns)."""
     from autoqec.runner.data import sample_syndromes
 
     syndrome, target = sample_syndromes(

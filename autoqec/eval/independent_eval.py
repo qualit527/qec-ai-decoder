@@ -1,5 +1,10 @@
 """ISOLATED — must not import the runner module.
 
+Isolation scope: this module must not import from the runner subsystem so that
+the verifier is decoupled from the training loop. Shared decoder-layer code
+(backend_adapter, dsl_compiler, pymatching_wrap) is acceptable — both sides
+need the same classical backend to produce comparable results.
+
 The verifier:
   1. Seed-isolation check (holdout seeds must fall within seed_policy.holdout range).
   2. Re-sample holdout detection events using Stim + the env's circuit.
@@ -89,12 +94,6 @@ def _load_code_artifacts(env_spec: EnvSpec) -> _CodeArtifacts:
     raise ValueError(f"Unsupported code type: {env_spec.code.type}")
 
 
-def _select_seeds(seed_range: tuple[int, int], n_shots: int, max_unique: int = 8) -> list[int]:
-    start, end = seed_range
-    count = min(max_unique, max(1, n_shots))
-    return list(range(start, min(end + 1, start + count)))
-
-
 def _sample_holdout(
     env_spec: EnvSpec,
     artifacts: _CodeArtifacts,
@@ -167,9 +166,14 @@ def _load_predecoder(ckpt: Path, n_var: int, n_check: int):
     if not ckpt.exists():
         return None
     try:
-        blob = torch.load(ckpt, map_location="cpu", weights_only=False)
+        # Prefer safe deserialization; Runner format only uses dicts + state_dicts
+        blob = torch.load(ckpt, map_location="cpu", weights_only=True)
     except Exception:
-        return None
+        try:
+            # Legacy pickle fallback for checkpoints with model objects
+            blob = torch.load(ckpt, map_location="cpu", weights_only=False)
+        except Exception:
+            return None
 
     if blob.get("class_name") == "IdentityPredecoder":
         return None
@@ -193,9 +197,8 @@ def _load_predecoder(ckpt: Path, n_var: int, n_check: int):
 def _shuffle_model_params(model: torch.nn.Module) -> None:
     for param in model.parameters():
         with torch.no_grad():
-            param.data = param.data[
-                torch.randperm(param.data.numel()).reshape(param.data.shape)
-            ]
+            flat = param.data.view(-1)
+            param.data = flat[torch.randperm(flat.numel())].view(param.data.shape)
 
 
 def _decode_holdout(
@@ -251,9 +254,14 @@ def _decode_holdout(
     )
     pred_errors = (pred_labels[:, :n_obs] != target_np).any(axis=1).astype(np.int32)
 
-    # Ablation: shuffle params and re-run
+    # Ablation: destroy learned information and re-run
+    from autoqec.cheaters.memorize import MemorizerPredecoder
     ablation_model = copy.deepcopy(model)
-    _shuffle_model_params(ablation_model)
+    if isinstance(ablation_model, MemorizerPredecoder):
+        # Memorizer stores knowledge in self.table, not weights
+        ablation_model.ablate()
+    else:
+        _shuffle_model_params(ablation_model)
     ablation_model.eval()
     with torch.no_grad():
         ablation_out = ablation_model(syndrome, ctx).numpy()
@@ -276,7 +284,7 @@ def independent_verify(
     if not _seed_leakage_check(sp.train, sp.val, sp.holdout, holdout_seeds):
         raise ValueError("holdout seeds overlaps train/val range or falls outside holdout policy")
 
-    n_shots = math.ceil(n_shots or env_spec.eval_protocol.min_shots_verify)
+    n_shots = n_shots or env_spec.eval_protocol.min_shots_verify
 
     artifacts = _load_code_artifacts(env_spec)
     model = _load_predecoder(checkpoint, artifacts.n_var, artifacts.n_check)
