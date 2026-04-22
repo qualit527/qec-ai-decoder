@@ -1,4 +1,4 @@
-from typing import Any
+from __future__ import annotations
 
 
 def is_pareto_dominated(cand: dict, front: list[dict]) -> bool:
@@ -13,6 +13,18 @@ def is_pareto_dominated(cand: dict, front: list[dict]) -> bool:
     return False
 
 
+def _dedup(front: list[dict]) -> list[dict]:
+    """Remove entries with identical (delta_ler, flops, n_params)."""
+    seen: set[tuple] = set()
+    out: list[dict] = []
+    for p in front:
+        key = (p["delta_ler"], p["flops"], p["n_params"])
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+    return out
+
+
 def update_front(front: list[dict], cand: dict) -> list[dict]:
     if cand.get("verdict") != "VERIFIED":
         return front
@@ -20,4 +32,8 @@ def update_front(front: list[dict], cand: dict) -> list[dict]:
     pruned = [p for p in front if not is_pareto_dominated(p, [cand])]
     if is_pareto_dominated(cand, pruned):
         return pruned
-    return pruned + [cand]
+    result = pruned + [cand]
+    result = _dedup(result)
+    # Sort by -delta_ler (best improvement first)
+    result.sort(key=lambda x: -x["delta_ler"])
+    return result
