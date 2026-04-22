@@ -21,6 +21,15 @@ from autoqec.runner.safety import RunnerSafety, estimate_vram_gb, nan_rate
 from autoqec.runner.schema import RoundMetrics, RunnerConfig
 
 
+class RunnerCallPathError(RuntimeError):
+    """Raised when run_round is called in-process with cfg.code_cwd set.
+
+    Worktree-path runs must go through autoqec.orchestration.subprocess_runner
+    because Python's import cache would serve main's modules/*.py instead of
+    the worktree's edited copies (§15.8).
+    """
+
+
 def _profile_params(env_spec: EnvSpec, profile: str) -> dict[str, int]:
     if profile == "dev":
         return {
@@ -54,6 +63,11 @@ def run_round(
     env_spec: EnvSpec,
     safety: RunnerSafety | None = None,
 ) -> RoundMetrics:
+    if config.code_cwd is not None:
+        raise RunnerCallPathError(
+            "code_cwd is set — use autoqec.orchestration.subprocess_runner.run_round_in_subprocess "
+            "instead of run_round (§15.8)"
+        )
     safety = safety or RunnerSafety()
     _set_seed(config.seed)
     round_dir = Path(config.round_dir)
