@@ -80,3 +80,30 @@ def test_round_metrics_legacy_in_process_path_still_validates():
     m = RoundMetrics(status="ok", ler_plain_classical=1e-3, ler_predecoder=5e-4, delta_ler=5e-4)
     assert m.branch is None
     assert m.status == "ok"
+
+
+def test_round_metrics_branch_manually_deleted_allows_commit_sha_none():
+    """§15.10 follow-up rows carry `branch` but the branch is gone — no commit_sha.
+
+    The `branch implies commit_sha` invariant must carve out this exception
+    so reconcile-emitted rows round-trip through the schema.
+    """
+    m = RoundMetrics(
+        status="branch_manually_deleted",
+        branch="exp/t/03-z",
+        commit_sha=None,
+        round_attempt_id="abc-123",
+    )
+    assert m.branch == "exp/t/03-z"
+    assert m.commit_sha is None
+
+
+def test_round_metrics_ok_status_still_requires_commit_sha_when_branch_set():
+    """The exception only covers branch_manually_deleted, not normal rows."""
+    with pytest.raises(ValueError, match="commit_sha is required"):
+        RoundMetrics(
+            status="ok",
+            branch="exp/t/03-z",
+            commit_sha=None,
+            round_attempt_id="abc-123",
+        )

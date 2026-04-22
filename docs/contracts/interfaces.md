@@ -207,7 +207,7 @@ Validators: `code_cwd` set ⇒ `branch` required; list-form `fork_from` ⇒
 
 - `round_attempt_id: Optional[str]` — **required on worktree path**.
 - `reconcile_id: Optional[str]` — UUID from §15.10 startup reconciliation; set **only** for reconciliation-synthetic rows. Mutually exclusive with `round_attempt_id`.
-- `branch: Optional[str]`, `commit_sha: Optional[str]` — paired; `commit_sha` required when `branch` set.
+- `branch: Optional[str]`, `commit_sha: Optional[str]` — paired; `commit_sha` required when `branch` set, **except** when `status == "branch_manually_deleted"` (§15.10 follow-up rows reference a branch that no longer exists in git, so the commit_sha is legitimately unavailable).
 - `fork_from: Optional[Union[str, list[str]]]`, `fork_from_canonical: Optional[str]`, `fork_from_ordered: Optional[list[str]]`.
 - `compose_mode: Optional[Literal["pure", "with_edit"]]`.
 - `delta_vs_parent: Optional[float]`, `parent_ler: Optional[float]` — training-regime Δ; search-guidance only.

@@ -246,3 +246,38 @@ def test_reconcile_no_op_on_clean_repo(repo_with_run: tuple[Path, Path]) -> None
     repo, run_dir = repo_with_run
     actions = reconcile_at_startup(repo_root=repo, run_id="t", run_dir=run_dir)
     assert actions == []
+
+
+def test_branch_manually_deleted_is_idempotent(repo_with_run: tuple[Path, Path]) -> None:
+    """Running reconcile twice must not duplicate the branch_manually_deleted row.
+
+    H \\ B is stable across restarts, so each reconcile run was appending an
+    identical duplicate. Guard against that by scanning existing history first.
+    """
+    from autoqec.orchestration.reconcile import reconcile_at_startup
+
+    repo, run_dir = repo_with_run
+    row = {
+        "status": "ok",
+        "branch": "exp/t/09-gone",
+        "round_attempt_id": "abc-999",
+        "commit_sha": "deadbeef",
+    }
+    (run_dir / "history.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    # First run — emits follow-up.
+    actions1 = reconcile_at_startup(repo_root=repo, run_id="t", run_dir=run_dir)
+    assert [a for a in actions1 if a["kind"] == "follow_up"]
+
+    # Second run — must NOT emit another follow-up, and must NOT append
+    # another branch_manually_deleted row.
+    actions2 = reconcile_at_startup(repo_root=repo, run_id="t", run_dir=run_dir)
+    assert [a for a in actions2 if a["kind"] == "follow_up"] == []
+
+    rows = [
+        json.loads(line)
+        for line in (run_dir / "history.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    deleted_rows = [r for r in rows if r.get("status") == "branch_manually_deleted"]
+    assert len(deleted_rows) == 1

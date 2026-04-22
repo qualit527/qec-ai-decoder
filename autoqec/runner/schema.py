@@ -97,6 +97,14 @@ class RoundMetrics(BaseModel):
             raise ValueError(
                 "compose_conflict rows must have branch=None and commit_sha=None"
             )
-        if self.branch is not None and self.commit_sha is None:
+        # `branch_manually_deleted` follow-ups carry the branch name for
+        # downstream joins, but the branch is gone — so commit_sha is
+        # legitimately unavailable. Every other row with a branch must
+        # carry a commit_sha as provenance.
+        if (
+            self.branch is not None
+            and self.commit_sha is None
+            and self.status != "branch_manually_deleted"
+        ):
             raise ValueError("commit_sha is required whenever branch is set")
         return self

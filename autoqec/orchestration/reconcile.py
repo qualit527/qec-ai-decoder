@@ -65,7 +65,12 @@ def _list_exp_branches(repo_root: Path, run_id: str) -> set[str]:
 
 
 def _history_branches(run_dir: Path) -> set[str]:
-    """Return the set of non-null ``branch`` values appearing in ``history.jsonl``."""
+    """Return the set of non-null ``branch`` values appearing in ``history.jsonl``.
+
+    Excludes rows with ``status == "branch_manually_deleted"`` — those are
+    reconcile-emitted follow-ups referring to a deleted branch, not evidence
+    that the branch still ran a round.
+    """
     path = run_dir / "history.jsonl"
     if not path.exists():
         return set()
@@ -77,9 +82,29 @@ def _history_branches(run_dir: Path) -> set[str]:
             row = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if row.get("status") == "branch_manually_deleted":
+            continue
         if row.get("branch"):
             branches.add(row["branch"])
     return branches
+
+
+def _branches_with_deletion_marker(run_dir: Path) -> set[str]:
+    """Return the set of branches that already have a ``branch_manually_deleted`` row."""
+    path = run_dir / "history.jsonl"
+    if not path.exists():
+        return set()
+    deleted: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if row.get("status") == "branch_manually_deleted" and row.get("branch"):
+            deleted.add(row["branch"])
+    return deleted
 
 
 def _is_empty_synthetic(repo_root: Path, branch: str) -> bool:
@@ -257,7 +282,12 @@ def reconcile_at_startup(
             )
 
     # 4. History rows whose branch was manually deleted.
+    # Idempotence: a branch already flagged once must not get a duplicate row
+    # on every subsequent reconcile (the H \ B set is stable across restarts).
+    already_flagged = _branches_with_deletion_marker(run_dir)
     for branch in sorted(branches_in_history - branches_in_git):
+        if branch in already_flagged:
+            continue
         row = {
             "status": "branch_manually_deleted",
             "branch": branch,
