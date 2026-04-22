@@ -153,7 +153,7 @@ def review_log(run_dir: str) -> None:
         click.echo("No history.jsonl")
         return
     with hist_path.open() as f:
-        rounds = [json.loads(l) for l in f if l.strip()]
+        rounds = [json.loads(line) for line in f if line.strip()]
     pareto = json.loads(pareto_path.read_text()) if pareto_path.exists() else []
     killed = sum(1 for r in rounds if r.get("status") == "killed_by_safety")
     stats = {

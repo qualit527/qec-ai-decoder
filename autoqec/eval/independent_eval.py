@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import pymatching
 import stim
 import torch
 
@@ -103,7 +102,6 @@ def _sample_holdout(
     """Sample syndromes + targets for holdout evaluation."""
     seeds = holdout_seeds
     per_seed = max(1, int(math.ceil(n_shots / len(seeds))))
-    total = per_seed * len(seeds)
 
     if artifacts.code_type == "stim_circuit":
         circuit = artifacts.code_artifact

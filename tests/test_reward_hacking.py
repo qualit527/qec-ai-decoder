@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from pathlib import Path
 
 
 def test_memorizer_empty_table_is_suspicious(tmp_path):

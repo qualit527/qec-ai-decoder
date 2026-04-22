@@ -1,4 +1,4 @@
-# Xie Jingu任务说明书
+# 谢金谷任务说明书
 
 你对应的模型是 `GLM`。
 
@@ -92,8 +92,8 @@ Day 3 的最低交付物：
 
 Agent 做完后，你人工要做的事：
 - 看它给出的输入输出契约是否真的能从现有 run 目录拿到。
-- 和Chen Jiahan确认 `metrics.json`、日志、checkpoint 的落盘路径。
-- 和Lin Tengxiang确认模型配置和 checkpoint 信息是否足够支撑 ablation。
+- 和陈嘉汉确认 `metrics.json`、日志、checkpoint 的落盘路径。
+- 和林腾祥确认模型配置和 checkpoint 信息是否足够支撑 ablation。
 - 对 holdout seed 范围做人工拍板，不要让模型自由决定。
 
 第二轮再发给 Agent 的 prompt：
@@ -180,8 +180,8 @@ Agent 做完后，你人工要做的事：
 
 ## 3. 你和另外两个人怎么配合
 
-- 你要和Chen Jiahan对齐 `metrics.json`、日志、目录落盘格式，因为你的验证模块要直接读这些东西。
-- 你要和Lin Tengxiang对齐 checkpoint、模型输出、训练配置格式，因为 ablation 和 holdout verify 会用到这些内容。
+- 你要和陈嘉汉对齐 `metrics.json`、日志、目录落盘格式，因为你的验证模块要直接读这些东西。
+- 你要和林腾祥对齐 checkpoint、模型输出、训练配置格式，因为 ablation 和 holdout verify 会用到这些内容。
 - 你不应该等所有实验做完再介入。验证逻辑要尽早进系统，否则后面很容易出现“有结果，但证据链不完整”。
 
 最需要你盯住的协作点：
