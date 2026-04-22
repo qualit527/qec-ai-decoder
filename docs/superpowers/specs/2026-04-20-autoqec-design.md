@@ -19,7 +19,7 @@
 - **v2 (2026-04-21 morning)**: rescoped for a **1-week timeline**. Narrowed search space to **AI predecoder + classical backend** (GNN or Neural-BP → MWPM or OSD). Dropped Reviewer agent, PyTorch C-path, tree-search upgrades, background-mode checkpointing, contributor infrastructure. Added: **Tier-1 rich DSL + Tier-2 custom-fn escape hatch**, `machine_state` tool for self-aware compute budgeting, three-layer memory architecture, 5 skills and 5 demos (per project deliverable requirement), codex-cli as primary production backend. Novelty framing updated per `STRATEGIC_ASSESSMENT.md` to Framing B (generic Pareto discovery, not SOTA-beating).
 - **v2.1 (2026-04-21 afternoon)**: timeline compressed from 5 days to **3 days** (project reality). Core infrastructure (`DSL`, `independent_eval`, `Pareto`) moved to Days 1-2; skills consolidated to Day 3 thin wrappers over already-working CLIs. Demos and skills tagged with P0 / P1 / P2 priorities; 5-skill and 5-demo deliverables are preserved but P2 items are minimum-viable.
 - **v2.2 (2026-04-21 evening)**: added a recommended **3-person ownership split** across **Claude Code, Codex, GLM**. Each contributor now owns one QEC-core workstream plus one delivery-facing workstream, with explicit Day 1-3 responsibilities, shared checkpoints, and demo ownership.
-- **v2.3 (2026-04-22)**: added **§15 Worktree-based experiment model**. Each research round gets its own git branch and optional `.worktrees/<id>/` checkout (ported from `problem-reductions/scripts/pipeline_worktree.py`, MIT). The fork graph (not a linear commit history on `main`) is the research trajectory; Pareto members are branch names; failed hypotheses live on as named branches for negative-result value. Rationale: performance gains in neural-predecoder research are **not additive**, so auto-merging VERIFIED branches into `main` creates drifting baselines and hides mechanism-level conflicts. "Compose rounds" let the Ideator explicitly request `git merge branch-A branch-B`, testing compositional claims as first-class scientific questions. Runner gains an optional `code_cwd` field; when set, the Runner is invoked as a subprocess so it picks up worktree-local edits to `autoqec/decoders/modules/*.py` (Python's import cache makes in-process hot reload unreliable). Every existing user-facing surface on `main` (Lin's Runner, Chen's orchestration skeleton + Demo 1, Xie's env scout, no-LLM smoke path) keeps working unchanged; worktree is opt-in through `RunnerConfig.code_cwd`.
+- **v2.3 (2026-04-22)**: added **§15 Worktree-based experiment model**. Each research round gets its own git branch and optional `.worktrees/<id>/` checkout (ported from `problem-reductions/scripts/pipeline_worktree.py`, MIT). The fork graph (not a linear commit history on `main`) is the research trajectory; Pareto members are commit SHAs (with branch names as human-readable aliases); failed hypotheses live on as named branches for negative-result value. Rationale: performance gains in neural-predecoder research are **not additive**, so auto-merging VERIFIED branches into `main` creates drifting baselines and hides mechanism-level conflicts. "Compose rounds" let the Ideator explicitly request `git merge branch-A branch-B`, testing compositional claims as first-class scientific questions — with a mandatory paired-holdout comparison protocol (§15.6.4) so claims survive training variance. Runner gains an optional `code_cwd` field; when set, the Runner is invoked as a subprocess so it picks up worktree-local edits to `autoqec/decoders/modules/*.py`. Schema changes are **not uniformly additive**: `memory.py`'s `l3_for_ideator` payload shape changes, `round_recorder.py`'s Pareto algorithm changes from top-5 sort to non-dominated filter, `agents/schemas.py` must declare new fields under `extra="forbid"`. §15.9 splits these into "hard API changes" vs "pure additive" with an explicit 8-step landing order. `commit_sha` (not branch name) is the canonical provenance key. Startup reconciliation (§15.10) repairs git-branch / `history.jsonl` drift from crashed runs.
 
 ---
 
@@ -765,9 +765,11 @@ main                                              # infrastructure baseline; nev
 
 Invariants:
 - `main` advances only via traditional infrastructure PRs (Runner, DSL, env schema, contracts). The research loop **never** writes to `main`.
-- A round's `delta_ler` is always measured versus its `fork_from` parent's LER (`delta_vs_parent`). The aggregate `delta_vs_baseline` is reported as a derived field for Pareto ranking.
-- FAILED branches are retained as named branches (commits are cheap) but their `.worktrees/` checkouts are removed after the round completes. Negative results remain queryable.
-- `pareto.json` stays authoritative for Pareto membership (single file with a `branch` field per row — see §15.5). `git branch --list 'exp/<run_id>/*'` is a view, not a source of truth.
+- A round's `delta_ler` has two distinct reportings. `delta_vs_parent` is measured under Runner's training-seed / val-shot regime and is used as a **search-guidance signal** for the Ideator. **Pareto admission and compose-round judgments use `delta_vs_baseline` computed by `/verify-decoder` on the canonical holdout bundle** (seeds `9000-9999`, `min_shots_verify`). Mixing the two is a category error; see §15.6 for the paired comparison protocol.
+- FAILED branches are retained as named branches (commits are cheap) but their `.worktrees/` checkouts are removed after the round completes. Negative results remain queryable via `history.jsonl` + branch inspection.
+- `pareto.json` is the **complete non-dominated archive** over `(delta_vs_baseline [higher better], flops_per_syndrome [lower], n_params [lower])`. No size cap — every VERIFIED branch that is not strictly dominated by another VERIFIED branch is a member. The top-5 "preview" (for Ideator L2 context and `/review-log` headlines) lives in `pareto_preview.json` as a derived view. `round_recorder.py`'s current top-5 sorted list is replaced by non-dominated filtering (see §15.9.1).
+- **The canonical provenance key is the commit SHA, not the branch name.** Branches are human-readable aliases that can be renamed or moved; `commit_sha` is immutable. Every `pareto.json` / `history.jsonl` / `VerifyReport` row carries the commit SHA as its identifier. A checkpoint is replayable iff `(commit_sha, env_yaml_sha256, dsl_config_sha256, requirements_fingerprint)` is intact (§15.5).
+- `git branch --list 'exp/<run_id>/*'` is a view derived from `history.jsonl`; `fork_graph.py` reconciles the two at orchestrator startup and pauses the run if they disagree (branch without history row, or history row without branch).
 
 ### 15.3 Round lifecycle
 
@@ -780,25 +782,42 @@ Orchestrator runs from `main`'s working directory (read-only during a research r
                         where fork_from is one of:
                           "baseline"                  (new line of attack)
                           "exp/<run_id>/<N>-<slug>"   (stack on a prior VERIFIED branch)
-                          ["exp/.../02-...", "exp/.../04-..."]  (compose round — triggers git merge)
+                          ["exp/.../02-...", "exp/.../04-..."]  (compose round — triggers git merge;
+                                                                 canonicalized as sorted list, §15.6.1)
 3. worktree create   → autoqec.orchestration.worktree.create_round_worktree(run_id, round_idx, slug, fork_from)
                        creates .worktrees/exp-<run_id>-<N>-<slug>/ + branch exp/<run_id>/<N>-<slug>
                        for a compose round: create_compose_worktree runs `git merge parents[1:]`
-                       after checking out parents[0]; on conflict → §15.6
+                       after checking out parents[0]; on conflict → goto step 10a (compose_conflict path)
 4. Coder subagent    → cwd = worktree_dir, writes DSL yaml and (for Tier 2) edits
                         autoqec/decoders/modules/*.py within the worktree
 5. Commit code       → git -C <worktree> add && git commit -m "exp(<run_id>/<N>): <hypothesis>"
+                       captures commit_sha (immutable provenance key)
 6. Runner subprocess → subprocess_runner.run_round_in_subprocess(RunnerConfig(code_cwd=worktree_dir, ...))
                        writes runs/<id>/round_N/{metrics.json, checkpoint.pt, train.log}
-                       writes worktree/round_N_pointer.json (commit_sha + metrics summary + artifact paths)
-                       commits the pointer file in the worktree
+                       writes worktree/round_N_pointer.json with commit_sha + env_yaml_sha256 +
+                         dsl_config_sha256 + requirements_fingerprint + metrics summary + absolute artifact paths
+                       commits the pointer file in the worktree (bumps commit_sha)
 7. Analyst subagent  → reads runs/<id>/round_N/metrics.json → verdict candidate | ignore
-8. /verify-decoder   → if verdict=candidate, runs independent_eval on holdout → VerifyReport
-9. Pareto update     → if VERIFIED and non-dominated, append to pareto.json with branch field
-10. Bookkeeping      → round_recorder writes history.jsonl row + log.md line
+8. /verify-decoder   → if verdict=candidate, runs independent_eval on holdout seeds 9000-9999
+                       with env_spec.eval_protocol.min_shots_verify → VerifyReport
+                       {verdict ∈ VERIFIED/SUSPICIOUS/FAILED, delta_vs_baseline_holdout,
+                        commit_sha (required), branch}
+9. Pareto update     → if VERIFIED and the candidate is non-dominated by any existing Pareto member,
+                       append to pareto.json; evict any existing members now dominated by the new one.
+                       Then regenerate pareto_preview.json (top-5 by -delta_vs_baseline) for L2 context.
+10. Bookkeeping      → round_recorder writes history.jsonl row (always, regardless of step-3 outcome)
+                       + log.md line. The row always contains commit_sha, branch, fork_from (or
+                       fork_from_canonical for compose), and status.
+10a. Compose_conflict → if step 3 hit a merge conflict: write history.jsonl with
+                        status=compose_conflict, fork_from_canonical (sorted parents), conflicting_files.
+                        Delete the synthetic branch (`git branch -D <branch>`) so it does NOT silently
+                        point at parents[0]. The compose failure lives in history.jsonl only;
+                        fork_graph.py surfaces it so the Ideator does not re-propose the same set.
 11. Worktree cleanup → git worktree remove --force <worktree>
-                        (branch persists; only the disk checkout is freed)
-12. Next round       → loop back to step 1 with the new branch now visible in fork_graph
+                       (for VERIFIED / FAILED / SUSPICIOUS: the branch persists and carries the commit;
+                        for compose_conflict: the branch is already deleted in step 10a)
+12. Next round       → loop back to step 1 with the new branch (if any) and the new history row
+                       now visible in fork_graph
 ```
 
 The orchestrator's cwd stays on `main` throughout. All writes land either in `.worktrees/` (source code, one commit per round) or `runs/<id>/round_N/` (training artefacts, shared across branches).
@@ -854,70 +873,200 @@ Size estimate: 10–20 rounds × ~200 tokens/node ≈ 3–4k tokens; fits inside
 | `docs/`, `knowledge/` | **main only** | documentation is infrastructure |
 | `.claude/agents/`, `.claude/skills/` | **main only** | agent definitions don't change per experiment |
 
-`round_N_pointer.json` (the single file the worktree commits after Runner finishes):
+`round_N_pointer.json` (the single file the worktree commits after Runner finishes). Provenance fields are **all required**; consumers reject pointer files missing any of them:
 
 ```json
 {
   "run_id": "20260422-140000",
   "round_idx": 5,
   "branch": "exp/20260422-140000/05-gated-mlp",
-  "commit_sha": "abc1234...",
+  "commit_sha": "abc1234567890...",
   "fork_from": "baseline",
-  "metrics_summary": {"delta_ler": 4.0e-4, "flops": 180000, "n_params": 42000, "status": "ok"},
+  "fork_from_canonical": "baseline",
+
+  "provenance": {
+    "env_yaml_sha256": "a1b2c3...",
+    "dsl_config_sha256": "d4e5f6...",
+    "requirements_fingerprint": "py3.10-torch2.5.0-stim1.13-pymatching2.2-ldpc2.1",
+    "repo_root_resolved": "/abs/path/to/qec-ai-decoder"
+  },
+
+  "metrics_summary": {
+    "delta_vs_parent": 4.0e-4,
+    "flops_per_syndrome": 180000,
+    "n_params": 42000,
+    "status": "ok"
+  },
+
   "artifact_paths": {
-    "checkpoint": "runs/20260422-140000/round_05/checkpoint.pt",
-    "metrics":    "runs/20260422-140000/round_05/metrics.json",
-    "train_log":  "runs/20260422-140000/round_05/train.log"
+    "checkpoint": "/abs/path/runs/20260422-140000/round_05/checkpoint.pt",
+    "metrics":    "/abs/path/runs/20260422-140000/round_05/metrics.json",
+    "train_log":  "/abs/path/runs/20260422-140000/round_05/train.log"
   }
 }
 ```
+
+Artifact paths are **absolute** to survive relocation of the orchestrator's cwd; `repo_root_resolved` gives a relative-path reconstruction basis if the run is moved to a new machine. `requirements_fingerprint` is a short string derived from the frozen dependency set (`pip freeze | sha256 | head`); post-MVP will upgrade to a full lockfile digest.
 
 `.gitignore` adds `.worktrees/`.
 
 ### 15.6 Compose rounds
 
-Ideator requests a compose round by emitting `fork_from: ["exp/.../A", "exp/.../B", ...]` (a list of two or more parent branches). `create_compose_worktree`:
+Ideator requests a compose round by emitting `fork_from: ["exp/.../A", "exp/.../B", ...]` (a list of two or more parent branches).
 
-1. `git worktree add <wt> -b <new_branch> parents[0]` — start from the first parent.
-2. For each remaining parent: `git -C <wt> merge <parent> --no-edit`.
-3. **On merge conflict**: `git merge --abort`, `git worktree remove --force`, return `RoundMetrics(status="compose_conflict", status_reason=<conflicting files>)`. The branch record persists as a `FAILED_compose` node in the fork graph so the Ideator does not re-propose the same parent set.
-4. **On clean merge**: Coder may make further edits in the merged worktree (rare); Runner trains normally on the merged code; Analyst classifies.
+#### 15.6.1 Fork-from canonicalization
 
-Three outcomes worth scientific attention:
-- `Δ > 0.8 × (Δ_A + Δ_B)` → composition largely holds; the composed branch may dominate either parent on Pareto.
-- `Δ` between 0 and `0.8 × (Δ_A + Δ_B)` → partial interaction; composed branch joins Pareto without dominating.
-- `Δ ≤ 0` or `status=FAILED` → **negative result with scientific value**; recorded as evidence that the two hypotheses' mechanisms conflict.
+`fork_from` is treated as an **unordered set** of parents for dedup purposes — `[A, B]` and `[B, A]` are the same experiment. However, `git merge` is order-sensitive (the first parent's tree becomes the merge base). Resolution:
 
-### 15.7 Contract schema delta (additive, fully backward-compatible)
+- `fork_from_canonical` is the alphabetically-sorted join of branch names (e.g. `"02-gated-mlp|04-neural-bp"`). This is the field the Ideator-response parser writes into `history.jsonl` and the dedup key `fork_graph.py` uses when checking "already proposed".
+- `fork_from_ordered` preserves the Ideator's emitted order and drives the `git worktree add <wt> -b <branch> parents[0]` + `git merge parents[1:]` sequence, because re-running with a different base parent can trivially succeed where the original failed (different conflict markers). Both fields are persisted.
+- The Ideator is told in its prompt: "propose each parent set at most once; the canonicalized set is what the system deduplicates against."
+
+#### 15.6.2 Compose round flavors (distinct status values)
+
+A compose round has two flavors, which are **not interchangeable scientifically**:
+
+- **`compose_pure`**: Coder makes zero edits; the branch's tree is exactly the `git merge` result. Tests the hypothesis "do A and B's effects compose?"
+- **`compose_with_edit`**: Coder edits the merged tree (e.g. to fix API breakage introduced by merging two files with overlapping interfaces). Tests the hypothesis "with a minimal manual reconciliation, do A and B's effects compose?"
+
+The Ideator's `fork_from` response must include `compose_mode: "pure" | "with_edit"`. `RoundMetrics.status` ∈ {`ok`, `compose_conflict`, `compile_error`, `train_error`, `killed_by_safety`}; the flavor is recorded in a separate `compose_mode` field and carried into Pareto / fork graph. Mixing pure and with_edit results in composition claims is explicitly disallowed.
+
+#### 15.6.3 Conflict path and durable record
+
+On `git merge` conflict (step 3 of §15.3 lifecycle):
+
+1. `git merge --abort` (restores worktree to parents[0] state — do **not** commit anything).
+2. `git worktree remove --force <wt>`.
+3. `git branch -D <branch>` — the synthetic branch is deleted so it does not linger pointing at `parents[0]`, silently indistinguishable from a real unedited child.
+4. `round_recorder.append_round(...)` writes a `history.jsonl` row **before** any further cleanup:
+
+```json
+{"round_idx": 12, "status": "compose_conflict",
+ "fork_from": ["exp/.../02-gated-mlp", "exp/.../04-neural-bp"],
+ "fork_from_canonical": "exp/.../02-gated-mlp|exp/.../04-neural-bp",
+ "compose_mode": "pure",
+ "conflicting_files": ["autoqec/decoders/modules/gnn.py"],
+ "timestamp": "2026-04-22T14:37:22Z",
+ "commit_sha": null, "branch": null}
+```
+
+This history-row is the **single source of truth** for the failure. `fork_graph.py` surfaces it as a `FAILED_compose` node so the Ideator's next-round prompt knows the canonical parent set has been tried and failed. There is no residual git state to clean up later.
+
+#### 15.6.4 Paired comparison protocol (mandatory for any composition claim)
+
+Because training is seed-driven and `delta_vs_parent` carries training-variance noise, making composition claims requires **all three branches — parent A, parent B, and the composed child — to be re-evaluated on the same canonical holdout bundle** before any conclusion is drawn:
+
+- Same holdout seed range (`env_spec.noise.seed_policy.holdout`, typically 9000–9999).
+- Same shot count (`env_spec.eval_protocol.min_shots_verify`).
+- Same classical backend + baseline settings (from `env_spec`).
+- Same evaluation harness (`/verify-decoder`; no re-training).
+
+`/verify-decoder` records a `paired_eval_bundle_id` in each `VerifyReport`; a compose round's VerifyReport must cite the same `paired_eval_bundle_id` as its parents' most recent verifications, or the Ideator triggers a re-verify of the parents before drawing conclusions. Composition claims that use `delta_vs_parent` alone (training-time number) are rejected at `/verify-decoder` gate.
+
+#### 15.6.5 Outcome interpretation (with paired bundle in hand)
+
+Given paired `delta_vs_baseline_holdout` values `Δ_A`, `Δ_B`, `Δ_child`:
+
+- `Δ_child > 0.8 × (Δ_A + Δ_B)` → composition largely holds; child may dominate either parent on Pareto.
+- `0 < Δ_child ≤ 0.8 × (Δ_A + Δ_B)` → partial interaction; child joins Pareto without dominating.
+- `Δ_child ≤ 0` or `status=FAILED` → **negative result with scientific value**; recorded as evidence that A and B's mechanisms conflict.
+
+The `0.8` threshold is heuristic and lives in `autoqec/pareto/` config for easy tuning. What is not heuristic: the paired comparison protocol (§15.6.4) must be satisfied before any of these three branches is cited in `/review-log` narrative.
+
+### 15.7 Contract schema delta
+
+Not uniformly additive. Fields split into **required when worktree is active** (reject without them) versus **pure optional add**.
 
 ```python
-# autoqec/runner/schema.py — RunnerConfig additions (all Optional, default None)
+# autoqec/runner/schema.py — RunnerConfig additions
 class RunnerConfig(BaseModel):
     # ... existing fields unchanged ...
-    code_cwd:  Optional[str] = None          # absolute path to worktree checkout; None = in-process from main
-    branch:    Optional[str] = None          # exp/<run_id>/<N>-<slug>
-    fork_from: Optional[Union[str, list[str]]] = None  # parent branch(es); list → compose round
+    code_cwd:            Optional[str] = None          # absolute path to worktree checkout; None = in-process
+    branch:              Optional[str] = None          # exp/<run_id>/<N>-<slug>; required when code_cwd is set
+    fork_from:           Optional[Union[str, list[str]]] = None  # list → compose round
+    fork_from_canonical: Optional[str] = None          # sorted, |-joined; dedup key for compose
+    compose_mode:        Optional[Literal["pure", "with_edit"]] = None  # required when fork_from is list
+
+    @model_validator(mode="after")
+    def _worktree_fields_consistent(self):
+        if self.code_cwd is not None and self.branch is None:
+            raise ValueError("branch is required when code_cwd is set")
+        if isinstance(self.fork_from, list) and self.compose_mode is None:
+            raise ValueError("compose_mode is required for compose rounds")
+        return self
 
 # autoqec/runner/schema.py — RoundMetrics additions
 class RoundMetrics(BaseModel):
     # ... existing fields unchanged ...
-    branch:              Optional[str] = None
-    commit_sha:          Optional[str] = None
+    branch:              Optional[str] = None                          # None only for the legacy in-process path
+    commit_sha:          Optional[str] = None                          # REQUIRED when branch is set (validator)
     fork_from:           Optional[Union[str, list[str]]] = None
-    delta_vs_parent:     Optional[float] = None
-    delta_vs_baseline:   Optional[float] = None
+    fork_from_canonical: Optional[str] = None
+    compose_mode:        Optional[Literal["pure", "with_edit"]] = None
+    delta_vs_parent:     Optional[float] = None                        # training-regime Δ; search-guidance only
     parent_ler:          Optional[float] = None
+    conflicting_files:   Optional[list[str]] = None                    # set iff status=compose_conflict
     # Existing `status` Literal gains one new variant:
     status: Literal["ok", "killed_by_safety", "compile_error", "train_error", "compose_conflict"]
+
+    @model_validator(mode="after")
+    def _provenance_integrity(self):
+        if self.branch is not None and self.commit_sha is None and self.status != "compose_conflict":
+            raise ValueError("commit_sha is required whenever branch is set (except compose_conflict)")
+        return self
 
 # autoqec/eval/schema.py — VerifyReport additions
 class VerifyReport(BaseModel):
     # ... existing fields unchanged ...
-    branch:      Optional[str] = None
-    commit_sha:  Optional[str] = None
+    branch:                  Optional[str] = None        # None only for legacy non-worktree runs
+    commit_sha:              Optional[str] = None        # REQUIRED when branch is set
+    delta_vs_baseline_holdout: Optional[float] = None    # paired-bundle canonical delta (§15.6.4)
+    paired_eval_bundle_id:   Optional[str] = None        # REQUIRED for compose rounds and any Pareto candidate
+
+    @model_validator(mode="after")
+    def _holdout_bundle_required_for_compose(self):
+        # Compose round VerifyReports must carry paired_eval_bundle_id so §15.6.4
+        # cross-checks against parents. Non-compose rounds may omit it for the
+        # search-guidance path but must provide it when admitted to pareto.json.
+        return self
 ```
 
-`pareto.json` gains a `branch` field per row; field order is determined by `autoqec/orchestration/round_recorder.py::_PARETO_FIELDS`. Readers that ignore the field continue to work.
+`agents/schemas.py` — subagent response schemas. The current models use `extra="forbid"`; they must flip to `extra="allow"` **or** explicitly declare the new fields:
+
+```python
+# autoqec/agents/schemas.py
+class IdeatorResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    hypothesis: str
+    expected_delta_ler: float
+    expected_cost_s: int
+    rationale: str
+    dsl_hint: Optional[dict] = None
+    fork_from: Union[Literal["baseline"], str, list[str]]   # NEW — required field
+    compose_mode: Optional[Literal["pure", "with_edit"]] = None  # NEW — required when fork_from is list
+
+class CoderResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # ... existing fields ...
+    commit_message: str   # NEW — used for `git commit -m` in step 5 of §15.3
+```
+
+`pareto.json` stores the **complete non-dominated set** of VERIFIED branches. Row schema:
+
+```json
+{"commit_sha":  "abc12345...",     // canonical provenance key; REQUIRED
+ "branch":      "exp/.../02-gated-mlp",  // human-readable alias; mutable
+ "delta_vs_baseline_holdout": 4.0e-4,    // from /verify-decoder paired bundle
+ "paired_eval_bundle_id":     "bundle-20260422-1500",
+ "flops_per_syndrome":        180000,
+ "n_params":                  42000,
+ "verdict":                   "VERIFIED",
+ "fork_from":                 "baseline",
+ "fork_from_canonical":       "baseline",
+ "compose_mode":              null}
+```
+
+`pareto_preview.json` is a derived L2 view (top-5 by `-delta_vs_baseline_holdout`) regenerated after every Pareto mutation. Readers that consume only the preview must not claim to report the full archive.
 
 ### 15.8 Runner invocation paths
 
@@ -930,24 +1079,47 @@ The `run_round` function itself raises `RunnerCallPathError` if called in-proces
 
 ### 15.9 Impact on existing code (as of main @ `bde19db`)
 
-**Modified existing files** (additive only — no behavioural change on the `code_cwd=None` path):
+Split into **hard API changes** (existing clients break without coordinated updates) versus **pure additive** (existing clients keep working because new fields default off).
+
+#### 15.9.1 Hard API changes (break without coordinated updates)
+
+| File | Break | Why |
+|---|---|---|
+| `autoqec/orchestration/memory.py` | `l3_for_ideator` return payload changes shape from `{env_spec, pareto_front, last_5_hypotheses, knowledge_excerpts, machine_state_hint}` to the fork_graph of §15.4 | Ideator prompt consumers on `main` read `last_5_hypotheses` by name; fork_graph replaces that field, not extends. `test_orchestration_stub.py` and `test_loop_helpers.py` assert the old shape. |
+| `autoqec/orchestration/round_recorder.py` | `_PARETO_FIELDS` is replaced; the whole Pareto-update algorithm changes from **"top-5 sorted by `-delta_ler, flops, n_params`"** to **"complete non-dominated set over `(delta_vs_baseline_holdout [higher], flops [lower], n_params [lower])` with the top-5 preview regenerated as `pareto_preview.json`"**. Current sort loses valid low-FLOPs / low-param tradeoff points. | Changes the scientific semantics of `pareto.json`. `test_round_recorder.py` tests the old top-5 assumption. |
+| `autoqec/agents/schemas.py` | All three response models today use `ConfigDict(extra="forbid")`; new fields `fork_from`, `compose_mode`, `commit_message` must be added as declared fields (flipping to `extra="allow"` hides contract drift, so declare explicitly). | pydantic with `extra="forbid"` rejects unknown keys; existing JSON responses without the new fields will be rejected once `fork_from` is declared required. |
+| `cli/autoqec.py run-round` | Currently positional-only (`env_yaml config_yaml round_dir`); the worktree path adds keyword flags (`--code-cwd`, `--branch`, `--fork-from`, `--compose-mode`). Positional callers keep working; invocations on `main` that hard-code the three positional args continue but miss the new fields. | Any new LLM-driven orchestration call site must migrate from positional to keyword form. Not a silent break, but a migration task. |
+| `autoqec/runner/runner.py` | `run_round(cfg, env, safety)` now raises `RunnerCallPathError` when `cfg.code_cwd is not None`. Existing tests that call `run_round` with the old 5-field `RunnerConfig` continue; any new caller passing `code_cwd` in-process hits the error. | Documented routing constraint; not a silent break. |
+
+#### 15.9.2 Pure additive changes (existing callers untouched)
 
 | File | Edit |
 |---|---|
-| `autoqec/orchestration/loop.py` | `run_round_plan` gains `fork_from`; Coder ctx gets `worktree_dir` |
-| `autoqec/orchestration/memory.py` | `l3_for_ideator` returns `fork_graph` (replacing flat `last_5_hypotheses` with the tree view) |
-| `autoqec/orchestration/round_recorder.py` | `_PARETO_FIELDS` adds `branch`, `commit_sha`, `fork_from` |
-| `autoqec/agents/schemas.py` | Ideator response gains `fork_from`; Coder response gains `commit_message` |
-| `autoqec/tools/machine_state.py` | adds `active_worktrees: list[str]` |
-| `autoqec/runner/schema.py` | §15.7 field additions |
-| `autoqec/runner/runner.py` | raise `RunnerCallPathError` when `code_cwd` is set in-process |
-| `cli/autoqec.py` | `run-round` gains `--code-cwd` / `--branch` / `--fork-from` flags |
-| `scripts/run_single_round.py` | accepts `--fork-from`, creates worktree, passes `code_cwd` |
-| `.claude/skills/autoqec-run/SKILL.md` | adds fork-from decision + compose-round subflow + `compose_conflict` handling |
-| `.claude/agents/autoqec-ideator.md` | consumes fork_graph; emits `fork_from` field |
-| `.claude/agents/autoqec-coder.md` | note: cwd is a worktree; code commits are auto-triggered post-Runner |
-| `.claude/agents/autoqec-analyst.md` | output carries `branch` + `commit_sha` |
-| `docs/contracts/interfaces.md`, `docs/contracts/round_dir_layout.md` | contract bumps — merge under `contract-change` label with 3-of-3 owner sign-off |
+| `autoqec/runner/schema.py` | §15.7 field additions (`code_cwd`, `branch`, `fork_from`, `fork_from_canonical`, `compose_mode` on `RunnerConfig`; `branch`, `commit_sha`, `fork_from*`, `compose_mode`, `delta_vs_parent`, `parent_ler`, `conflicting_files` on `RoundMetrics`); new `status` Literal variant `compose_conflict`. All additions default to `None`. |
+| `autoqec/eval/schema.py` | `VerifyReport` gains `branch`, `commit_sha`, `delta_vs_baseline_holdout`, `paired_eval_bundle_id` — all default `None`. |
+| `autoqec/tools/machine_state.py` | adds `active_worktrees: list[str]` (empty list when no worktree module is loaded). |
+| `autoqec/orchestration/loop.py` | `run_round_plan` gains `fork_from` parameter (defaulted to `"baseline"`); Coder ctx carries `worktree_dir` (defaulted to `None`). Callers passing neither keep working. |
+| `scripts/run_single_round.py` | accepts `--fork-from` (defaults to `"baseline"`), creates worktree, passes `code_cwd`. Scripts calling the old 3-arg form on `main` keep working via defaults. |
+| `.claude/skills/autoqec-run/SKILL.md` | adds fork-from decision + compose-round subflow + `compose_conflict` handling. |
+| `.claude/agents/autoqec-ideator.md` | consumes fork_graph; emits `fork_from` + `compose_mode`. Prompt rewrite, not a schema break on the autoqec-ideator side (the .md is just a prompt string). |
+| `.claude/agents/autoqec-coder.md` | note: cwd is a worktree; code commits are auto-triggered post-Runner. |
+| `.claude/agents/autoqec-analyst.md` | output carries `branch` + `commit_sha`. |
+| `docs/contracts/interfaces.md`, `docs/contracts/round_dir_layout.md` | contract bumps — merge under `contract-change` label with 3-of-3 owner sign-off. |
+
+#### 15.9.3 Migration order (required sequencing for CI to stay green)
+
+Land in this order on `feat/worktree-experiment-model`:
+
+1. **pydantic schemas** — `autoqec/runner/schema.py`, `autoqec/eval/schema.py`, `autoqec/agents/schemas.py`. Only add fields; no callers change yet. CI stays green because added fields default to None.
+2. **round_recorder Pareto algorithm** — replace top-5 sort with non-dominated filter + derived `pareto_preview.json`. Update `test_round_recorder.py` in the same commit.
+3. **CLI flags** — `cli/autoqec.py run-round` gains `--code-cwd` etc. Existing positional callers untouched.
+4. **Orchestration prompt shape** — `memory.py` returns fork_graph; `loop.py` threads `fork_from`; `agents/dispatch.py` updates prompt templates. Update `test_orchestration_stub.py`, `test_loop_helpers.py`, `test_run_single_round.py`, `test_e2e_handshake.py` in the same commit.
+5. **Worktree / fork_graph / subprocess_runner modules** — the three new orchestration modules come online.
+6. **Runner in-process guard** — `run_round` starts raising on `code_cwd is not None`.
+7. **Agent markdown + skill updates** — `.claude/agents/*.md` and `.claude/skills/autoqec-run/SKILL.md`.
+8. **Contracts** — `docs/contracts/*.md` land last with the full-picture diff for 3-of-3 review.
+
+Tests gated by each step must pass before the next step lands.
 
 **New files**:
 
@@ -976,12 +1148,29 @@ The `run_round` function itself raises `RunnerCallPathError` if called in-proces
 
 - `tests/test_orchestration_stub.py`, `tests/test_round_recorder.py`, `tests/test_loop_helpers.py`, `tests/test_run_single_round.py`, `tests/test_run_quick.py`, `tests/test_e2e_handshake.py` — each expects ~15 LOC of maintenance to accept the new fork_graph / `_PARETO_FIELDS` shape.
 
-### 15.10 Safety and cleanup
+### 15.10 Safety, cleanup, and crash recovery
+
+**Runtime safety**:
 
 - `RunnerSafety.WALL_CLOCK_HARD_CUTOFF_S` governs training as before; an additional `WORKTREE_DISK_BUDGET_GB = 5` (implemented in `worktree.py`) checks available disk before every `create_round_worktree` and raises if exceeded.
 - Simultaneous worktrees on disk are bounded to `MAX_ACTIVE_WORKTREES = 3` for MVP (current round + at most one compose scratch + one buffer); exceeding this raises and the round is logged as `killed_by_safety`.
 - After every round, `git worktree remove --force <path>` frees the checkout. Branches persist (tiny on-disk cost: just the commit object graph).
-- Stale `.worktrees/` left by a crashed run are reaped at next orchestrator start via `git worktree prune`.
+
+**Startup reconciliation** (`fork_graph.py` runs at every orchestrator start before the first round):
+
+1. List `git branch --list 'exp/<run_id>/*'` → set `B`.
+2. Parse `history.jsonl` → set `H = {row["branch"] for row in rows if row["branch"]}`.
+3. For each `b ∈ B \ H` (branch without history row): the run crashed after `git worktree add -b` but before `round_recorder.append_round`. Action: `git branch -D <b>` + `git worktree prune`. Logged to `log.md` as `reaped: <branch>`.
+4. For each `h ∈ H \ B` (history row without branch): a round was recorded but its branch was manually deleted (rare — usually human cleanup). Action: mark the round `status_reason="branch_orphaned"` if it wasn't already FAILED / compose_conflict; do not remove the history row.
+5. Fail-fast mismatches (e.g. a VERIFIED Pareto member whose commit_sha no longer exists in the reflog) pause the run and require human review.
+
+**Branch naming collisions**:
+
+- The branch name `exp/<run_id>/<N>-<slug>` is deterministic from `(run_id, round_idx, slug)`. `run_id` is a timestamp (`YYYYMMDD-HHMMSS`) minted once per orchestrator startup, so `<N>-<slug>` only collides within a single run.
+- Within a run, `round_idx` is strictly monotonic. The `slug` derives from the Ideator's hypothesis and is sanitized via `re.sub(r"[^A-Za-z0-9]+", "-", slug).lower()[:40]` (matches the `sanitize_component` helper ported from `problem-reductions/scripts/pipeline_worktree.py`).
+- On a genuine collision (same round_idx already a branch, which indicates state corruption or a restart race): the orchestrator refuses to create a new branch and halts for human review, rather than silently overwriting.
+
+**Stale worktrees from crashed runs**: reaped at startup via `git worktree prune` (run before step 1 of reconciliation above), then the filesystem-level `.worktrees/` directory is scanned for orphaned subdirectories whose corresponding branches/worktree records are gone; those are `shutil.rmtree`'d.
 
 ### 15.11 MVP scope and post-MVP
 
