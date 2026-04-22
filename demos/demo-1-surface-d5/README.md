@@ -109,3 +109,24 @@ On that run: `ler_plain_classical = 0.01563` (eval shots = 64, hence
 noisy vs the 1M-shot `LER = 0.01394` reference); `delta_ler = 0.0`
 across all three dev-profile rounds. Real predecoder improvement shows
 up in prod profile, not dev smoke.
+
+### LLM-loop round 1 (live /autoqec-run)
+
+A single live `/autoqec-run` round on `surface_d5_depol` (dev profile,
+budget 600s) is committed under
+`expected_output/llm_loop_round1/`:
+
+- `history.jsonl` — one row with the Ideator hypothesis, Coder DSL, Runner
+  RoundMetrics, Analyst verdict all in one record (round 1).
+- `log.md` — the Analyst's 3-sentence narrative.
+- `pareto.json` — empty (verdict was `ignore` because Δ LER = 0 on the
+  small dev-profile eval).
+- `round_1_config.yaml` — Coder's Tier-1 config (1-layer GNN, hidden=32,
+  mlp message_fn, linear head — the Coder mapped the Ideator's "tiny
+  FFN" hypothesis onto the schema's `gnn` type since FFN is not a valid
+  top-level `PredecoderDSL.type`).
+- `round_1_metrics.json` — Runner output: `status=ok`, 68 865 params,
+  36M FLOPs/syndrome, 11.0s train + 0.3s eval.
+
+Proves the full Ideator → Coder → Runner → Analyst chain runs end-to-end
+under the `/autoqec-run` skill.
