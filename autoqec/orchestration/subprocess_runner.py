@@ -81,6 +81,10 @@ def run_round_in_subprocess(
         argv += ["--compose-mode", cfg.compose_mode]
     if round_attempt_id is not None:
         argv += ["--round-attempt-id", round_attempt_id]
+    # Recursion guard: the child must NOT re-dispatch through subprocess_runner.
+    # See cli/autoqec.py:run_round_cmd — when this flag is set, the child runs
+    # the in-process Runner even though --code-cwd is present.
+    argv += ["--_internal-execute-locally"]
 
     proc = subprocess.run(
         argv,

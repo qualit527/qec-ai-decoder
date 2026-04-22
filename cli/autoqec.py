@@ -48,6 +48,18 @@ def main() -> None:
     default=None,
     help="UUID minted at Ideator emit-time; required on the worktree path",
 )
+@click.option(
+    "--_internal-execute-locally",
+    "_internal_execute_locally",
+    is_flag=True,
+    default=False,
+    hidden=True,
+    help=(
+        "Internal: skip subprocess dispatch and run in-process even when "
+        "--code-cwd is set. subprocess_runner sets this on the child argv "
+        "to prevent run_round_cmd from re-entering itself."
+    ),
+)
 def run_round_cmd(
     env_yaml: str,
     config_yaml: str,
@@ -58,6 +70,7 @@ def run_round_cmd(
     fork_from: str | None,
     compose_mode: str | None,
     round_attempt_id: str | None,
+    _internal_execute_locally: bool,
 ) -> None:
     env = load_env_yaml(env_yaml)
     with open(config_yaml) as f:
@@ -83,7 +96,9 @@ def run_round_cmd(
     )
 
     # Worktree-path runs go through subprocess_runner; in-process runs use the legacy Runner.
-    if code_cwd is not None:
+    # --_internal-execute-locally is the recursion guard: when subprocess_runner spawns us,
+    # it sets this flag so this branch collapses back to the in-process Runner.
+    if code_cwd is not None and not _internal_execute_locally:
         from autoqec.orchestration.subprocess_runner import run_round_in_subprocess
 
         metrics = run_round_in_subprocess(cfg, env, round_attempt_id=round_attempt_id)
