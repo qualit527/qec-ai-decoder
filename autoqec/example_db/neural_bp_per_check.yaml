@@ -1,0 +1,16 @@
+type: neural_bp
+output_mode: soft_priors
+neural_bp:
+  iterations: 5
+  weight_sharing: per_check
+  damping: learnable_per_iter
+  attention_aug: false
+  attention_heads: 1
+head: linear
+training:
+  learning_rate: 3.0e-4
+  batch_size: 64
+  epochs: 5
+  loss: bce
+  profile: dev
+

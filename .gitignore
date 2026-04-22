@@ -1,47 +1,26 @@
-# Python
+knowledge/papers/
+knowledge/download.log
+knowledge/venue_check.log
+knowledge/venue_info.json
+knowledge/retry_*.py
+knowledge/retry_*.log
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-dist/
-*.egg-info/
+*.pyc
 .venv/
 venv/
-env/
-.env
-.env.*
-
-# PyTorch / checkpoints
 *.pt
-*.pth
 *.ckpt
-checkpoints/
-outputs/
 runs/
-wandb/
-
-# Data
-data/
-datasets/
-*.npy
-*.npz
-*.h5
-*.hdf5
-
-# Jupyter
-.ipynb_checkpoints/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-
-# OS
+.env
 .DS_Store
 Thumbs.db
+knowledge/papers_md/
+knowledge/convert_with_images.log
+knowledge/convert_markdown.log
+knowledge/markdown_status.json
 
-# Logs
-*.log
-logs/
+# Full cloned reference repos — large, re-cloneable from clone_refs.sh.
+# Keep INDEX.md committed as a pointer.
+knowledge/autoresearch_refs/*/
+!knowledge/autoresearch_refs/INDEX.md
+!knowledge/autoresearch_refs/clone_refs.sh
