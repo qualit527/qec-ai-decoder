@@ -28,7 +28,10 @@ install:
 	$(PIP) install -e '.[dev]'
 
 test:
-	$(PYTEST) tests/ -m "not integration" -v
+	$(PYTEST) tests/ -m "not integration" -v \
+		--cov=autoqec \
+		--cov=cli \
+		--cov-report=term-missing:skip-covered
 
 lint:
 	$(RUFF) check autoqec cli tests scripts
@@ -51,4 +54,3 @@ run-all-claude:
 
 run-cheap:
 	$(MAKE) run AUTOQEC_IDEATOR_MODEL=claude-haiku-4-5
-
