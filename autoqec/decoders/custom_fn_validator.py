@@ -6,14 +6,20 @@ from types import FunctionType
 import torch
 from torch import nn
 
-ALLOWED_TOP_IMPORTS = {"torch", "typing"}
-ALLOWED_FROM_IMPORTS = {"torch", "torch.nn", "torch.nn.functional", "typing"}
-FORBIDDEN_NAMES = {"os", "subprocess", "sys", "shutil", "socket", "urllib", "eval", "exec", "open"}
-SLOT_SIGNATURES = {
-    "message_fn": ["x_src", "x_dst", "e_ij", "params"],
-    "aggregation": ["messages", "edge_index"],
-    "head": ["hidden_state"],
-}
+from autoqec.decoders.custom_fn_rules import (
+    ALLOWED_FROM_IMPORTS,
+    ALLOWED_TOP_IMPORTS,
+    FORBIDDEN_NAMES,
+    SLOT_SIGNATURES,
+)
+
+__all__ = [
+    "ALLOWED_TOP_IMPORTS",
+    "ALLOWED_FROM_IMPORTS",
+    "FORBIDDEN_NAMES",
+    "SLOT_SIGNATURES",
+    "validate_custom_fn",
+]
 
 
 def _load_function(code: str) -> FunctionType:

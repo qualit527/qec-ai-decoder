@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Demo 1 no-LLM smoke path. Runs three dev-profile rounds on surface_d5
+# with randomly-sampled seed templates from autoqec/example_db/.
+#
+# For the real AutoQEC experience, use the `/autoqec-run` skill inside
+# a Claude Code session. See demos/demo-1-surface-d5/README.md.
+set -euo pipefail
+
+ROUNDS="${ROUNDS:-3}"
+PROFILE="${PROFILE:-dev}"
+ENV_YAML="${ENV_YAML:-autoqec/envs/builtin/surface_d5_depol.yaml}"
+
+python -m cli.autoqec run "$ENV_YAML" \
+    --rounds "$ROUNDS" \
+    --profile "$PROFILE" \
+    --no-llm
+
+RUN_ID="$(ls -t runs | head -1)"
+echo ""
+echo "=== Demo 1 (no-LLM) complete ==="
+echo "Run dir: runs/$RUN_ID"
+echo "History: $(wc -l < runs/$RUN_ID/history.jsonl) rounds"
+[ -f "runs/$RUN_ID/pareto.json" ] && echo "Pareto:  $(cat runs/$RUN_ID/pareto.json)"
