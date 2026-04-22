@@ -31,8 +31,10 @@ from autoqec.envs.schema import load_env_yaml  # noqa: E402
 from autoqec.orchestration.loop import run_round_plan  # noqa: E402
 from autoqec.tools.machine_state import machine_state  # noqa: E402
 
-KB_PATH = Path("knowledge/DECODER_ROADMAP.md")
-SPEC_PATH = Path("docs/superpowers/specs/2026-04-20-autoqec-design.md")
+# Anchor knowledge excerpts to the repo root so running from a foreign
+# cwd doesn't silently drop them from the Ideator prompt (Codex review).
+KB_PATH = _REPO_ROOT / "knowledge/DECODER_ROADMAP.md"
+SPEC_PATH = _REPO_ROOT / "docs/superpowers/specs/2026-04-20-autoqec-design.md"
 KB_EXCERPT_MAX_CHARS = 3000
 
 

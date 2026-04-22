@@ -5,6 +5,13 @@
 sign-off. Do not rename fields here without updating
 `docs/contracts/interfaces.md` §2.2 and the Runner + orchestration tests.
 
+**Reading convention**
+
+- Statements in this doc describe **current behaviour** of the code on
+  `main` + `feat/chen-orchestration` as of 2026-04-21.
+- Known gaps between this doc and current code are tagged
+  **[TODO-fill-in]** and name the owner who should close them.
+
 ## Directory shape
 
 ```
@@ -67,7 +74,16 @@ The names it does add are frozen here:
 
 ### `metrics.json` — exactly `RoundMetrics` (§2.2)
 
-Absolute paths for `checkpoint_path` and `training_log_path`. No extra keys.
+`checkpoint_path` and `training_log_path` inherit the absoluteness of the
+`RunnerConfig.round_dir` the caller passes in. `scripts/e2e_handshake.py`
+and `scripts/run_single_round.py` pass absolute paths (via
+`Path(...).resolve()`), so their rounds record absolute paths in
+`metrics.json`. **[TODO-fill-in, Lin]** `cli/autoqec.py::run` currently
+composes `run_dir = Path("runs") / run_id` (cwd-relative) and forwards
+that to `RunnerConfig.round_dir` — tighten with `.resolve()` before
+passing, so every writer produces absolute paths regardless of cwd.
+
+No extra keys beyond `RoundMetrics`.
 
 ### `pareto.json` — list of dicts, sorted by `-delta_ler`
 
@@ -93,24 +109,40 @@ The same DSL dict that the Coder subagent produced, validated against
 
 ### `train.log` — `<step_idx>\t<loss>` per line
 
-Tab-separated. One line per batch. Used by `/diagnose-failure` and by
-the `machine_state` `params_vs_time` scatter.
+Tab-separated. One line per batch. Consumed by `/diagnose-failure`
+(Xie, Day-3). The `machine_state` `params_vs_time` scatter does **not**
+read `train.log` — it derives `(n_params, train_wallclock_s +
+eval_wallclock_s)` from `history.jsonl`.
 
-## Invariants (enforced by tests)
+## Invariants
 
-- `round_<N>/` exists **before** any `history.jsonl` entry with
-  `round == N` is written. (Covered by integration test in
-  `test_runner_smoke.py`; expand in Day-3.)
-- `metrics.json` `checkpoint_path` points inside `round_<N>/`.
-  (Covered in `test_orchestration_stub.py::test_l3_for_analyst_metrics_path_is_absolute`
-  for the path-resolution half; Runner-side covered by `test_runner_smoke`.)
-- Text files are UTF-8. Windows CI must not fall back to the locale
-  code page. (Covered in
-  `test_orchestration_stub.py::test_run_memory_append_log_roundtrips_utf8`.)
+**Enforced now:**
+
+- Orchestration-written text files (`history.jsonl`, `log.md`,
+  `pareto.json`) are opened with explicit `encoding="utf-8"` and
+  `json.dumps(..., ensure_ascii=False)` — Chinese, Δ, and other
+  non-ASCII content round-trips cleanly on Windows. Covered in
+  `test_orchestration_stub.py::test_run_memory_append_log_roundtrips_utf8`.
 - Subagent response JSON validates against
   `IdeatorResponse`/`CoderResponse`/`AnalystResponse` before its
-  contents are mirrored into `history.jsonl`. (Covered in
-  `test_orchestration_stub.py::test_parse_response_enforces_*`.)
+  contents are mirrored into `history.jsonl`. Covered in
+  `test_orchestration_stub.py::test_parse_response_enforces_*`.
+- `l3_for_analyst` passes an absolute `metrics_path` to the Analyst
+  even when the caller supplied a relative `round_dir`. Covered in
+  `test_orchestration_stub.py::test_l3_for_analyst_metrics_path_is_absolute`.
+- `_gpu_snapshot` returns `{}` on any CUDA/driver failure, not just
+  missing torch. Covered in
+  `test_machine_state.py::test_gpu_snapshot_swallows_driver_errors_from_is_available`.
+
+**[TODO-fill-in] aspirational, not enforced yet:**
+
+- `round_<N>/` exists **before** any `history.jsonl` entry with
+  `round == N` is written. (Needs a cross-component integration test in
+  Day-3 after the orchestrator → Runner loop is wired.)
+- Runner-written text files (`config.yaml`, `train.log`, `metrics.json`)
+  use `encoding="utf-8"` — current Runner code relies on locale default
+  (see `autoqec/runner/runner.py:61, 163, 230`). **[TODO-fill-in, Lin]**
+  add explicit `encoding="utf-8"`.
 
 ## Non-goals
 

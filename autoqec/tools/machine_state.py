@@ -23,20 +23,25 @@ def _load_history(run_dir: Path) -> list[dict]:
 
 
 def _gpu_snapshot() -> dict:
+    """Probe CUDA without letting any failure leak out.
+
+    The whole chain (import → is_available → mem_get_info → device
+    properties) sits inside one `try` because a mis-configured driver
+    can raise at *any* of those steps, and the Ideator prompt assembly
+    must not crash when a GPU probe fails.
+    """
     try:
         import torch  # noqa: PLC0415 — intentional lazy import
-    except ImportError:
-        return {}
-    if not torch.cuda.is_available():
-        return {}
-    try:
+
+        if not torch.cuda.is_available():
+            return {}
         free, _total = torch.cuda.mem_get_info()
         return {
             "name": torch.cuda.get_device_name(0),
             "vram_total_gb": torch.cuda.get_device_properties(0).total_memory / 1e9,
             "vram_free_gb": free / 1e9,
         }
-    except Exception:  # pragma: no cover — driver-specific
+    except Exception:
         return {}
 
 

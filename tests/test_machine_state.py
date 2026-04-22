@@ -66,3 +66,25 @@ def test_machine_state_gpu_section_is_present_even_without_cuda(tmp_path: Path) 
     state = machine_state(tmp_path / "gpuless")
     assert "gpu" in state
     assert isinstance(state["gpu"], dict)
+
+
+def test_gpu_snapshot_swallows_driver_errors_from_is_available(monkeypatch) -> None:
+    """Codex review (medium): the docstring promises *any* failure returns {};
+    the original code only guarded `import torch`, so `is_available()` raising
+    (e.g. driver init error) would crash plan assembly."""
+    import sys
+    import types
+
+    fake_torch = types.ModuleType("torch")
+
+    class _FakeCuda:
+        @staticmethod
+        def is_available() -> bool:
+            raise RuntimeError("simulated driver failure")
+
+    fake_torch.cuda = _FakeCuda()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    from autoqec.tools.machine_state import _gpu_snapshot
+
+    assert _gpu_snapshot() == {}

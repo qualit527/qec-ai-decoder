@@ -53,3 +53,21 @@ def test_handshake_script_main_runs_e2e(tmp_path: Path) -> None:
     assert result["status"] == "ok"
     metrics_path = tmp_path / "round_0" / "metrics.json"
     assert metrics_path.exists()
+
+
+def test_build_runner_config_works_from_foreign_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codex review (medium): handshake must work from any cwd, not only repo root."""
+    import os
+
+    from scripts.e2e_handshake import build_runner_config
+
+    monkeypatch.chdir(tmp_path)  # foreign cwd — repo paths must still resolve
+    cfg = build_runner_config(
+        env_yaml=None,
+        stub_yaml=None,
+        round_dir=tmp_path / "round_0",
+    )
+    assert cfg.env_name == "surface_d5_depol"
+    assert cfg.predecoder_config["type"] == "gnn"
+    # sanity: cwd is not the repo root
+    assert Path(os.getcwd()) != Path(__file__).resolve().parents[1]
