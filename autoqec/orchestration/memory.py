@@ -50,12 +50,12 @@ def tier2_validator_rules() -> dict:
 class RunMemory:
     """L1/L2 bridge. L3 is assembled on the fly when dispatching."""
 
-    def __init__(self, run_dir: Path | str) -> None:
+    def __init__(self, run_dir: Path | str, pareto_filename: str = "pareto.json") -> None:
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.history_path = self.run_dir / "history.jsonl"
         self.log_path = self.run_dir / "log.md"
-        self.pareto_path = self.run_dir / "pareto.json"
+        self.pareto_path = self.run_dir / pareto_filename
         if not self.pareto_path.exists():
             self.pareto_path.write_text("[]", encoding="utf-8")
 

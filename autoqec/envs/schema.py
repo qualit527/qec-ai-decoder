@@ -54,16 +54,18 @@ def load_env_yaml(path: str | Path) -> EnvSpec:
     path = Path(path).expanduser().resolve()
     with path.open() as f:
         data = yaml.safe_load(f)
-    code = dict(data.get("code", {}))
-    source = code.get("source")
-    if source:
-        source_path = Path(source).expanduser()
-        if not source_path.is_absolute():
-            candidates = [(path.parent / source_path).resolve()]
-            repo_root = next((parent for parent in path.parents if (parent / "pyproject.toml").exists()), None)
-            if repo_root is not None:
-                candidates.append((repo_root / source_path).resolve())
-            source_path = next((candidate for candidate in candidates if candidate.exists()), candidates[0])
-        code["source"] = str(source_path)
-    data["code"] = code
+    if "code" in data:
+        code = dict(data["code"] or {})
+        source = code.get("source")
+        if source:
+            source_path = Path(source).expanduser()
+            if not source_path.is_absolute():
+                candidates = [(path.parent / source_path).resolve()]
+                repo_root = next((parent for parent in path.parents if (parent / "pyproject.toml").exists()), None)
+                if repo_root is not None:
+                    candidates.append((repo_root / source_path).resolve())
+                existing = [candidate for candidate in candidates if candidate.exists()]
+                source_path = existing[0] if existing else candidates[0]
+            code["source"] = str(source_path)
+        data["code"] = code
     return EnvSpec(**data)

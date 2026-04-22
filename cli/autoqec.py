@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib import resources
 import json
 import random
 import time
@@ -19,8 +20,32 @@ def main() -> None:
     """AutoQEC CLI."""
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+RESULT_PREFIX = "AUTOQEC_RESULT_JSON="
+
+
+def load_example_templates() -> list[tuple[str, dict]]:
+    template_root = resources.files("autoqec").joinpath("example_db")
+    try:
+        template_files = sorted(
+            [entry for entry in template_root.iterdir() if entry.name.endswith(".yaml")],
+            key=lambda entry: entry.name,
+        )
+    except FileNotFoundError as exc:
+        raise click.ClickException(
+            "Example templates are not available in this install. "
+            "Reinstall from a source checkout or include autoqec example_db package data."
+        ) from exc
+
+    templates = [
+        (Path(entry.name).stem, yaml.safe_load(entry.read_text(encoding="utf-8")))
+        for entry in template_files
+    ]
+    if not templates:
+        raise click.ClickException(
+            "No example templates were found under autoqec/example_db. "
+            "This install is missing packaged demo templates."
+        )
+    return templates
 
 
 def _candidate_pareto(records: list[dict]) -> list[dict]:
@@ -104,10 +129,10 @@ def run_round_cmd(env_yaml: str, config_yaml: str, round_dir: str, profile: str)
 def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
     env = load_env_yaml(env_yaml)
     run_id = time.strftime("%Y%m%d-%H%M%S")
-    run_dir = Path("runs") / run_id
+    run_dir = (Path("runs") / run_id).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
-    mem = RunMemory(run_dir)
-    templates = sorted((_repo_root() / "autoqec/example_db").glob("*.yaml"))
+    mem = RunMemory(run_dir, pareto_filename="candidate_pareto.json")
+    templates = load_example_templates()
     dev_safe_templates = {"gnn_small", "gnn_gated", "neural_bp_min"}
     history: list[dict] = []
     for round_idx in range(1, rounds + 1):
@@ -115,9 +140,13 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
         if no_llm:
             candidates = templates
             if profile == "dev":
-                candidates = [path for path in templates if path.stem in dev_safe_templates]
-            template = random.choice(candidates)
-            cfg_dict = yaml.safe_load(template.read_text())
+                candidates = [item for item in templates if item[0] in dev_safe_templates]
+            if not candidates:
+                raise click.ClickException(
+                    f"No bundled templates are available for profile={profile!r}. "
+                    "This install is missing the expected demo template assets."
+                )
+            _, cfg_dict = random.choice(candidates)
         else:
             raise click.ClickException("LLM mode is not wired in this branch yet; use --no-llm")
         cfg = RunnerConfig(
@@ -136,13 +165,13 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
         click.echo(f"Round {round_idx}: {metrics.status} Δ={metrics.delta_ler}")
     (run_dir / "history.json").write_text(json.dumps(history, indent=2))
     click.echo(
-        json.dumps(
+        f"{RESULT_PREFIX}"
+        + json.dumps(
             {
                 "run_dir": str(run_dir),
                 "rounds": rounds,
-                "pareto_path": str(run_dir / "pareto.json"),
-            },
-            indent=2,
+                "candidate_pareto_path": str(run_dir / "candidate_pareto.json"),
+            }
         )
     )
 

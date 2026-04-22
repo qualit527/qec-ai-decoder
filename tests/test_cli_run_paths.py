@@ -1,15 +1,27 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
-from cli.autoqec import _candidate_pareto
+import cli.autoqec as autoqec_cli
+
+from autoqec.envs.schema import load_env_yaml
+
+
+def _extract_result_payload(stdout: str) -> dict:
+    prefix = getattr(autoqec_cli, "RESULT_PREFIX", None)
+    assert isinstance(prefix, str) and prefix, "cli.autoqec must expose a parseable result prefix"
+    payload_lines = [line for line in stdout.splitlines() if line.startswith(prefix)]
+    assert payload_lines, f"no result payload line found in stdout: {stdout!r}"
+    return json.loads(payload_lines[-1][len(prefix) :])
 
 
 def test_candidate_pareto_keeps_only_nondominated_successful_records() -> None:
-    front = _candidate_pareto(
+    front = autoqec_cli._candidate_pareto(
         [
             {
                 "round": 1,
@@ -58,9 +70,38 @@ def test_candidate_pareto_keeps_only_nondominated_successful_records() -> None:
     assert all(item["verified"] is False for item in front)
 
 
-def test_run_cli_works_from_foreign_cwd_and_writes_pareto(tmp_path: Path) -> None:
+def test_load_example_templates_includes_dev_safe_templates() -> None:
+    loader = getattr(autoqec_cli, "load_example_templates", None)
+    assert callable(loader), "cli.autoqec must provide a template loader"
+    template_names = {name for name, _ in loader()}
+    assert {"gnn_small", "gnn_gated", "neural_bp_min"}.issubset(template_names)
+
+
+def test_pyproject_declares_example_yaml_as_package_data() -> None:
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+    package_data = pyproject["tool"]["setuptools"]["package-data"]["autoqec"]
+    assert "example_db/*.yaml" in package_data
+
+
+def test_load_env_yaml_resolves_code_source_via_repo_root_fallback() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     env_yaml = repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml"
+    sibling_candidate = env_yaml.parent / "circuits/surface_d5.stim"
+
+    assert not sibling_candidate.exists()
+
+    env = load_env_yaml(env_yaml)
+
+    assert env.code.source == str((repo_root / "circuits/surface_d5.stim").resolve())
+
+
+def test_run_cli_works_from_foreign_cwd_and_writes_candidate_pareto(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    env_yaml = repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = (
+        f"{repo_root}{os.pathsep}{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(repo_root)
+    )
 
     completed = subprocess.run(
         [
@@ -80,16 +121,18 @@ def test_run_cli_works_from_foreign_cwd_and_writes_pareto(tmp_path: Path) -> Non
         text=True,
         check=True,
         encoding="utf-8",
+        env=env,
     )
 
-    payload = json.loads(completed.stdout[completed.stdout.rfind("{") :])
-    run_dir = tmp_path / payload["run_dir"]
+    payload = _extract_result_payload(completed.stdout)
+    run_dir = Path(payload["run_dir"])
 
     assert run_dir.exists()
     assert (run_dir / "history.json").exists()
     assert (run_dir / "history.jsonl").exists()
-    assert (run_dir / "pareto.json").exists()
+    assert not (run_dir / "pareto.json").exists()
+    assert (run_dir / "candidate_pareto.json").exists()
 
-    pareto = json.loads((run_dir / "pareto.json").read_text(encoding="utf-8"))
+    pareto = json.loads((run_dir / "candidate_pareto.json").read_text(encoding="utf-8"))
     assert isinstance(pareto, list)
-    assert payload["pareto_path"].endswith("pareto.json")
+    assert payload["candidate_pareto_path"].endswith("candidate_pareto.json")

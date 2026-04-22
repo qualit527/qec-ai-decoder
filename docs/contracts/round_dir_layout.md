@@ -18,7 +18,8 @@ sign-off. Do not rename fields here without updating
 runs/<run_id>/                 ← the RUN (one /autoqec-run invocation)
 ├── history.jsonl              ← orchestration: one line per round
 ├── log.md                     ← orchestration: narrative, human-readable
-├── pareto.json                ← orchestration: current Pareto front (≤ 5)
+├── pareto.json                ← orchestration: current authoritative Pareto front (≤ 5)
+├── candidate_pareto.json      ← CLI demo path: unverified candidate front (optional)
 └── round_<N>/                 ← one ROUND (one Runner invocation)
     ├── config.yaml            ← Runner: dump of predecoder_config dict
     ├── train.log              ← Runner: one `<step>\t<loss>` per line
@@ -37,6 +38,7 @@ runs/<run_id>/                 ← the RUN (one /autoqec-run invocation)
 | `history.jsonl` | `RunMemory.append_round` | after each round's Runner + Analyst |
 | `log.md` | `RunMemory.append_log` | after each round's Analyst |
 | `pareto.json` | `RunMemory.update_pareto` | after the Pareto refresh at round end |
+| `candidate_pareto.json` | `cli/autoqec.py::run` via `RunMemory(..., pareto_filename=...)` | after each demo round in the no-LLM CLI path |
 | `round_<N>/` | `run_round` | at round start |
 | `config.yaml` | `run_round` | before training |
 | `train.log` | `run_round` | during training (overwritten once at end) |
@@ -56,6 +58,8 @@ The orchestration side writes **only** at the run root; the Runner writes
 | `machine_state` tool | `history.jsonl` | Round timings + killed counts |
 | Verifier (Day-3) | `round_<N>/checkpoint.pt`, `round_<N>/config.yaml` | Independent holdout eval |
 | `/review-log` skill | `log.md`, `history.jsonl` | Retrospective |
+
+`candidate_pareto.json` is demo/reporting output only. Orchestration L2/L3 readers must continue to treat `pareto.json` as the authoritative, verifier-owned front.
 
 ## Required fields per file
 
