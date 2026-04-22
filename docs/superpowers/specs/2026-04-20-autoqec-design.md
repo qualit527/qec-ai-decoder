@@ -164,13 +164,15 @@ Reviewer is deliberately excluded from MVP; the main orchestrator itself handles
             ↓ dispatch per-round
 ┌────────────────────────────────────────────────────────────┐
 │ Layer 3 — Per-subagent context (3-5k tokens)               │
-│   Ideator: env + Pareto + last 5 hypothesis + KB excerpts  │
+│   Ideator: env + fork_graph (§15.4) + KB excerpts          │
+│             + machine_state tool output                    │
 │   Coder:   hypothesis + DSL schema + 3 best-so-far configs │
+│             + worktree_dir (when §15 worktree path active) │
 │   Analyst: round metrics + previous-round delta            │
 └────────────────────────────────────────────────────────────┘
 ```
 
-Core rule: **summarize on write, not on read**. Each round's entry is compressed to a 1-line summary when persisted; subsequent rounds read summaries, not raw.
+Core rule: **summarize on write, not on read**. Each round's entry is compressed to a 1-line summary when persisted; subsequent rounds read summaries, not raw. Ideator context upgrade from "last 5 hypotheses" flat list to the full fork_graph tree is introduced in §15.4; this section describes the post-§15 shape.
 
 Crash recovery: disk is canonical. If the main chat closes or the process dies, the next invocation reads L1 to rebuild L2 and continue.
 
@@ -877,16 +879,18 @@ Size estimate: 10–20 rounds × ~200 tokens/node ≈ 3–4k tokens; fits inside
 | `docs/`, `knowledge/` | **main only** | documentation is infrastructure |
 | `.claude/agents/`, `.claude/skills/` | **main only** | agent definitions don't change per experiment |
 
-`round_N_pointer.json` (the single file the worktree commits after Runner finishes). Provenance fields are **all required**; consumers reject pointer files missing any of them:
+`round_N_pointer.json` (the single file the worktree commits after Runner finishes). Provenance fields are **all required**; consumers reject pointer files missing any of them. `round_attempt_id` is persisted here so §15.10 startup reconciliation can recover it after a crash between pointer-commit and `history.jsonl` append:
 
 ```json
 {
   "run_id": "20260422-140000",
   "round_idx": 5,
+  "round_attempt_id": "8b4f2c1e-9d3a-4f1b-b2e7-56f0ab7c3def",
   "branch": "exp/20260422-140000/05-gated-mlp",
   "commit_sha": "abc1234567890...",
   "fork_from": "baseline",
   "fork_from_canonical": "baseline",
+  "fork_from_ordered": null,
 
   "provenance": {
     "env_yaml_sha256": "a1b2c3...",
@@ -950,6 +954,7 @@ On `git merge` conflict (step 3 of §15.3 lifecycle):
  "status": "compose_conflict",
  "fork_from": ["exp/.../02-gated-mlp", "exp/.../04-neural-bp"],
  "fork_from_canonical": "exp/.../02-gated-mlp|exp/.../04-neural-bp",
+ "fork_from_ordered": ["exp/.../02-gated-mlp", "exp/.../04-neural-bp"],
  "compose_mode": "pure",
  "conflicting_files": ["autoqec/decoders/modules/gnn.py"],
  "timestamp": "2026-04-22T14:37:22Z",
@@ -992,6 +997,7 @@ class RunnerConfig(BaseModel):
     branch:              Optional[str] = None          # exp/<run_id>/<N>-<slug>; required when code_cwd is set
     fork_from:           Optional[Union[str, list[str]]] = None  # list → compose round
     fork_from_canonical: Optional[str] = None          # sorted, |-joined; dedup key for compose
+    fork_from_ordered:   Optional[list[str]] = None    # merge-sequence order (drives git merge base); compose only
     compose_mode:        Optional[Literal["pure", "with_edit"]] = None  # required when fork_from is list
 
     @model_validator(mode="after")
@@ -1006,18 +1012,23 @@ class RunnerConfig(BaseModel):
 class RoundMetrics(BaseModel):
     # ... existing fields unchanged ...
     round_attempt_id:    Optional[str] = None                          # UUID from Ideator; REQUIRED on worktree path
-    reconcile_id:        Optional[str] = None                          # UUID from startup reconciliation; set iff row is synthetic (status=orphaned_branch with no recoverable round_attempt_id)
-    branch:              Optional[str] = None                          # None for legacy in-process path + compose_conflict
+    reconcile_id:        Optional[str] = None                          # UUID from startup reconciliation; set iff row is synthetic
+    branch:              Optional[str] = None                          # None for legacy in-process path + compose_conflict + unrecoverable orphans
     commit_sha:          Optional[str] = None                          # REQUIRED when branch is set (validator)
     fork_from:           Optional[Union[str, list[str]]] = None
     fork_from_canonical: Optional[str] = None
+    fork_from_ordered:   Optional[list[str]] = None                    # compose rounds only
     compose_mode:        Optional[Literal["pure", "with_edit"]] = None
     delta_vs_parent:     Optional[float] = None                        # training-regime Δ; search-guidance only
     parent_ler:          Optional[float] = None
     conflicting_files:   Optional[list[str]] = None                    # set iff status=compose_conflict
     train_seed:          Optional[int] = None                          # seed actually used; for Pareto disambiguation
-    # Existing `status` Literal gains one new variant:
-    status: Literal["ok", "killed_by_safety", "compile_error", "train_error", "compose_conflict"]
+    status_reason:       Optional[str] = None                          # short explanation for non-ok / orphaned / branch_manually_deleted statuses
+    # `status` Literal gains new variants for reconciliation outcomes:
+    status: Literal[
+        "ok", "killed_by_safety", "compile_error", "train_error", "compose_conflict",
+        "orphaned_branch", "branch_manually_deleted",   # set by §15.10 startup reconciliation
+    ]
 
     @model_validator(mode="after")
     def _provenance_integrity(self):
@@ -1282,19 +1293,23 @@ predecoder:
 
 ## Appendix B — Subagent prompt skeletons
 
-Full prompts in `.claude/agents/autoqec-*.md`. Abbreviated structure here:
+Full prompts in `.claude/agents/autoqec-*.md`. Abbreviated structure here (post-§15 shape — see §15.4 for the full fork_graph input and §15.7 for the response schema with `fork_from` / `compose_mode`):
 
 ```
 autoqec-ideator.md (~300 tokens)
   You are the Ideator in AutoQEC's multi-round research loop.
-  Input: env_spec, pareto_front, last_5_hypotheses, knowledge_excerpts.
+  Input: env_spec, fork_graph (§15.4), knowledge_excerpts, machine_state output.
   Tool: machine_state (CALL FIRST — use it to estimate compute budget).
-  Output: JSON {hypothesis, expected_delta_ler, expected_cost_s, rationale}.
-  Constraints: no re-proposing past hypotheses; respect budget.
+  Output: JSON {hypothesis, fork_from, compose_mode?, expected_delta_ler,
+                 expected_cost_s, rationale, dsl_hint?}.
+  Constraints: no re-proposing past hypotheses; no re-proposing failed compose
+               parent sets; respect budget.
 
 autoqec-coder.md (~250 tokens)
   You are the Coder. Emit valid Tier-1 DSL YAML for the given hypothesis.
   Escalate to Tier-2 custom_fn only when Tier-1 provably cannot express.
+  cwd is a worktree when §15 worktree path is active; edits land in the branch.
+  Output: JSON {dsl_config, tier, rationale, commit_message}.
   Tools: Read, Write, Edit. No Bash.
 
 autoqec-analyst.md (~200 tokens)
