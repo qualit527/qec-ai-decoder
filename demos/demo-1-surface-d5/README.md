@@ -95,3 +95,17 @@ predecoder beat PyMatching on this round's val shots.
 - **Seed templates are weak on surface codes.** Expect Δ LER near 0 or
   slightly negative in the first Tier-1 round. The loop's job is to
   iterate toward something better.
+
+## Sample output
+
+A smoke run (CPU torch, Python 3.10, surface_d5, `--rounds 3 --profile dev
+--no-llm`, ~3 min total) is committed for reference:
+
+- `expected_output/sample_run/history.jsonl` — all three rounds, `status=ok`
+- `expected_output/sample_run/round_1_metrics.json` — one full `RoundMetrics` dump
+- `expected_output/sample_run/round_1_config.yaml` — the DSL config the Runner trained
+
+On that run: `ler_plain_classical = 0.01563` (eval shots = 64, hence
+noisy vs the 1M-shot `LER = 0.01394` reference); `delta_ler = 0.0`
+across all three dev-profile rounds. Real predecoder improvement shows
+up in prod profile, not dev smoke.
