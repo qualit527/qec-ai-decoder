@@ -718,7 +718,7 @@ Day 2 morning the Orchestrator must already call subagents and Runner. If the Ru
 | Worktree disk pressure (§15) | Low | `MAX_ACTIVE_WORKTREES=3` + `WORKTREE_DISK_BUDGET_GB=5` checks; `git worktree prune` on orchestrator startup reaps crashed-run leftovers |
 | Subprocess Runner launch overhead (§15.8) | Low | One subprocess per round (not per batch); adds ~1–2 s to 3–20 min training, negligible |
 | Merge-conflict rate too high in compose rounds (§15.6) | Med | Ideator prompt penalises parent pairs already marked `FAILED_compose`; compose rounds bounded to ≤20% of total rounds per run |
-| `pareto.json` and git branches drift apart | Med | `autoqec/orchestration/fork_graph.py` reconciles at round start; mismatch raises and pauses the run for human review |
+| `pareto.json` and git branches drift apart | Med | `autoqec/orchestration/fork_graph.py` reconciles at round start per §15.10 auto-heal/pause policy — safe cases auto-fix, ambiguous cases (quarantine without recoverable `round_attempt_id`, missing Pareto commit) pause for human review |
 
 ## 14. Deferred to post-MVP (labeled, not forgotten)
 
@@ -768,8 +768,8 @@ Invariants:
 - A round's `delta_ler` has two distinct reportings. `delta_vs_parent` is measured under Runner's training-seed / val-shot regime and is used as a **search-guidance signal** for the Ideator. **Pareto admission and compose-round judgments use `delta_vs_baseline` computed by `/verify-decoder` on the canonical holdout bundle** (seeds `9000-9999`, `min_shots_verify`). Mixing the two is a category error; see §15.6 for the paired comparison protocol.
 - FAILED branches are retained as named branches (commits are cheap) but their `.worktrees/` checkouts are removed after the round completes. Negative results remain queryable via `history.jsonl` + branch inspection.
 - `pareto.json` is the **complete non-dominated archive** over `(delta_vs_baseline [higher better], flops_per_syndrome [lower], n_params [lower])`. No size cap — every VERIFIED branch that is not strictly dominated by another VERIFIED branch is a member. The top-5 "preview" (for Ideator L2 context and `/review-log` headlines) lives in `pareto_preview.json` as a derived view. `round_recorder.py`'s current top-5 sorted list is replaced by non-dominated filtering (see §15.9.1).
-- **Identifier invariants split by row type.** Every `history.jsonl` / `pareto.json` row carries `round_attempt_id` (UUID minted at Ideator emit-time; always present, immutable). Rows backed by a committed worktree additionally carry `commit_sha` (canonical provenance key; immutable once set) and `branch` (human-readable alias; mutable). Non-commit terminal outcomes — `compose_conflict` — carry `round_attempt_id` only and set `commit_sha=null, branch=null`. A checkpoint is replayable iff `(commit_sha, env_yaml_sha256, dsl_config_sha256, requirements_fingerprint)` is intact (§15.5). A failed attempt is re-identifiable via `round_attempt_id` alone.
-- `git branch --list 'exp/<run_id>/*'` is a view derived from `history.jsonl`; `fork_graph.py` reconciles the two at orchestrator startup and pauses the run if they disagree (branch without history row, or history row without branch).
+- **Identifier invariants split by row type.** Normal rounds (hypothesis → commit → train → record): every `history.jsonl` / `pareto.json` row carries `round_attempt_id` (UUID minted at Ideator emit-time; immutable). Rows backed by a committed worktree additionally carry `commit_sha` (canonical provenance key; immutable once set) and `branch` (human-readable alias; mutable). Non-commit terminal outcomes — `compose_conflict` — carry `round_attempt_id` only and set `commit_sha=null, branch=null`. Reconciliation-synthetic rows (orphaned branch quarantined at startup when the original attempt_id was unrecoverable) carry a separate `reconcile_id` field and set `round_attempt_id=null` — operators can distinguish real Ideator attempts from post-crash reconstructions. A checkpoint is replayable iff `(commit_sha, env_yaml_sha256, dsl_config_sha256, requirements_fingerprint)` is intact (§15.5). A failed attempt is re-identifiable via `round_attempt_id` alone; a reconciled orphan via `reconcile_id`.
+- `git branch --list 'exp/<run_id>/*'` is a view derived from `history.jsonl`; `fork_graph.py` reconciles the two at orchestrator startup according to the auto-heal / pause policy in §15.10 (safe cases like empty synthetic branches auto-reap; committed-orphan branches quarantine; missing Pareto commits pause for human review).
 
 ### 15.3 Round lifecycle
 
@@ -1005,7 +1005,8 @@ class RunnerConfig(BaseModel):
 # autoqec/runner/schema.py — RoundMetrics additions
 class RoundMetrics(BaseModel):
     # ... existing fields unchanged ...
-    round_attempt_id:    Optional[str] = None                          # UUID; REQUIRED on worktree path (validator)
+    round_attempt_id:    Optional[str] = None                          # UUID from Ideator; REQUIRED on worktree path
+    reconcile_id:        Optional[str] = None                          # UUID from startup reconciliation; set iff row is synthetic (status=orphaned_branch with no recoverable round_attempt_id)
     branch:              Optional[str] = None                          # None for legacy in-process path + compose_conflict
     commit_sha:          Optional[str] = None                          # REQUIRED when branch is set (validator)
     fork_from:           Optional[Union[str, list[str]]] = None
@@ -1020,9 +1021,13 @@ class RoundMetrics(BaseModel):
 
     @model_validator(mode="after")
     def _provenance_integrity(self):
-        # round_attempt_id is required whenever the worktree path is active (fork_from set or branch set).
-        if (self.branch is not None or self.fork_from is not None) and self.round_attempt_id is None:
-            raise ValueError("round_attempt_id is required on the worktree path")
+        # At least one identifier is required on the worktree path.
+        is_worktree_row = self.branch is not None or self.fork_from is not None or self.status == "compose_conflict"
+        if is_worktree_row and self.round_attempt_id is None and self.reconcile_id is None:
+            raise ValueError("worktree-path rows need round_attempt_id (normal) or reconcile_id (startup-reconstructed)")
+        # round_attempt_id and reconcile_id are mutually exclusive — a row is either a real attempt or a reconciliation synthetic, not both.
+        if self.round_attempt_id is not None and self.reconcile_id is not None:
+            raise ValueError("round_attempt_id and reconcile_id are mutually exclusive")
         # commit_sha paired with branch for commit-backed rounds
         if self.branch is not None and self.commit_sha is None:
             raise ValueError("commit_sha is required whenever branch is set")
@@ -1058,21 +1063,28 @@ class IdeatorResponse(BaseModel):
     expected_cost_s: int
     rationale: str
     dsl_hint: Optional[dict] = None
-    fork_from: Union[Literal["baseline"], str, list[str]]   # NEW — required field
-    compose_mode: Optional[Literal["pure", "with_edit"]] = None  # NEW — required when fork_from is list
+    fork_from: Union[Literal["baseline"], str, list[str]] = "baseline"  # NEW — defaults so
+                                                                         # legacy Ideator responses
+                                                                         # (no fork_from emitted) still
+                                                                         # validate as new-line-of-attack
+    compose_mode: Optional[Literal["pure", "with_edit"]] = None          # NEW — required when fork_from is list
 
 class CoderResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # ... existing fields ...
-    commit_message: str   # NEW — used for `git commit -m` in step 5 of §15.3
+    commit_message: Optional[str] = None   # NEW — filled by Coder when worktree path is active;
+                                            # absent is tolerated for non-worktree (legacy) responses
 ```
+
+Choice of `fork_from = "baseline"` default is deliberate and unblocks §15.9.3 step 1: schemas can land before the Ideator prompt is rewritten, because responses omitting the field validate as "new line of attack from baseline" — the same behaviour the current loop already produces implicitly. When step 4 lands, the prompt starts requiring the Ideator to emit `fork_from` explicitly.
 
 `pareto.json` stores the **complete non-dominated set** of VERIFIED branches. Row schema:
 
 ```json
-{"commit_sha":  "abc12345...",     // canonical provenance key; REQUIRED
- "branch":      "exp/.../02-gated-mlp",  // human-readable alias; mutable
- "delta_vs_baseline_holdout": 4.0e-4,    // from /verify-decoder paired bundle
+{"round_attempt_id": "8b4f2c1e-...",          // immutable row key; REQUIRED (§15.2)
+ "commit_sha":  "abc12345...",                 // canonical provenance key; REQUIRED (Pareto admission requires a commit)
+ "branch":      "exp/.../02-gated-mlp",        // human-readable alias; mutable
+ "delta_vs_baseline_holdout": 4.0e-4,          // from /verify-decoder paired bundle
  "paired_eval_bundle_id":     "bundle-20260422-1500",
  "flops_per_syndrome":        180000,
  "n_params":                  42000,
@@ -1081,6 +1093,8 @@ class CoderResponse(BaseModel):
  "fork_from_canonical":       "baseline",
  "compose_mode":              null}
 ```
+
+Pareto membership requires a committed round (verdict=VERIFIED), so `commit_sha` and `branch` are always non-null here; compose-conflict rows are not Pareto candidates and never appear in `pareto.json`.
 
 `pareto_preview.json` is a derived L2 view (top-5 by `-delta_vs_baseline_holdout`) regenerated after every Pareto mutation. Readers that consume only the preview must not claim to report the full archive.
 
@@ -1178,9 +1192,11 @@ Tests gated by each step must pass before the next step lands.
 2. Parse `history.jsonl` → set `H = {row["branch"] for row in rows if row.get("branch")}`.
 3. For each `b ∈ B \ H` (branch without history row), inspect git state to classify:
    a. **Empty synthetic branch** — `git rev-list --count <b> ^origin/main` reports 0, no pointer file on HEAD, no artifacts under `runs/<id>/round_N/` matching the branch slug. The lifecycle crashed between step 3 (worktree create) and step 5 (first commit). Action: `git branch -D <b>` + `git worktree prune`. Logged as `reaped: <branch> (empty)`.
-   b. **Committed round without history** — ≥1 commit on the branch or a pointer file exists or artifacts are on disk. The lifecycle crashed between step 5 and step 10. Action: **quarantine, do not delete**. Rename to `quarantine/<run_id>/<N>-<slug>`, write a `history.jsonl` row with `status=orphaned_branch`, `round_attempt_id=<newly minted UUID>`, and links to the available commit_sha + pointer file + artifacts. Operator reviews whether to manually promote or drop.
+   b. **Committed round without history** — ≥1 commit on the branch or a pointer file exists or artifacts are on disk. The lifecycle crashed between step 5 and step 10. Action: **quarantine, do not delete**. Rename to `quarantine/<run_id>/<N>-<slug>`. Try to recover the original `round_attempt_id` from the pointer file (Runner writes it in step 6); if recovered, write an `orphaned_branch` history row preserving it. If not recovered (crash before pointer commit), write the row with `round_attempt_id=null` and a fresh `reconcile_id=<UUID>` — so the operator knows this is a reconciliation synthetic record, not an original Ideator attempt. Operator reviews whether to manually promote or drop.
 4. For each `h ∈ H \ B` (history row with non-null `branch` but no live branch): the branch was manually deleted after recording. Action: append a `status_reason="branch_manually_deleted"` follow-up row referencing the original `round_attempt_id`; do not touch the existing history row.
 5. For every Pareto member, verify the commit is still retrievable via `git rev-parse --verify <commit_sha>^{commit}` (reachable object check, not reflog — reflogs expire). A missing commit pauses the run for human review; do not silently drop from Pareto.
+
+**Auto-heal vs pause policy** (disambiguates the risk-table reference). Auto-healed without pause: case 3a (empty synthetic), case 3b-with-recoverable-id (quarantine + original id), case 4 (branch manually deleted — append-only follow-up). Paused for human review: case 3b-without-recoverable-id (quarantine but reconcile_id required — operator must decide), case 5 (missing Pareto commit). The auto-heal actions are all **idempotent and non-destructive**: delete is only applied to empty synthetic branches; committed state is always quarantined, never dropped.
 
 **Branch naming collisions**:
 
