@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class IdeatorResponse(BaseModel):
@@ -23,6 +23,16 @@ class IdeatorResponse(BaseModel):
     # §15 additions — fork_from defaults to "baseline" so legacy responses validate.
     fork_from: Union[str, list[str]] = "baseline"
     compose_mode: Optional[Literal["pure", "with_edit"]] = None
+
+    @model_validator(mode="after")
+    def _compose_requires_mode(self) -> "IdeatorResponse":
+        # Mirrors the RunnerConfig invariant: list fork_from means compose round,
+        # which requires an explicit compose_mode (pure vs with_edit).
+        if isinstance(self.fork_from, list) and self.compose_mode is None:
+            raise ValueError(
+                "compose_mode is required when fork_from is a list"
+            )
+        return self
 
 
 class CoderResponse(BaseModel):
