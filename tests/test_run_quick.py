@@ -10,6 +10,7 @@ injection is structurally impossible even if validation were skipped.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -52,3 +53,36 @@ def test_validated_env_yaml_rejects_shell_metacharacter_path(tmp_path: Path) -> 
     hostile = tmp_path / "does-not-exist.yaml; rm -rf /"
     with pytest.raises(SystemExit, match="env_yaml not found"):
         _validated_env_yaml(str(hostile))
+
+
+def test_run_quick_reports_candidate_pareto_summary(monkeypatch, tmp_path: Path, capsys) -> None:
+    """The no-LLM CLI writes candidate_pareto.json, not pareto.json."""
+    from scripts import run_quick
+
+    env_yaml = tmp_path / "env.yaml"
+    env_yaml.write_text("name: smoke\n", encoding="utf-8")
+    run_dir = tmp_path / "runs" / "20260423-120000"
+    run_dir.mkdir(parents=True)
+    (run_dir / "history.jsonl").write_text('{"round": 1}\n', encoding="utf-8")
+    (run_dir / "candidate_pareto.json").write_text('[{"round": 1}]', encoding="utf-8")
+
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(run_quick, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        run_quick,
+        "_parse_args",
+        lambda: SimpleNamespace(env_yaml=str(env_yaml), rounds=1, profile="dev"),
+    )
+    monkeypatch.setattr(run_quick.subprocess, "run", fake_run)
+
+    assert run_quick.main() == 0
+
+    out = capsys.readouterr().out
+    assert "Candidate Pareto:" in out
+    assert "[{'round': 1}]" in out
+    assert "--no-llm" in calls[0][0]

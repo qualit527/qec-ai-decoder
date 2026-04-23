@@ -151,13 +151,15 @@ runs/<YYYYMMDD-HHMMSS>/
 └── round_<N>/           # see below
 ```
 
-**Path B (`run_quick.sh` no-LLM)** — bare Runner output, no Analyst/Pareto:
+**Path B (`run_quick.sh` / `scripts/run_quick.py` no-LLM)** — bare Runner output with
+candidate-only bookkeeping, but no Analyst narrative or verified Pareto:
 
 ```
 runs/<YYYYMMDD-HHMMSS>/
 ├── history.jsonl        # one RoundMetrics record per round (no hypothesis,
 │                        # no verdict — no LLM ran)
 ├── history.json         # aggregate of above
+├── candidate_pareto.json # unverified non-dominated successful rounds
 └── round_<N>/           # see below
 ```
 
@@ -179,8 +181,9 @@ round_<N>/
   uses 64 val shots so Δ LER CI is wide — expect `Δ ≈ 0` with occasional
   lucky rounds. Prod profile numbers are the publishable ones.
 - **Candidate vs ignore**: Analyst flags `verdict = "candidate"` when Δ
-  LER is positive within CI. `pareto.json` only admits candidates;
-  ignored rounds still land in `history.jsonl` for debugging.
+  LER is positive within CI. LLM runs update `pareto.json`; no-LLM smoke
+  runs emit `candidate_pareto.json` as an unverified non-dominated summary.
+  Ignored rounds still land in `history.jsonl` for debugging.
 - **Compare to the baseline**: match `ler_predecoder` against the 1M-shot
   reference (0.01394). If your dev-profile `ler_plain_classical` sits
   around 0.015–0.020 that's the normal 64-shot noise.
