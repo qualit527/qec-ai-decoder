@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/qualit527/qec-ai-decoder/actions/workflows/ci.yml/badge.svg)](https://github.com/qualit527/qec-ai-decoder/actions/workflows/ci.yml)
 [![testcov](https://codecov.io/github/qualit527/qec-ai-decoder/graph/badge.svg)](https://codecov.io/github/qualit527/qec-ai-decoder)
+[![API docs](https://img.shields.io/badge/API-docs-blue)](https://qualit527.github.io/qec-ai-decoder/)
 
 AutoQEC is an LLM-agent-driven auto-research harness for discovering **neural predecoders** for quantum error-correcting codes. Given an environment triple `(code_spec, noise_model, constraints)`, the system runs 10–20 rounds of *hypothesis → DSL config → training → evaluation → analysis* and emits verified predecoder checkpoints on the accuracy–latency–parameters Pareto front.
 
