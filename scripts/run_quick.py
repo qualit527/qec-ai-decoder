@@ -92,11 +92,14 @@ def main() -> int:
         rounds = sum(1 for line in hist_path.read_text(encoding="utf-8").splitlines() if line.strip())
         print(f"History: {rounds} rounds")
 
-    pareto_path = run_dir / "pareto.json"
-    if pareto_path.exists():
-        print("Pareto:", json.loads(pareto_path.read_text(encoding="utf-8")))
+    candidate_pareto_path = run_dir / "candidate_pareto.json"
+    if candidate_pareto_path.exists():
+        print(
+            "Candidate Pareto:",
+            json.loads(candidate_pareto_path.read_text(encoding="utf-8")),
+        )
     else:
-        print("Pareto:  (none — --no-llm does not track pareto)")
+        print("Candidate Pareto:  (none yet)")
     return 0
 
 

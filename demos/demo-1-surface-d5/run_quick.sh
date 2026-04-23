@@ -20,4 +20,8 @@ echo ""
 echo "=== Demo 1 (no-LLM) complete ==="
 echo "Run dir: runs/$RUN_ID"
 echo "History: $(wc -l < runs/$RUN_ID/history.jsonl) rounds"
-[ -f "runs/$RUN_ID/pareto.json" ] && echo "Pareto:  $(cat runs/$RUN_ID/pareto.json)"
+if [ -f "runs/$RUN_ID/candidate_pareto.json" ]; then
+    echo "Candidate Pareto: $(cat runs/$RUN_ID/candidate_pareto.json)"
+else
+    echo "Candidate Pareto: (none yet)"
+fi

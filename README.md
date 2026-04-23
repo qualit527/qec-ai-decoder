@@ -8,13 +8,15 @@
 [![testcov](https://codecov.io/github/qualit527/qec-ai-decoder/graph/badge.svg)](https://codecov.io/github/qualit527/qec-ai-decoder)
 [![docs API](https://img.shields.io/badge/docs-API-blue)](https://qualit527.github.io/qec-ai-decoder/)
 
+**README is currently awaiting revision.**
+
 AutoQEC is an LLM-agent-driven auto-research harness for discovering **neural predecoders** for quantum error-correcting codes. Given an environment triple `(code_spec, noise_model, constraints)`, the system runs 10–20 rounds of *hypothesis → DSL config → training → evaluation → analysis* and emits verified predecoder checkpoints on the accuracy–latency–parameters Pareto front.
 
 - **Spec**: [`docs/superpowers/specs/2026-04-20-autoqec-design.md`](docs/superpowers/specs/2026-04-20-autoqec-design.md) (v2.2)
 - **API documentation**: [`docs/api-documentation.md`](docs/api-documentation.md)
 - **Master plan**: [`docs/superpowers/plans/2026-04-21-autoqec-master.md`](docs/superpowers/plans/2026-04-21-autoqec-master.md)
 - **Per-owner plans**: [`docs/superpowers/plans/`](docs/superpowers/plans/)
-- **Test plan**: [`docs/test-plan.md`](docs/test-plan.md)
+- **Test plan**: [`docs/verification/human-verification-test-plan.md`](docs/verification/human-verification-test-plan.md)
 - **Knowledge base**: `knowledge/` — 81-paper index + 3 synthesis documents (roadmap, strategic assessment, autoresearch patterns)
 
 ## Architecture at a glance
@@ -151,13 +153,15 @@ runs/<YYYYMMDD-HHMMSS>/
 └── round_<N>/           # see below
 ```
 
-**Path B (`run_quick.sh` no-LLM)** — bare Runner output, no Analyst/Pareto:
+**Path B (`run_quick.sh` / `scripts/run_quick.py` no-LLM)** — bare Runner output with
+candidate-only bookkeeping, but no Analyst narrative or verified Pareto:
 
 ```
 runs/<YYYYMMDD-HHMMSS>/
 ├── history.jsonl        # one RoundMetrics record per round (no hypothesis,
 │                        # no verdict — no LLM ran)
 ├── history.json         # aggregate of above
+├── candidate_pareto.json # unverified non-dominated successful rounds
 └── round_<N>/           # see below
 ```
 
@@ -179,8 +183,9 @@ round_<N>/
   uses 64 val shots so Δ LER CI is wide — expect `Δ ≈ 0` with occasional
   lucky rounds. Prod profile numbers are the publishable ones.
 - **Candidate vs ignore**: Analyst flags `verdict = "candidate"` when Δ
-  LER is positive within CI. `pareto.json` only admits candidates;
-  ignored rounds still land in `history.jsonl` for debugging.
+  LER is positive within CI. LLM runs update `pareto.json`; no-LLM smoke
+  runs emit `candidate_pareto.json` as an unverified non-dominated summary.
+  Ignored rounds still land in `history.jsonl` for debugging.
 - **Compare to the baseline**: match `ler_predecoder` against the 1M-shot
   reference (0.01394). If your dev-profile `ler_plain_classical` sits
   around 0.015–0.020 that's the normal 64-shot noise.
