@@ -7,73 +7,83 @@ Closes [#38](https://github.com/qualit527/qec-ai-decoder/issues/38).
 Every AutoQEC research round runs inside its own `git worktree` on a
 deterministic branch `exp/<run_id>/<NN>-<slug>`, commits a
 `round_<N>/round_<N>_pointer.json` provenance blob, and then releases
-the checkout while keeping the branch. This is why `pareto.json`
-entries are `git rev-parse`-able commits, not just rows under
-`runs/<run_id>/`.
+the checkout while keeping the branch. Compose rounds `git merge` two
+parent branches as a **first-class scientific probe** — conflict is a
+recorded failure mode (`status="compose_conflict"`), not an exception.
 
-The demo exercises the full §15 path end-to-end with **no live LLM**:
+The demo walks through the full §15 path end-to-end in one script, with
+**no live LLM**:
 
 ```
-Ideator fork decision (simulated by a YAML fixture)
-   -> autoqec.orchestration.worktree.create_round_worktree
-   -> cli.autoqec run-round --code-cwd ... --branch ... --fork-from ... \
-                            --round-attempt-id <uuid>
-   -> autoqec.orchestration.subprocess_runner.run_round_in_subprocess
-        * runs a fresh python in worktree cwd
-        * reads metrics from child stdout
-        * writes + commits round_<N>/round_<N>_pointer.json on the branch
-   -> inspect runs/<run_id>/round_1/metrics.json (branch + commit_sha)
-   -> inspect git show <branch>:round_1/round_1_pointer.json
-   -> cleanup_round_worktree  -> removes the checkout, keeps the branch
-   -> (reconcile_at_startup would auto-heal from the pointer after a crash)
+Round 1 — Idea A forks from baseline
+Round 2 — Idea B forks from baseline (independent)
+Round 3 — create_compose_worktree(parents=[A, B]) merges the ideas
+          and trains a compose-round on the merged checkout
+Step 5 — a deliberately-conflicting pair of branches, attempted merge,
+          status=compose_conflict with conflicting_files reported
+Step 6 — git log --graph of all exp/<run_id>/* branches side-by-side
 ```
+
+Each worktree's full contents are listed before and after `run-round`
+so you can see `round_N/round_N_pointer.json` appear on-disk, and the
+compose step prints `git log --graph` showing the merge commit as a
+diamond.
 
 ## Run
 
 ```bash
 bash demos/demo-3-worktree-provenance/run.sh
-# or with explicit flags:
-bash demos/demo-3-worktree-provenance/run.sh --slug hello --keep-worktree
+# or with a custom run id:
+bash demos/demo-3-worktree-provenance/run.sh --run-id demo38-sample
+# skip the conflict probe (saves ~2s):
+bash demos/demo-3-worktree-provenance/run.sh --skip-conflict-demo
 ```
 
-Runtime: ~30–90 s on a laptop CPU, depending on how fast surface_d5
-syndrome sampling finishes under `profile=dev` (capped at 256 training
-shots, 64 val shots, 1 epoch — see `fixture_config.yaml`).
-
-No network, no LLM, no GPU required.
+Runtime: ~30 s on a laptop CPU (three `run-round` executions @ ~5 s
+each, plus the git-merge plumbing). No network, no LLM, no GPU.
 
 ## Acceptance criteria (issue #38)
 
-| Criterion                                                                                                      | Verified by                                                                              |
-|----------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
-| `run-round` with `--code-cwd`, `--branch`, `--fork-from baseline`, `--round-attempt-id` exits 0                | Step 3 of `run_demo.py`; non-zero exit surfaces as a failing assertion                   |
-| `metrics.json.branch` populated, `commit_sha` is a real git commit                                             | Step 4; asserted against `plan["branch"]` and the HEAD written by `_write_and_commit_pointer` |
-| `round_1_pointer.json` exists and round-trips via `git show <branch>:...`                                      | Step 5; runs `git show <branch>:round_1/round_1_pointer.json` and validates the payload  |
-| `cleanup_round_worktree(...)` removes the checkout but leaves the branch                                       | Step 7; asserts `git branch --list` still returns the branch while `git worktree list` does not |
-| `reconcile_at_startup(...)` behavior demonstrated or linked to a passing test                                  | Step 8 text plus `tests/test_reconcile.py::test_orphaned_branch_with_pointer_autoheals`  |
-
-The `tests/test_run_round_pointer_integration.py` integration test
-exercises the same path under `pytest -m integration`, so the demo
-stays in sync with production code paths.
-
-## After the presentation
-
-```bash
-bash demos/demo-3-worktree-provenance/cleanup.sh
-```
-
-Removes any `.worktrees/exp-demo38-*` leftover checkouts and deletes
-every `exp/demo38-*` local branch. Safe to run anytime.
+| Criterion | Covered by |
+|---|---|
+| `run-round` with `--code-cwd`, `--branch`, `--fork-from`, `--round-attempt-id` exits 0 | `_run_round()` in `run_demo.py`; runs three times (Round 1, 2, 3) and asserts status="ok" |
+| `metrics.json.branch` populated, `commit_sha` is a real git commit | Every `_run_round` call asserts both fields; the `git log --graph` in Step 4 shows the commit for compose-round |
+| `round_1_pointer.json` exists and round-trips via `git show <branch>:...` | Step 4 explicitly lists `round_1/round_1_pointer.json` **and** `round_2/round_2_pointer.json` inside the merged compose worktree, proving both commits landed |
+| `cleanup_round_worktree(...)` removes the checkout, keeps the branch | After each round; Step 3 prints the surviving branch list to confirm |
+| `reconcile_at_startup(...)` behavior demonstrated or linked to a passing test | Step 7 + `tests/test_reconcile.py::test_orphaned_branch_with_pointer_autoheals` |
+| `create_compose_worktree` path exercised | Step 4 (happy merge) + Step 5 (deliberate conflict caught as `compose_conflict`) |
 
 ## Expected output snapshot
 
-`expected_output/` contains a committed sample run so reviewers can
-eyeball the provenance without re-executing the demo:
+`expected_output/` holds sanitized artifacts from a reference run so
+reviewers can audit the provenance without re-executing:
 
-- `metrics.json` — `branch`, `commit_sha`, `round_attempt_id`, `fork_from`, `delta_ler`
-- `round_1_pointer.json` — the blob committed onto the experiment branch
-- `run_demo.stdout.txt` — the full narrative walkthrough
+- `round_1_metrics.json`, `round_2_metrics.json`, `round_3_metrics.json`
+  — `RoundMetrics` rows from each stage. Round 3's `fork_from` is a
+  two-element list, `compose_mode="pure"` — this is the compose-round
+  signature.
+- `metrics.json` — alias for `round_1_metrics.json` (kept for continuity).
+- `round_1_pointer.json` — blob committed onto `exp/demo38-sample/01-idea-a`,
+  the `§15.10` reconcile input.
+- `run_demo.stdout.txt` — full walkthrough including the worktree `ls`
+  listings and `git log --graph` outputs.
 
-These are refreshed by passing `--run-id demo38-sample` to `run_demo.py`
-and copying the three artifacts in; see the last section of the demo
-script for how the walkthrough is emitted.
+Paths are replaced with `<REPO_ROOT>` / `<VENV>`. Commit SHAs and
+UUIDs are kept verbatim to demonstrate the provenance chain.
+
+To refresh (after editing `run_demo.py` or bumping the fixture config):
+
+```bash
+bash demos/demo-3-worktree-provenance/run.sh --run-id demo38-sample > walk.txt
+python demos/demo-3-worktree-provenance/_refresh_expected.py walk.txt
+```
+
+## Cleanup
+
+```bash
+bash demos/demo-3-worktree-provenance/cleanup.sh            # default prefix: demo38
+bash demos/demo-3-worktree-provenance/cleanup.sh my-run-id  # custom run_id
+```
+
+Removes any `.worktrees/exp-<prefix>*` checkouts and deletes every
+`exp/<prefix>*` local branch. Safe to run anytime.

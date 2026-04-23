@@ -1,0 +1,31 @@
+{
+  "status": "ok",
+  "status_reason": null,
+  "ler_plain_classical": 0.015625,
+  "ler_predecoder": 0.015625,
+  "delta_ler": 0.0,
+  "delta_ler_ci_low": null,
+  "delta_ler_ci_high": null,
+  "flops_per_syndrome": 18159120,
+  "n_params": 34497,
+  "train_wallclock_s": 3.631225109100342,
+  "eval_wallclock_s": 0.29001760482788086,
+  "vram_peak_gb": 0.0,
+  "checkpoint_path": "<REPO_ROOT>\\runs\\demo38-sample\\round_3\\checkpoint.pt",
+  "training_log_path": "<REPO_ROOT>\\runs\\demo38-sample\\round_3\\train.log",
+  "round_attempt_id": "49bfe7ea-4e58-4477-9729-ee4070c167c4",
+  "reconcile_id": null,
+  "branch": "exp/demo38-sample/03-compose-ab",
+  "commit_sha": "cc9ca3b01a448088c6f0715298d6f67b7affa339",
+  "fork_from": [
+    "exp/demo38-sample/01-idea-a",
+    "exp/demo38-sample/02-idea-b"
+  ],
+  "fork_from_canonical": null,
+  "fork_from_ordered": null,
+  "compose_mode": "pure",
+  "delta_vs_parent": null,
+  "parent_ler": null,
+  "conflicting_files": null,
+  "train_seed": null
+}
