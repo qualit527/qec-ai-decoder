@@ -51,6 +51,23 @@ def test_on_pareto_flag():
     assert node["on_pareto"] is True
 
 
+def test_no_llm_round_without_branch_still_gets_round_node():
+    history = [
+        {
+            "round": 1,
+            "status": "ok",
+            "delta_ler": 1e-4,
+            "flops_per_syndrome": 1_000,
+            "n_params": 200,
+        },
+    ]
+    g = build_fork_graph(history=history, pareto=[], run_id="t")
+    node = next(n for n in g["nodes"] if n.get("branch") == "round_1")
+    assert node["parent"] == "baseline"
+    assert node["status"] == "OK"
+    assert node["on_pareto"] is False
+
+
 def test_non_dominated_filter():
     points = [
         {"delta_ler": 4e-4, "flops_per_syndrome": 200_000, "n_params": 40_000, "id": "a"},

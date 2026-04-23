@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
+import types
 
 import click
 from click.testing import CliRunner
@@ -11,6 +13,30 @@ import cli.autoqec as cli
 from autoqec.envs.schema import load_env_yaml
 from autoqec.eval.schema import VerifyReport
 from autoqec.runner.schema import RoundMetrics
+
+
+def _install_fake_verify_module(monkeypatch, verify_fn) -> None:
+    monkeypatch.setitem(
+        sys.modules,
+        "autoqec.eval.independent_eval",
+        types.SimpleNamespace(independent_verify=verify_fn),
+    )
+
+
+def _install_fake_runner_module(monkeypatch, run_round_fn) -> None:
+    monkeypatch.setitem(
+        sys.modules,
+        "autoqec.runner.runner",
+        types.SimpleNamespace(run_round=run_round_fn),
+    )
+
+
+def _install_fake_llm_loop_module(monkeypatch, run_llm_loop_fn) -> None:
+    monkeypatch.setitem(
+        sys.modules,
+        "autoqec.orchestration.llm_loop",
+        types.SimpleNamespace(run_llm_loop=run_llm_loop_fn),
+    )
 
 
 def test_load_example_templates_error_paths(monkeypatch) -> None:
@@ -84,8 +110,7 @@ def test_run_command_delegates_to_llm_loop(monkeypatch, tmp_path) -> None:
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
 
-    import autoqec.orchestration.llm_loop as llm_loop
-    monkeypatch.setattr(llm_loop, "run_llm_loop", fake_run_llm_loop)
+    _install_fake_llm_loop_module(monkeypatch, fake_run_llm_loop)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -186,7 +211,7 @@ def test_run_command_emits_result_prefix(monkeypatch, tmp_path) -> None:
     def fake_run_round(_cfg, _env):
         return RoundMetrics(status="ok", delta_ler=0.0, flops_per_syndrome=1, n_params=1)
 
-    monkeypatch.setattr("autoqec.runner.runner.run_round", fake_run_round)
+    _install_fake_runner_module(monkeypatch, fake_run_round)
 
     runner_cli = CliRunner()
     result = runner_cli.invoke(
@@ -261,7 +286,7 @@ def test_verify_command_writes_report_artifacts(monkeypatch, tmp_path) -> None:
             notes="ok",
         )
 
-    monkeypatch.setattr("autoqec.eval.independent_eval.independent_verify", fake_verify)
+    _install_fake_verify_module(monkeypatch, fake_verify)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -278,6 +303,31 @@ def test_verify_command_writes_report_artifacts(monkeypatch, tmp_path) -> None:
     report_md = (round_dir / "verification_report.md").read_text()
     assert "Verification Report" in report_md
     assert "Paired eval bundle ID" not in report_md
+
+
+def test_verify_command_serializes_verifier_failures(monkeypatch, tmp_path) -> None:
+    round_dir = tmp_path / "round_1"
+    round_dir.mkdir()
+    (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
+
+    def fake_verify(_ckpt, _env_spec, holdout_seeds, n_shots=None):
+        raise ValueError("paired_batch_mismatch: ckpt fingerprint mismatch")
+
+    _install_fake_verify_module(monkeypatch, fake_verify)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.verify,
+        [str(round_dir), "--env", "autoqec/envs/builtin/surface_d5_depol.yaml", "--n-seeds", "2"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "FAILED" in result.output
+    payload = json.loads((round_dir / "verification_report.json").read_text(encoding="utf-8"))
+    assert payload["verdict"] == "FAILED"
+    assert "paired_batch_mismatch" in payload["notes"]
+    assert (round_dir / "verification_report.md").exists()
 
 
 def test_verify_command_admits_verified_round_into_pareto(monkeypatch, tmp_path) -> None:
@@ -310,7 +360,7 @@ def test_verify_command_admits_verified_round_into_pareto(monkeypatch, tmp_path)
             paired_eval_bundle_id="33333333-3333-5333-8333-333333333333",
         )
 
-    monkeypatch.setattr("autoqec.eval.independent_eval.independent_verify", fake_verify)
+    _install_fake_verify_module(monkeypatch, fake_verify)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -365,7 +415,7 @@ def test_verify_command_skips_pareto_for_non_verified_report(monkeypatch, tmp_pa
             paired_eval_bundle_id="44444444-4444-5444-8444-444444444444",
         )
 
-    monkeypatch.setattr("autoqec.eval.independent_eval.independent_verify", fake_verify)
+    _install_fake_verify_module(monkeypatch, fake_verify)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -400,7 +450,7 @@ def test_verify_command_runs_with_offline_backend_env(monkeypatch, tmp_path) -> 
             paired_eval_bundle_id="55555555-5555-5555-8555-555555555555",
         )
 
-    monkeypatch.setattr("autoqec.eval.independent_eval.independent_verify", fake_verify)
+    _install_fake_verify_module(monkeypatch, fake_verify)
 
     runner = CliRunner()
     result = runner.invoke(

@@ -12,6 +12,7 @@ import click
 import yaml
 
 from autoqec.envs.schema import EnvSpec, load_env_yaml
+from autoqec.eval.schema import VerifyReport
 from autoqec.orchestration.memory import RunMemory
 from autoqec.orchestration.round_recorder import refresh_fork_graph
 from autoqec.orchestration.subprocess_runner import (
@@ -234,6 +235,56 @@ def _load_round_metrics_for_verify(round_dir: Path) -> dict | None:
         if suffix.isdigit():
             metrics["round"] = int(suffix)
     return metrics
+
+
+def _verification_error_report(
+    exc: ValueError,
+    holdout_seeds: list[int],
+) -> VerifyReport:
+    lowered = str(exc).lower()
+    seed_leakage_ok = not any(token in lowered for token in ("seed", "holdout"))
+    return VerifyReport(
+        verdict="FAILED",
+        ler_holdout=0.0,
+        ler_holdout_ci=(0.0, 0.0),
+        delta_ler_holdout=0.0,
+        ler_shuffled=0.0,
+        ablation_sanity_ok=False,
+        holdout_seeds_used=holdout_seeds,
+        seed_leakage_check_ok=seed_leakage_ok,
+        notes=f"verifier_error: {exc}",
+    )
+
+
+def _write_verification_artifacts(round_dir: Path, report: VerifyReport) -> None:
+    round_dir.joinpath("verification_report.json").write_text(
+        report.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    md_lines = [
+        "# Verification Report",
+        "",
+        f"**Verdict:** {report.verdict}",
+        "",
+        f"- Holdout LER: {report.ler_holdout:.4g}",
+        f"- Holdout LER CI: {report.ler_holdout_ci}",
+        f"- Δ_LER (holdout): {report.delta_ler_holdout:.4g}",
+        f"- Ablation sanity: {report.ablation_sanity_ok}",
+        f"- Seed-leakage check: {report.seed_leakage_check_ok}",
+    ]
+    if report.paired_eval_bundle_id is not None:
+        md_lines.append(f"- Paired eval bundle ID: {report.paired_eval_bundle_id}")
+    md_lines.extend(
+        [
+            "",
+            f"Notes: {report.notes}",
+            "",
+        ]
+    )
+    round_dir.joinpath("verification_report.md").write_text(
+        "\n".join(md_lines),
+        encoding="utf-8",
+    )
 
 
 def _parse_fork_from_option(fork_from: str | None) -> str | list[str] | None:
@@ -546,35 +597,11 @@ def verify(round_dir: str, env: str, n_shots: int | None, n_seeds: int) -> None:
     ckpt = rd / "checkpoint.pt"
     holdout = list(range(env_spec.noise.seed_policy.holdout[0],
                           env_spec.noise.seed_policy.holdout[1] + 1))[:n_seeds]
-    report = independent_verify(ckpt, env_spec, holdout_seeds=holdout, n_shots=n_shots)
-    (rd / "verification_report.json").write_text(
-        report.model_dump_json(indent=2),
-        encoding="utf-8",
-    )
-    md_lines = [
-        "# Verification Report",
-        "",
-        f"**Verdict:** {report.verdict}",
-        "",
-        f"- Holdout LER: {report.ler_holdout:.4g}",
-        f"- Holdout LER CI: {report.ler_holdout_ci}",
-        f"- Δ_LER (holdout): {report.delta_ler_holdout:.4g}",
-        f"- Ablation sanity: {report.ablation_sanity_ok}",
-        f"- Seed-leakage check: {report.seed_leakage_check_ok}",
-    ]
-    if report.paired_eval_bundle_id is not None:
-        md_lines.append(f"- Paired eval bundle ID: {report.paired_eval_bundle_id}")
-    md_lines.extend(
-        [
-            "",
-            f"Notes: {report.notes}",
-            "",
-        ]
-    )
-    (rd / "verification_report.md").write_text(
-        "\n".join(md_lines),
-        encoding="utf-8",
-    )
+    try:
+        report = independent_verify(ckpt, env_spec, holdout_seeds=holdout, n_shots=n_shots)
+    except ValueError as exc:
+        report = _verification_error_report(exc, holdout)
+    _write_verification_artifacts(rd, report)
 
     round_metrics = _load_round_metrics_for_verify(rd)
     if report.verdict == "VERIFIED" and round_metrics is not None:
