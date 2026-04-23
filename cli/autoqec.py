@@ -388,7 +388,6 @@ def add_env(out: str, name: str, code_source: str, noise_p: str, backend: str) -
     click.echo(f"Wrote {out}")
 
 
-<<<<<<< HEAD
 @main.command()
 @click.argument("round_dir")
 @click.option("--env", required=True, help="Env YAML path")
