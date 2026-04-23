@@ -107,6 +107,14 @@ def _build_safe_builtins() -> Mapping[str, Any]:
         for name in _SAFE_BUILTIN_NAMES
         if hasattr(_builtins, name)
     }
+    # Python's ``import`` statement compiles to a call to ``__import__`` at
+    # runtime, so exec-time user code like ``import torch`` needs the name
+    # present in builtins to work. We still reject *bare* ``__import__``
+    # references via ``FORBIDDEN_NAMES`` in the AST pass, and imports
+    # themselves go through the ``ALLOWED_TOP_IMPORTS`` whitelist — so the
+    # dynamic escape ``__import__('os')`` / ``__import__('torch')`` cannot
+    # reach here without being statically rejected first.
+    allowed["__import__"] = _builtins.__import__
     return MappingProxyType(allowed)
 
 
@@ -114,18 +122,27 @@ SAFE_BUILTINS: Mapping[str, Any] = _build_safe_builtins()
 
 
 def _load_function(code: str) -> FunctionType:
-    # Lazy import torch so the validator module itself stays torch-free;
-    # smoke tests still run the function against real tensors below.
-    import torch
-
     # Restricted exec namespace. We deliberately shadow ``__builtins__`` with
     # our allow-list instead of the real module — a Tier-2 function that
-    # tries ``__import__('os')`` or ``open('/etc/passwd')`` now raises
-    # NameError at evaluation time, not just a lint rejection.
+    # tries ``open('/etc/passwd')`` now raises NameError at evaluation time,
+    # not just a lint rejection. ``__import__`` stays available so ``import``
+    # statements inside the function body can resolve; the AST pass already
+    # rejects bare ``__import__`` references and constrains which modules
+    # are importable.
     namespace: dict[str, object] = {
         "__builtins__": dict(SAFE_BUILTINS),
-        "torch": torch,
     }
+    # Pre-seed ``torch`` if the host env has it so smoke tests can reference
+    # it without an explicit import. In torch-free contexts (lean CI /
+    # validation-only callers) we skip the pre-seed; user code that does
+    # ``import torch`` inside the function still works via __import__.
+    try:
+        import torch as _torch
+
+        namespace["torch"] = _torch
+    except ImportError:
+        pass
+
     exec(compile(code, "<custom_fn>", "exec"), namespace, namespace)  # noqa: S102 - sandboxed
     funcs = [value for value in namespace.values() if isinstance(value, FunctionType)]
     if len(funcs) != 1:

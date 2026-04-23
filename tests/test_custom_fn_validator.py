@@ -131,3 +131,25 @@ def message(x_src, x_dst, e_ij, params):
     assert not ok
     assert "_private" in reason or "attribute" in reason.lower()
 
+
+def test_load_function_supports_whitelisted_runtime_import() -> None:
+    """Regression: ``import`` statements inside the function body must work
+    at exec time. The hardened ``SAFE_BUILTINS`` originally stripped
+    ``__import__`` entirely, which broke every legitimate Tier-2 function
+    that did ``import torch`` inside its body — CI caught it. The AST pass
+    still rejects bare ``__import__`` references, so putting it back in
+    runtime builtins does not reopen the escape.
+
+    This test uses ``typing`` so it runs on torch-free CI too; the real
+    smoke test (``test_valid_custom_message_fn``) covers torch.
+    """
+    from autoqec.decoders.custom_fn_validator import _load_function
+
+    code = """
+def message(x_src, x_dst, e_ij, params):
+    import typing
+    return typing.cast(int, 1)
+"""
+    fn = _load_function(code)
+    assert fn(None, None, None, None) == 1
+
