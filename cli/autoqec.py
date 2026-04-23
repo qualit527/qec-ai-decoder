@@ -388,6 +388,7 @@ def add_env(out: str, name: str, code_source: str, noise_p: str, backend: str) -
     click.echo(f"Wrote {out}")
 
 
+<<<<<<< HEAD
 @main.command()
 @click.argument("round_dir")
 @click.option("--env", required=True, help="Env YAML path")
@@ -458,6 +459,5 @@ def diagnose(run_dir: str) -> None:
             out["metrics"] = json.loads(p.read_text())
     click.echo(json.dumps(out, indent=2))
 
-
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
