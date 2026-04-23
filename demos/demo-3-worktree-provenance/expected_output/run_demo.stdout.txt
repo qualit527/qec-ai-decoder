@@ -1,0 +1,99 @@
+
+============================================================
+1. Simulated Ideator decision
+============================================================
+run_id             = demo38-sample
+round_idx          = 1
+slug               = hello
+fork_from          = feat/issue-38-worktree-demo
+round_attempt_id   = df2ca179-82cd-4b41-b38d-0c5dcc213ac5
+
+============================================================
+2. create_round_worktree
+============================================================
+branch             = exp/demo38-sample/01-hello
+worktree_dir       = <REPO_ROOT>\.worktrees\exp-demo38-sample-01-hello
+
+============================================================
+3. cli.autoqec run-round (subprocess dispatch -> worktree)
+============================================================
+$ <VENV>\Scripts\python.exe -m cli.autoqec run-round <REPO_ROOT>\autoqec\envs\builtin\surface_d5_depol.yaml <REPO_ROOT>\demos\demo-3-worktree-provenance\fixture_config.yaml <REPO_ROOT>\runs\demo38-sample\round_1 --profile dev --code-cwd <REPO_ROOT>\.worktrees\exp-demo38-sample-01-hello --branch exp/demo38-sample/01-hello --fork-from feat/issue-38-worktree-demo --round-attempt-id df2ca179-82cd-4b41-b38d-0c5dcc213ac5
+
+-- child stdout (RoundMetrics JSON) --
+{
+  "status": "ok",
+  "status_reason": null,
+  "ler_plain_classical": 0.015625,
+  "ler_predecoder": 0.015625,
+  "delta_ler": 0.0,
+  "delta_ler_ci_low": null,
+  "delta_ler_ci_high": null,
+  "flops_per_syndrome": 18159120,
+  "n_params": 34497,
+  "train_wallclock_s": 3.6873390674591064,
+  "eval_wallclock_s": 0.28525424003601074,
+  "vram_peak_gb": 0.0,
+  "checkpoint_path": "E:\\PhD\\_projects\\harness\\qec-ai-decoder\\.worktrees\\issue-38\\runs\\demo38-sample\\round_1\\checkpoint.pt",
+  "training_log_path": "E:\\PhD\\_projects\\harness\\qec-ai-decoder\\.worktrees\\issue-38\\runs\\demo38-sample\\round_1\\train.log",
+  "round_attempt_id": "df2ca179-82cd-4b41-b38d-0c5dcc213ac5",
+  "reconcile_id": null,
+  "branch": "exp/demo38-sample/01-hello",
+  "commit_sha": "ae82437b07c422923937095a9c58d76c558e7760",
+  "fork_from": "feat/issue-38-worktree-demo",
+  "fork_from_canonical": null,
+  "fork_from_ordered": null,
+  "compose_mode": null,
+  "delta_vs_parent": null,
+  "parent_ler": null,
+  "conflicting_files": null,
+  "train_seed": null
+}
+
+============================================================
+4. metrics.json (branch + commit_sha populated by Runner)
+============================================================
+  status           = 'ok'
+  branch           = 'exp/demo38-sample/01-hello'
+  commit_sha       = 'ae82437b07c422923937095a9c58d76c558e7760'
+  round_attempt_id = 'df2ca179-82cd-4b41-b38d-0c5dcc213ac5'
+  fork_from        = 'feat/issue-38-worktree-demo'
+  delta_ler        = 0.0
+
+============================================================
+5. round_1_pointer.json round-trips via git show <branch>:...
+============================================================
+  round_attempt_id  = 'df2ca179-82cd-4b41-b38d-0c5dcc213ac5'
+  round_idx         = 1
+  branch            = 'exp/demo38-sample/01-hello'
+  written_at_utc    = '2026-04-23T13:34:36.668203+00:00'
+
+============================================================
+6. git log on the experiment branch
+============================================================
+ae82437 round 1: pointer for attempt df2ca179-82cd-4b41-b38d-0c5dcc213ac5
+8f104e9 ci: isolate docs workflow concurrency
+5b4a848 fix: repair close-the-loop worktree path
+
+============================================================
+7. cleanup_round_worktree (removes checkout, keeps branch)
+============================================================
+checkout removed.
+branch retained    = True
+worktree present   = False
+
+============================================================
+8. reconcile_at_startup (demonstration pointer)
+============================================================
+The same pointer blob we just read would let
+  autoqec.orchestration.reconcile.reconcile_at_startup(repo, run_id)
+auto-heal this branch into an 'orphaned_branch' synthetic row if the
+runner had crashed before history.jsonl was appended. See
+tests/test_reconcile.py::test_orphaned_branch_with_pointer_autoheals
+for the full auto-heal contract.
+
+============================================================
+Demo complete
+============================================================
+To drop the experiment branch after the presentation, run:
+  git branch -D exp/demo38-sample/01-hello
+Or use demos/demo-3-worktree-provenance/cleanup.sh
