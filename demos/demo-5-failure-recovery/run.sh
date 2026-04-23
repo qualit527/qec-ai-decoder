@@ -3,7 +3,7 @@
 # Covers: compile_error, NaN loss, OOM.
 set -euo pipefail
 
-PYTHON_BIN=${PYTHON_BIN:-./.venv/bin/python}
+PYTHON_BIN="${PYTHON_BIN:-python}"
 DEMO_DIR="runs/demo-5"
 rm -rf "$DEMO_DIR"
 

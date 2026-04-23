@@ -2,8 +2,17 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
+
+
+_OOM_RE = re.compile(r"(out of memory|(?<![a-z])oom(?![a-z])|(?<![a-z])vram(?![a-z]))", re.IGNORECASE)
+_NAN_RE = re.compile(r"(?<![a-z])nan(?![a-z])", re.IGNORECASE)
+_COMPILE_RE = re.compile(
+    r"(compile_error|validation failed|must be >=|must be <=|valueerror|validationerror)",
+    re.IGNORECASE,
+)
 
 
 def _line_number(text: str, needle: str) -> int | None:
@@ -11,6 +20,13 @@ def _line_number(text: str, needle: str) -> int | None:
         if needle in line:
             return idx
     return None
+
+
+def _round_sort_key(path: Path) -> tuple[int, int | str]:
+    suffix = path.name.removeprefix("round_")
+    if suffix.isdigit():
+        return (0, int(suffix))
+    return (1, path.name)
 
 
 def generate(round_dir: Path) -> None:
@@ -28,21 +44,21 @@ def generate(round_dir: Path) -> None:
     evidence: list[str] = []
     fix = ""
 
-    if "nan" in reason.lower() or "nan" in log.lower():
+    if _NAN_RE.search(reason) or _NAN_RE.search(log):
         root = "nan_loss"
         line_no = _line_number(log, "nan")
         if line_no is not None:
             evidence.append(f"train.log:{line_no}: NaN loss values observed")
         evidence.append(f"metrics.json: status_reason={reason}")
         fix = "training:\n  learning_rate: 1.0e-3   # was 10.0\n  loss: focal"
-    elif "out of memory" in reason.lower() or "oom" in reason.lower():
+    elif _OOM_RE.search(reason) or _OOM_RE.search(log):
         root = "oom"
         line_no = _line_number(log, "out of memory")
         if line_no is not None:
             evidence.append(f"train.log:{line_no}: CUDA out-of-memory traceback")
         evidence.append(f"metrics.json: vram_peak_gb={metrics.get('vram_peak_gb', '?')}, status_reason={reason}")
         fix = "training:\n  batch_size: 16   # was 64\n  profile: dev\ngnn:\n  hidden_dim: 16   # was 32"
-    elif "compile_error" in status or "validation" in reason.lower():
+    elif status == "compile_error" or _COMPILE_RE.search(reason):
         root = "compile_error"
         line_no = _line_number(cfg_text, "hidden_dim: -1")
         if line_no is not None:
@@ -78,5 +94,5 @@ def generate(round_dir: Path) -> None:
 
 if __name__ == "__main__":
     run_dir = Path(sys.argv[1])
-    for rd in sorted(run_dir.glob("round_*")):
+    for rd in sorted(run_dir.glob("round_*"), key=_round_sort_key):
         generate(rd)
