@@ -45,6 +45,7 @@ runs/<run_id>/                 ← the RUN (one /autoqec-run invocation)
 | `checkpoint.pt` | `run_round` | after training |
 | `metrics.json` | `run_round` | at round end |
 | `round_<N>_pointer.json` | `run_round` via `autoqec.runner.pointer.write_round_pointer` | at round end, whenever `cfg.branch` and `cfg.code_cwd` are both set |
+| `artifact_manifest.json` | `run_round` via `autoqec.runner.manifest.write_artifact_manifest` | at round end, whenever `cfg.branch` and `cfg.code_cwd` are both set |
 | `verification_report.md` | Verifier (Xie) | when the Analyst verdict is `candidate` |
 
 The orchestration side writes **only** at the run root; the Runner writes
@@ -143,6 +144,14 @@ eval_wallclock_s)` from `history.jsonl`.
   rounds so startup reconciliation can recover the `round_attempt_id`.
   Covered in `test_pointer_writer.py` (unit) and the worktree
   subprocess integration tests.
+- `round_<N>/artifact_manifest.json` is written for worktree-branch
+  rounds via `autoqec.runner.manifest.write_artifact_manifest`,
+  capturing repo SHA, dirty files,
+  tool versions (python/torch/stim/pymatching/ldpc/numpy),
+  `env_yaml_sha256`, `dsl_sha256`, and the `sys.argv` command line.
+  Manifest-writer failures never fail the round — they degrade to a
+  `round_<N>/manifest_error.txt` note. Covered in
+  `test_artifact_manifest.py` (unit).
 
 **[TODO-fill-in] aspirational, not enforced yet:**
 
