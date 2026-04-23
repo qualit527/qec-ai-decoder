@@ -55,7 +55,9 @@ python -m cli.autoqec run \
 
 `--no-llm` makes the CLI pick a random dev-safe template from
 `autoqec/example_db/` each round. Useful as a smoke test; **not** the
-AutoQEC research experience.
+AutoQEC research experience. The script prints the authoritative
+`run_dir` from the CLI's `AUTOQEC_RESULT_JSON=...` line rather than
+guessing from the newest `runs/` directory.
 
 ## Expected outputs
 
@@ -63,9 +65,9 @@ After a run:
 
 ```
 runs/<run_id>/
-├── log.md               # narrative, one line per round
-├── history.jsonl        # machine-readable, one JSON per round
-├── pareto.json          # top-K by Δ LER
+├── history.json         # aggregate JSON summary of the rounds
+├── history.jsonl        # machine-readable, one RoundMetrics row per round
+├── candidate_pareto.json # unverified candidate front for the no-LLM path
 └── round_<N>/
     ├── config.yaml      # the DSL config trained this round
     ├── train.log        # per-step loss
@@ -79,9 +81,14 @@ the committed 1M-shot PyMatching reference at
 (`LER = 0.01394` at `p = 5e-3`, seed 42). `delta_ler > 0` means the
 predecoder beat PyMatching on this round's val shots.
 
+For the no-LLM path, `candidate_pareto.json` is only an **unverified candidate path**.
+It is demo/reporting output, not a verification-admitted
+front; follow up with `verify` before treating a round as authoritative.
+
 ## Runtime
 
-- `dev` profile: 1–3 min per round on CPU, < 1 min on GPU.
+- `dev` profile: 1–3 min per round on CPU, < 1 min on GPU. This is the
+  supported smoke path and can be run without GPU in dev mode.
 - `prod` profile: 10–20 min per round on GPU (not recommended for demos).
 
 ## Caveats
@@ -98,12 +105,17 @@ predecoder beat PyMatching on this round's val shots.
 
 ## Sample output
 
-A smoke run (CPU torch, Python 3.10, surface_d5, `--rounds 3 --profile dev
---no-llm`, ~3 min total) is committed for reference:
+A current one-round no-LLM smoke run (CPU torch, surface_d5,
+`--rounds 1 --profile dev --no-llm`) is committed for reference:
 
-- `expected_output/sample_run/history.jsonl` — all three rounds, `status=ok`
-- `expected_output/sample_run/round_1_metrics.json` — one full `RoundMetrics` dump
-- `expected_output/sample_run/round_1_config.yaml` — the DSL config the Runner trained
+- `expected_output/no_llm_round1/history.jsonl` — one round, `status=ok`
+- `expected_output/no_llm_round1/history.json` — aggregate summary
+- `expected_output/no_llm_round1/candidate_pareto.json` — unverified candidate front
+- `expected_output/no_llm_round1/round_1_metrics.json` — one full `RoundMetrics` dump
+- `expected_output/no_llm_round1/round_1_config.yaml` — the DSL config the Runner trained
+
+The older `expected_output/sample_run/` directory remains as a 3-round
+legacy smoke snapshot.
 
 On that run: `ler_plain_classical = 0.01563` (eval shots = 64, hence
 noisy vs the 1M-shot `LER = 0.01394` reference); `delta_ler = 0.0`

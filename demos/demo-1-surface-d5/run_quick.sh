@@ -9,15 +9,18 @@ set -euo pipefail
 ROUNDS="${ROUNDS:-3}"
 PROFILE="${PROFILE:-dev}"
 ENV_YAML="${ENV_YAML:-autoqec/envs/builtin/surface_d5_depol.yaml}"
+PYTHON_BIN="${PYTHON_BIN:-python}"
 
-python -m cli.autoqec run "$ENV_YAML" \
+OUTPUT="$("$PYTHON_BIN" -m cli.autoqec run "$ENV_YAML" \
     --rounds "$ROUNDS" \
     --profile "$PROFILE" \
-    --no-llm
+    --no-llm)"
+printf '%s\n' "$OUTPUT"
 
-RUN_ID="$(ls -t runs | head -1)"
+RESULT_JSON="$(printf '%s\n' "$OUTPUT" | sed -n 's/^AUTOQEC_RESULT_JSON=//p' | tail -1)"
+RUN_DIR="$("$PYTHON_BIN" -c 'import json,sys; print(json.loads(sys.stdin.read())["run_dir"])' <<<"$RESULT_JSON")"
 echo ""
 echo "=== Demo 1 (no-LLM) complete ==="
-echo "Run dir: runs/$RUN_ID"
-echo "History: $(wc -l < runs/$RUN_ID/history.jsonl) rounds"
-[ -f "runs/$RUN_ID/pareto.json" ] && echo "Pareto:  $(cat runs/$RUN_ID/pareto.json)"
+echo "Run dir: $RUN_DIR"
+echo "History: $(wc -l < "$RUN_DIR/history.jsonl") rounds"
+[ -f "$RUN_DIR/candidate_pareto.json" ] && echo "Candidate Pareto: $(cat "$RUN_DIR/candidate_pareto.json")"
