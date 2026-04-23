@@ -150,6 +150,8 @@ def test_run_cli_no_llm_appends_one_history_row_per_round(tmp_path: Path) -> Non
     env["PYTHONPATH"] = (
         f"{repo_root}{os.pathsep}{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(repo_root)
     )
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
 
     completed = subprocess.run(
         [
@@ -169,6 +171,7 @@ def test_run_cli_no_llm_appends_one_history_row_per_round(tmp_path: Path) -> Non
         text=True,
         check=True,
         encoding="utf-8",
+        errors="replace",
         env=env,
     )
 
