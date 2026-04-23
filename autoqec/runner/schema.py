@@ -20,6 +20,7 @@ class RunnerConfig(BaseModel):
     fork_from_canonical: Optional[str] = None
     fork_from_ordered: Optional[list[str]] = None
     compose_mode: Optional[Literal["pure", "with_edit"]] = None
+    round_attempt_id: Optional[str] = None
 
     @model_validator(mode="after")
     def _worktree_fields_consistent(self):
