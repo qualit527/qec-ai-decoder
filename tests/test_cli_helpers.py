@@ -238,6 +238,131 @@ def test_verify_command_writes_report_artifacts(monkeypatch, tmp_path) -> None:
     assert "Verification Report" in (round_dir / "verification_report.md").read_text()
 
 
+def test_verify_command_admits_verified_round_into_pareto(monkeypatch, tmp_path) -> None:
+    run_dir = tmp_path / "run"
+    round_dir = run_dir / "round_1"
+    round_dir.mkdir(parents=True)
+    (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
+    metrics = RoundMetrics(
+        status="ok",
+        flops_per_syndrome=123,
+        n_params=7,
+        checkpoint_path=str(round_dir / "checkpoint.pt"),
+        train_wallclock_s=1.5,
+    ).model_dump()
+    metrics["round"] = 1
+    (round_dir / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+
+    def fake_verify(_ckpt, _env_spec, holdout_seeds, n_shots=None):
+        return VerifyReport(
+            verdict="VERIFIED",
+            ler_holdout=0.1,
+            ler_holdout_ci=(0.08, 0.12),
+            delta_ler_holdout=0.02,
+            ler_shuffled=0.11,
+            ablation_sanity_ok=True,
+            holdout_seeds_used=holdout_seeds,
+            seed_leakage_check_ok=True,
+            notes="ok",
+            delta_vs_baseline_holdout=0.02,
+            paired_eval_bundle_id="33333333-3333-5333-8333-333333333333",
+        )
+
+    monkeypatch.setattr("autoqec.eval.independent_eval.independent_verify", fake_verify)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.verify,
+        [str(round_dir), "--env", "autoqec/envs/builtin/surface_d5_depol.yaml", "--n-seeds", "2"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    pareto = json.loads((run_dir / "pareto.json").read_text(encoding="utf-8"))
+    assert len(pareto) == 1
+    assert pareto[0]["round"] == 1
+    assert pareto[0]["delta_vs_baseline_holdout"] == 0.02
+    assert pareto[0]["paired_eval_bundle_id"] == "33333333-3333-5333-8333-333333333333"
+
+
+def test_verify_command_skips_pareto_for_non_verified_report(monkeypatch, tmp_path) -> None:
+    run_dir = tmp_path / "run"
+    round_dir = run_dir / "round_1"
+    round_dir.mkdir(parents=True)
+    (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
+    metrics = RoundMetrics(
+        status="ok",
+        flops_per_syndrome=123,
+        n_params=7,
+        checkpoint_path=str(round_dir / "checkpoint.pt"),
+    ).model_dump()
+    metrics["round"] = 1
+    (round_dir / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+
+    def fake_verify(_ckpt, _env_spec, holdout_seeds, n_shots=None):
+        return VerifyReport(
+            verdict="SUSPICIOUS",
+            ler_holdout=0.1,
+            ler_holdout_ci=(0.08, 0.12),
+            delta_ler_holdout=0.0,
+            ler_shuffled=0.1,
+            ablation_sanity_ok=True,
+            holdout_seeds_used=holdout_seeds,
+            seed_leakage_check_ok=True,
+            notes="needs more evidence",
+            delta_vs_baseline_holdout=0.0,
+            paired_eval_bundle_id="44444444-4444-5444-8444-444444444444",
+        )
+
+    monkeypatch.setattr("autoqec.eval.independent_eval.independent_verify", fake_verify)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.verify,
+        [str(round_dir), "--env", "autoqec/envs/builtin/surface_d5_depol.yaml", "--n-seeds", "2"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert not (run_dir / "pareto.json").exists()
+
+
+def test_verify_command_runs_with_offline_backend_env(monkeypatch, tmp_path) -> None:
+    round_dir = tmp_path / "round_1"
+    round_dir.mkdir()
+    (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
+    monkeypatch.setenv("AUTOQEC_IDEATOR_BACKEND", "offline")
+    monkeypatch.setenv("AUTOQEC_CODER_BACKEND", "offline")
+    monkeypatch.setenv("AUTOQEC_ANALYST_BACKEND", "offline")
+
+    def fake_verify(_ckpt, _env_spec, holdout_seeds, n_shots=None):
+        return VerifyReport(
+            verdict="SUSPICIOUS",
+            ler_holdout=0.1,
+            ler_holdout_ci=(0.08, 0.12),
+            delta_ler_holdout=0.0,
+            ler_shuffled=0.1,
+            ablation_sanity_ok=True,
+            holdout_seeds_used=holdout_seeds,
+            seed_leakage_check_ok=True,
+            notes="offline replay ok",
+            paired_eval_bundle_id="55555555-5555-5555-8555-555555555555",
+        )
+
+    monkeypatch.setattr("autoqec.eval.independent_eval.independent_verify", fake_verify)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.verify,
+        [str(round_dir), "--env", "autoqec/envs/builtin/surface_d5_depol.yaml", "--n-seeds", "2"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "SUSPICIOUS" in result.output
+    assert (round_dir / "verification_report.json").exists()
+
+
 def test_review_log_handles_missing_history(tmp_path) -> None:
     runner = CliRunner()
     result = runner.invoke(cli.review_log, [str(tmp_path)], catch_exceptions=False)

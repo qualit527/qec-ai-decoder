@@ -179,6 +179,19 @@ def _candidate_pareto(records: list[dict]) -> list[dict]:
     return unique_front
 
 
+def _load_round_metrics_for_verify(round_dir: Path) -> dict | None:
+    metrics_path = round_dir / "metrics.json"
+    if not metrics_path.exists():
+        return None
+
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    if metrics.get("round") is None and round_dir.name.startswith("round_"):
+        suffix = round_dir.name.removeprefix("round_")
+        if suffix.isdigit():
+            metrics["round"] = int(suffix)
+    return metrics
+
+
 def _parse_fork_from_option(fork_from: str | None) -> str | list[str] | None:
     parsed_fork_from: str | list[str] | None = None
     if fork_from is not None:
@@ -476,6 +489,7 @@ def add_env(out: str, name: str, code_source: str, noise_p: str, backend: str) -
 @click.option("--n-seeds", type=int, default=50, help="Number of holdout seeds to sample")
 def verify(round_dir: str, env: str, n_shots: int | None, n_seeds: int) -> None:
     from autoqec.eval.independent_eval import independent_verify
+    from autoqec.orchestration.round_recorder import admit_verified_round_to_pareto
 
     rd = Path(round_dir)
     env_spec = load_env_yaml(env)
@@ -483,15 +497,43 @@ def verify(round_dir: str, env: str, n_shots: int | None, n_seeds: int) -> None:
     holdout = list(range(env_spec.noise.seed_policy.holdout[0],
                           env_spec.noise.seed_policy.holdout[1] + 1))[:n_seeds]
     report = independent_verify(ckpt, env_spec, holdout_seeds=holdout, n_shots=n_shots)
-    (rd / "verification_report.json").write_text(report.model_dump_json(indent=2))
-    (rd / "verification_report.md").write_text(
-        f"# Verification Report\n\n**Verdict:** {report.verdict}\n\n"
-        f"- Δ_LER (holdout): {report.delta_ler_holdout:.4g}\n"
-        f"- CI: {report.ler_holdout_ci}\n"
-        f"- Ablation sanity: {report.ablation_sanity_ok}\n"
-        f"- Seed-leakage check: {report.seed_leakage_check_ok}\n\n"
-        f"Notes: {report.notes}\n"
+    (rd / "verification_report.json").write_text(
+        report.model_dump_json(indent=2),
+        encoding="utf-8",
     )
+    md_lines = [
+        "# Verification Report",
+        "",
+        f"**Verdict:** {report.verdict}",
+        "",
+        f"- Holdout LER: {report.ler_holdout:.4g}",
+        f"- Holdout LER CI: {report.ler_holdout_ci}",
+        f"- Δ_LER (holdout): {report.delta_ler_holdout:.4g}",
+        f"- Ablation sanity: {report.ablation_sanity_ok}",
+        f"- Seed-leakage check: {report.seed_leakage_check_ok}",
+    ]
+    if report.paired_eval_bundle_id is not None:
+        md_lines.append(f"- Paired eval bundle ID: {report.paired_eval_bundle_id}")
+    md_lines.extend(
+        [
+            "",
+            f"Notes: {report.notes}",
+            "",
+        ]
+    )
+    (rd / "verification_report.md").write_text(
+        "\n".join(md_lines),
+        encoding="utf-8",
+    )
+
+    round_metrics = _load_round_metrics_for_verify(rd)
+    if report.verdict == "VERIFIED" and round_metrics is not None:
+        admit_verified_round_to_pareto(
+            RunMemory(rd.parent),
+            round_metrics,
+            report.model_dump(),
+        )
+
     click.echo(report.verdict)
 
 

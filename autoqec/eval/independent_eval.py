@@ -17,9 +17,11 @@ Data-loading helpers are copy-pasted (not imported) to maintain isolation.
 from __future__ import annotations
 
 import copy
+import hashlib
 import math
 from dataclasses import dataclass
 from pathlib import Path
+import uuid
 
 import numpy as np
 import stim
@@ -199,18 +201,42 @@ def _shuffle_model_params(model: torch.nn.Module) -> None:
             param.data = flat[torch.randperm(flat.numel())].view(param.data.shape)
 
 
+def _paired_eval_bundle_id(
+    syndrome: torch.Tensor,
+    target: torch.Tensor,
+    holdout_seeds: list[int],
+    n_shots: int,
+) -> str:
+    """Fingerprint the exact paired eval batch as a deterministic UUID."""
+    digest = hashlib.sha256()
+    for tensor in (syndrome, target):
+        array = tensor.detach().cpu().contiguous().numpy()
+        digest.update(str(array.dtype).encode("ascii"))
+        digest.update(np.asarray(array.shape, dtype=np.int64).tobytes())
+        digest.update(array.tobytes())
+    digest.update(np.asarray(holdout_seeds, dtype=np.int64).tobytes())
+    digest.update(np.asarray([n_shots], dtype=np.int64).tobytes())
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, digest.hexdigest()))
+
+
 def _decode_holdout(
     model: torch.nn.Module | None,
     env_spec: EnvSpec,
     artifacts: _CodeArtifacts,
     holdout_seeds: list[int],
     n_shots: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, str]:
     """Run plain baseline, predecoder, and ablation on the same holdout shots.
 
-    Returns (plain_errors, pred_errors, shuffled_errors).
+    Returns (plain_errors, pred_errors, shuffled_errors, paired_eval_bundle_id).
     """
     syndrome, target = _sample_holdout(env_spec, artifacts, holdout_seeds, n_shots)
+    paired_eval_bundle_id = _paired_eval_bundle_id(
+        syndrome,
+        target,
+        holdout_seeds,
+        n_shots,
+    )
     syndrome_np = syndrome.numpy()
     target_np = target.numpy()
     n_obs = target_np.shape[1]
@@ -232,7 +258,7 @@ def _decode_holdout(
     if model is None:
         pred_errors = plain_errors.copy()
         shuffled_errors = plain_errors.copy()
-        return plain_errors, pred_errors, shuffled_errors
+        return plain_errors, pred_errors, shuffled_errors, paired_eval_bundle_id
 
     # Predecoder path
     model.eval()
@@ -268,7 +294,7 @@ def _decode_holdout(
     )
     shuffled_errors = (ablation_labels[:, :n_obs] != target_np).any(axis=1).astype(np.int32)
 
-    return plain_errors, pred_errors, shuffled_errors
+    return plain_errors, pred_errors, shuffled_errors, paired_eval_bundle_id
 
 
 def independent_verify(
@@ -287,12 +313,12 @@ def independent_verify(
     artifacts = _load_code_artifacts(env_spec)
     model = _load_predecoder(checkpoint, artifacts.n_var, artifacts.n_check)
 
-    plain_errors, pred_errors, shuffled_errors = _decode_holdout(
+    plain_errors, pred_errors, shuffled_errors, paired_eval_bundle_id = _decode_holdout(
         model, env_spec, artifacts, holdout_seeds, n_shots,
     )
 
     ler_plain, plo, phi = bootstrap_ci_mean(plain_errors, n_bootstrap, 0.95, seed=0)
-    ler_pred, _, _ = bootstrap_ci_mean(pred_errors, n_bootstrap, 0.95, seed=1)
+    ler_pred, pred_lo, pred_hi = bootstrap_ci_mean(pred_errors, n_bootstrap, 0.95, seed=1)
     ler_shuffled = float(shuffled_errors.mean())
 
     delta = float(ler_plain - ler_pred)
@@ -314,11 +340,13 @@ def independent_verify(
     return VerifyReport(
         verdict=verdict,
         ler_holdout=ler_pred,
-        ler_holdout_ci=(plo, phi),
+        ler_holdout_ci=(pred_lo, pred_hi),
         delta_ler_holdout=delta,
         ler_shuffled=ler_shuffled,
         ablation_sanity_ok=ablation_ok,
         holdout_seeds_used=holdout_seeds,
         seed_leakage_check_ok=True,
+        delta_vs_baseline_holdout=delta,
+        paired_eval_bundle_id=paired_eval_bundle_id,
         notes=f"n_shots={n_shots}, plain_ler={ler_plain:.4g}, pred_ler={ler_pred:.4g}, shuffled_ler={ler_shuffled:.4g}",
     )
