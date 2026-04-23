@@ -199,7 +199,6 @@ def test_candidate_pareto_skips_ok_rows_with_missing_metrics() -> None:
 
 
 def test_verify_command_writes_report_artifacts(monkeypatch, tmp_path) -> None:
-    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
     round_dir = tmp_path / "round_1"
     round_dir.mkdir()
     (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
