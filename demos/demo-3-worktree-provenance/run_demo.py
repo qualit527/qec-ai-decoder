@@ -299,12 +299,14 @@ def main() -> int:
         print(f"  canonical key      = {plan_c['fork_from_canonical']!r}")
         print()
         print(
-            "  git log --graph --oneline (merge commit visible as a diamond):"
+            "  git log --graph --oneline (merge commit as a diamond;\n"
+            f"  scope limited to commits after fork point '{fork_from}'):"
         )
         for line in _git(
             plan_c["worktree_dir"], "log", "--graph", "--oneline",
-            "--decorate", "-n", "8",
+            "--decorate",
             plan_c["branch"], plan_a["branch"], plan_b["branch"],
+            "--not", fork_from,
         ).splitlines():
             print(f"    {line}")
         print()
@@ -365,10 +367,14 @@ def main() -> int:
         print(f"  {len(branches)} branch(es) alive:")
         for b in branches:
             print(f"    {b}")
-        print("\n  git log --graph across all of them:")
+        print(
+            f"\n  git log --graph across all of them (scoped to commits "
+            f"after fork point '{fork_from}',\n"
+            "  so unrelated mainline history is filtered out):"
+        )
         graph = _git(
             REPO_ROOT, "log", "--graph", "--oneline", "--decorate",
-            "-n", "30", *branches,
+            *branches, "--not", fork_from,
         )
         for line in graph.splitlines():
             print(f"    {line}")
