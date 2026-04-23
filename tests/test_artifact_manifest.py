@@ -1,7 +1,5 @@
 import hashlib
 import json
-import subprocess
-from pathlib import Path
 
 from autoqec.runner.manifest import write_artifact_manifest
 
@@ -39,8 +37,10 @@ def test_manifest_contains_repo_sha_and_hashes(tmp_path):
 
 def test_manifest_repo_sha_optional(tmp_path):
     # When called outside a git repo, repo_sha is None but no crash
-    env_yaml = tmp_path / "env.yaml"; env_yaml.write_text("")
-    rd = tmp_path / "round_1"; rd.mkdir()
+    env_yaml = tmp_path / "env.yaml"
+    env_yaml.write_text("")
+    rd = tmp_path / "round_1"
+    rd.mkdir()
     data = json.loads(write_artifact_manifest(
         round_dir=rd, env_yaml_path=env_yaml, dsl_config={}, cmd_line=["x"],
     ).read_text())

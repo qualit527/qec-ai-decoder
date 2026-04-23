@@ -1,7 +1,5 @@
 # tests/test_pareto_atomic.py
-import json
 from pathlib import Path
-from unittest.mock import patch
 
 from autoqec.orchestration.memory import RunMemory
 

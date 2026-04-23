@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 
@@ -8,7 +7,8 @@ from autoqec.runner.schema import RoundMetrics, RunnerConfig
 
 
 def _cfg(tmp, *, branch=None, code_cwd=None, rid="uuid-1"):
-    rd = tmp / "round_1"; rd.mkdir(parents=True)
+    rd = tmp / "round_1"
+    rd.mkdir(parents=True)
     return RunnerConfig(
         env_name="surface_d5_depol",
         predecoder_config={"type": "gnn", "output_mode": "soft_priors"},
