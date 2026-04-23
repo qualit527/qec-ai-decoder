@@ -29,5 +29,5 @@ jobs:
       - name: Run lint
         run: make lint
 
-      - name: Run non-integration tests
-        run: make test
+      - name: Run non-integration tests with coverage
+        run: make coverage

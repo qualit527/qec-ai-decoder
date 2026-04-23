@@ -31,10 +31,19 @@ dev = [
 include = ["autoqec*", "cli*"]
 
 [tool.pytest.ini_options]
+addopts = '-m "not integration" -v'
 markers = [
   "integration: marks tests that exercise the end-to-end runner",
 ]
 pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["autoqec", "cli"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 line-length = 100

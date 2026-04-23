@@ -22,16 +22,16 @@ ENV ?= autoqec/envs/builtin/surface_d5_depol.yaml
 ROUNDS ?= 10
 PROFILE ?= dev
 
-.PHONY: install test lint run run-nollm verify demo-2 run-all-claude run-cheap
+.PHONY: install test coverage lint run run-nollm verify demo-2 run-all-claude run-cheap
 
 install:
 	$(PIP) install -e '.[dev]'
 
 test:
-	$(PYTEST) tests/ -m "not integration" -v \
-		--cov=autoqec \
-		--cov=cli \
-		--cov-report=term-missing:skip-covered
+	$(PYTEST)
+
+coverage:
+	$(PYTEST) --cov
 
 lint:
 	$(RUFF) check autoqec cli tests scripts
