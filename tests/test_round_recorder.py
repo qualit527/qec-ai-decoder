@@ -12,7 +12,10 @@ import json
 from pathlib import Path
 
 from autoqec.orchestration.memory import RunMemory
-from autoqec.orchestration.round_recorder import record_round
+from autoqec.orchestration.round_recorder import (
+    admit_verified_round_to_pareto,
+    record_round,
+)
 
 
 def _admit(mem: RunMemory, **overrides) -> None:
@@ -107,6 +110,66 @@ def test_pareto_preview_is_top_5_by_holdout_delta(tmp_path: Path) -> None:
     assert len(preview) == 5
     holdout_deltas = [row["delta_vs_baseline_holdout"] for row in preview]
     assert holdout_deltas == sorted(holdout_deltas, reverse=True)
+
+
+def test_admit_verified_round_to_pareto_rejects_non_verified_report(tmp_path: Path) -> None:
+    mem = RunMemory(tmp_path)
+    admitted = admit_verified_round_to_pareto(
+        mem,
+        round_metrics={"round": 1},
+        verify_report={"verdict": "FAILED", "delta_vs_baseline_holdout": 1e-4},
+    )
+
+    assert admitted is False
+    assert json.loads((tmp_path / "pareto.json").read_text()) == []
+    assert not (tmp_path / "pareto_preview.json").exists()
+
+
+def test_admit_verified_round_to_pareto_requires_holdout_delta(
+    tmp_path: Path,
+    caplog,
+) -> None:
+    mem = RunMemory(tmp_path)
+    admitted = admit_verified_round_to_pareto(
+        mem,
+        round_metrics={"round": 1},
+        verify_report={"verdict": "VERIFIED"},
+    )
+
+    assert admitted is False
+    assert "no delta_vs_baseline_holdout" in caplog.text
+    assert json.loads((tmp_path / "pareto.json").read_text()) == []
+
+
+def test_admit_verified_round_to_pareto_deduplicates_identical_candidate(
+    tmp_path: Path,
+) -> None:
+    mem = RunMemory(tmp_path)
+    round_metrics = {
+        "round": 1,
+        "status": "ok",
+        "hypothesis": "h",
+        "flops_per_syndrome": 100_000,
+        "n_params": 50_000,
+        "branch": "exp/t/01-a",
+        "commit_sha": "sha_a",
+        "round_attempt_id": "u1",
+    }
+    verify_report = {
+        "verdict": "VERIFIED",
+        "delta_vs_baseline_holdout": 3e-4,
+        "ler_holdout": 4e-4,
+        "paired_eval_bundle_id": "bundle-1",
+    }
+
+    first = admit_verified_round_to_pareto(mem, round_metrics, verify_report)
+    second = admit_verified_round_to_pareto(mem, round_metrics, verify_report)
+
+    assert first is True
+    assert second is False
+    pareto = json.loads((tmp_path / "pareto.json").read_text())
+    assert len(pareto) == 1
+    assert pareto[0]["paired_eval_bundle_id"] == "bundle-1"
 
 
 # ─── Fix 2 — Pareto uses VerifyReport holdout fields, not training delta ──

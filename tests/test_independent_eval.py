@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from pathlib import Path
 import types
+import uuid
 
 
 def test_independent_verify_identity_predecoder(tmp_path):
@@ -101,8 +102,9 @@ def test_decode_holdout_covers_model_none_and_osd_path(monkeypatch):
     target = torch.zeros((2, artifacts.n_var), dtype=torch.int64)
 
     monkeypatch.setattr(ie, "_sample_holdout", lambda *_args, **_kwargs: (syndrome, target))
-    plain, pred, shuffled = ie._decode_holdout(None, env, artifacts, [9000], 2)
+    plain, pred, shuffled, bundle_id = ie._decode_holdout(None, env, artifacts, [9000], 2)
     assert plain.shape == pred.shape == shuffled.shape == (2,)
+    assert uuid.UUID(bundle_id)
 
 
 def test_decode_holdout_sets_parity_ctx_and_ablation(monkeypatch):
@@ -128,8 +130,57 @@ def test_decode_holdout_sets_parity_ctx_and_ablation(monkeypatch):
 
     model = FakeModel()
     monkeypatch.setattr(ie, "decode_with_predecoder", lambda *_args, **_kwargs: np.zeros((2, artifacts.n_var), dtype=np.int64))
-    plain, pred, shuffled = ie._decode_holdout(model, env, artifacts, [9000], 2)
+    plain, pred, shuffled, bundle_id = ie._decode_holdout(model, env, artifacts, [9000], 2)
     assert plain.shape == pred.shape == shuffled.shape == (2,)
+    assert uuid.UUID(bundle_id)
+
+
+def test_decode_holdout_reuses_exact_paired_batch_and_bundle_id(monkeypatch):
+    from autoqec.eval import independent_eval as ie
+    from autoqec.envs.schema import load_env_yaml
+
+    env = load_env_yaml("autoqec/envs/builtin/bb72_depol.yaml")
+    artifacts = ie._load_code_artifacts(env)
+    syndrome = torch.tensor([[0.0, 1.0], [1.0, 0.0]], dtype=torch.float32)
+    syndrome = syndrome.repeat(1, artifacts.n_check // syndrome.shape[1] + 1)[:, :artifacts.n_check]
+    target = torch.zeros((2, artifacts.n_var), dtype=torch.int64)
+    seen_batches = []
+
+    monkeypatch.setattr(ie, "_sample_holdout", lambda *_args, **_kwargs: (syndrome, target))
+
+    def fake_decode_with_predecoder(_pred_or_uniform, _env_spec, syndromes, *_args, **_kwargs):
+        seen_batches.append(np.array(syndromes, copy=True))
+        return np.zeros((syndromes.shape[0], artifacts.n_var), dtype=np.int64)
+
+    monkeypatch.setattr(ie, "decode_with_predecoder", fake_decode_with_predecoder)
+
+    class FakeModel(torch.nn.Module):
+        output_mode = "soft_priors"
+
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.tensor(1.0))
+
+        def forward(self, syndrome, _ctx):
+            return torch.zeros((syndrome.shape[0], artifacts.n_var), dtype=torch.float32)
+
+    _, _, _, bundle_id = ie._decode_holdout(FakeModel(), env, artifacts, [9000], 2)
+
+    assert len(seen_batches) == 3
+    assert seen_batches[0].tobytes() == seen_batches[1].tobytes()
+    assert seen_batches[1].tobytes() == seen_batches[2].tobytes()
+    assert bundle_id == ie._paired_eval_bundle_id(syndrome, target, [9000], 2)
+    assert uuid.UUID(bundle_id)
+
+
+def test_bootstrap_ci_width_is_tight_for_large_sample():
+    from autoqec.eval.bootstrap import bootstrap_ci_mean
+
+    outcomes = np.zeros(200_000, dtype=np.int32)
+    outcomes[:2_000] = 1
+    mean, lo, hi = bootstrap_ci_mean(outcomes, n_resamples=1000, ci=0.95, seed=0)
+    assert mean == pytest.approx(0.01, abs=5e-4)
+    assert hi - lo < 0.002
 
 
 def test_independent_verify_can_return_failed_and_verified(monkeypatch):
@@ -145,6 +196,7 @@ def test_independent_verify_can_return_failed_and_verified(monkeypatch):
             np.array([0, 0, 0], dtype=np.int32),
             np.array([1, 1, 1], dtype=np.int32),
             np.array([0, 0, 0], dtype=np.int32),
+            "11111111-1111-5111-8111-111111111111",
         )
 
     monkeypatch.setattr(ie, "_decode_holdout", fake_decode_failed)
@@ -155,12 +207,15 @@ def test_independent_verify_can_return_failed_and_verified(monkeypatch):
     )
     failed = ie.independent_verify(Path("dummy.pt"), env, holdout_seeds=[9000], n_shots=3)
     assert failed.verdict == "FAILED"
+    assert failed.delta_vs_baseline_holdout == failed.delta_ler_holdout
+    assert failed.paired_eval_bundle_id == "11111111-1111-5111-8111-111111111111"
 
     def fake_decode_verified(*_args, **_kwargs):
         return (
             np.array([1, 1, 1], dtype=np.int32),
             np.array([0, 0, 0], dtype=np.int32),
             np.array([1, 1, 1], dtype=np.int32),
+            "22222222-2222-5222-8222-222222222222",
         )
 
     monkeypatch.setattr(ie, "_decode_holdout", fake_decode_verified)
@@ -171,3 +226,5 @@ def test_independent_verify_can_return_failed_and_verified(monkeypatch):
     )
     verified = ie.independent_verify(Path("dummy.pt"), env, holdout_seeds=[9000], n_shots=3)
     assert verified.verdict == "VERIFIED"
+    assert verified.delta_vs_baseline_holdout == verified.delta_ler_holdout
+    assert verified.paired_eval_bundle_id == "22222222-2222-5222-8222-222222222222"
