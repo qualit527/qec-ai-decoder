@@ -14,8 +14,8 @@
 
 ## Reading order
 
-1. `docs/specs/2026-04-20-autoqec-design.md` §4.6, §5.2, §7, §8.3–§8.5, §9
-2. `docs/plans/2026-04-21-autoqec-master.md`
+1. `docs/superpowers/specs/2026-04-20-autoqec-design.md` §4.6, §5.2, §7, §8.3–§8.5, §9
+2. `docs/superpowers/plans/2026-04-21-autoqec-master.md`
 3. `knowledge/DECODER_ROADMAP.md` §3 (Relay-BP), §7 (reward-hacking taxonomy)
 4. `knowledge/STRATEGIC_ASSESSMENT.md` §4 (fair-baseline compliance, 6 guards)
 

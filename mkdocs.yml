@@ -1,0 +1,24 @@
+site_name: AutoQEC Documentation
+site_description: Public developer documentation for the AutoQEC research harness
+site_url: https://qualit527.github.io/qec-ai-decoder/
+repo_url: https://github.com/qualit527/qec-ai-decoder
+repo_name: qualit527/qec-ai-decoder
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - API Documentation: api-documentation.md
+  - Contracts:
+      - Interfaces: contracts/interfaces.md
+      - Round Dir Layout: contracts/round_dir_layout.md
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true

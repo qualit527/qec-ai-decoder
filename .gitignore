@@ -46,6 +46,9 @@ Thumbs.db
 *.log
 logs/
 
+# mkdocs build output
+site/
+
 # Knowledge base
 knowledge/papers/
 knowledge/papers_md/

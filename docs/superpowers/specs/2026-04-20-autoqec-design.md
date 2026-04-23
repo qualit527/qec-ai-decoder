@@ -5,25 +5,10 @@
 **Date (v2)**: 2026-04-21
 **Date (v2.2)**: 2026-04-21
 **Date (v2.3)**: 2026-04-22
-**Status**: Draft; frozen contracts in `docs/contracts/interfaces.md` supersede where they differ
-**Authors**: Team (Chen Jiahan, Xie Jingu, Lin Tengxiang) + brainstorming with Claude
+**Status**: Draft, ready for team review
+**Authors**: Team (Chen Jiahan、Xie Jingu、Lin Tengxiang) + brainstorming with Claude
 **Project**: QEC AI-enhanced decoder (AutoQEC)
 **Repo**: `qec-ai-decoder`
-
-> **Pre-Phase-0 historical draft note.** This spec was written before Phase-0
-> contract freeze. Some names and entry points drifted during implementation.
-> Where this document conflicts with `docs/contracts/interfaces.md` or the
-> actual repo code, the frozen contracts and repo are authoritative. Key
-> mapping:
->
-> | This spec says | Frozen contract / repo uses | Notes |
-> |---|---|---|
-> | `noise.error_rates` | `EnvSpec.noise.p` | Renamed during Phase 0 |
-> | `data.`, `training.`, `evaluation.*` | Flat `EnvSpec` fields | Structured into `code`, `noise`, `constraints`, `eval_protocol` |
-> | `observable_flip` / `pauli_per_qubit` / `full_error` | `hard_flip` / `soft_priors` | Output modes renamed |
-> | `main.py` | `cli/autoqec.py` | Entry point moved to `cli/` package |
-> | `requirements.txt` | `pyproject.toml` | Standard Python packaging |
-> | `evaluation.baselines` | `baseline_decoders` + `classical_backend` | Split into two fields |
 **Companion docs**: `knowledge/DECODER_ROADMAP.md` · `knowledge/STRATEGIC_ASSESSMENT.md` · `knowledge/AUTORESEARCH_PATTERNS.md`
 
 ---
@@ -69,7 +54,7 @@ Target venue: **Quantum** (primary), IEEE QCE (secondary). Skip Nature QI / PRX 
 - **G1.** Working end-to-end harness: user invokes a skill / runs CLI → agent loop completes ≥10 rounds → outputs verified Pareto candidates.
 - **G2.** Two reference environments as evidence: `surface_d5_depol` (PyMatching baseline) and `bb72_depol` (BP+OSD + Relay-BP baselines). The same harness code runs both.
 - **G3.** 5 user-facing skills covering the user journey (see §8).
-- **G4.** 5 demos, each producing a reproducible artifact, together exercising all skills (see §9). Reproducibility: all data generation uses deterministic seed ranges (`train: 1-999`, `val: 1000-1999`, `holdout: 9000-9999` via `EnvSpec.seed_policy`), with `random`/`numpy`/`torch`/Stim sampler all seeded from `RunnerConfig.seed`. LLM calls are non-deterministic by nature; the non-LLM smoke path (`--no-llm`) is fully deterministic.
+- **G4.** 5 demos, each producing a reproducible artifact, together exercising all skills (see §9).
 - **G5.** Independent decoder verification catches a hand-crafted cheating predecoder.
 - **G6.** Codex-cli primary backend (server deployment friendly); claude-cli works for inline development and demos.
 - **G7.** Agent is *self-aware* about compute: no hard DSL limits, Ideator queries `machine_state` tool and reads historical round timings.
@@ -220,7 +205,7 @@ AUTOQEC_ANALYST_MODEL   ?= claude-haiku-4-5
 
 ### 4.5 Runner and `RunnerSafety`
 
-The runner (`autoqec/runner/`) is pure Python, deterministic, seed-pinned (`random`, `numpy`, `torch`, and Stim sampler all seeded from `RunnerConfig.seed`). It does not call any LLM. Its interface:
+The runner (`autoqec/runner/`) is pure Python, deterministic, seed-pinned. It does not call any LLM. Its interface:
 
 ```python
 def run_round(config: dict, env_spec: EnvSpec, round_dir: Path) -> RoundMetrics
@@ -318,12 +303,11 @@ Three groups (`code`, `noise`, `constraints`) are decoupled — users recombine 
 - p sweep: `[1e-3, 3e-3, 5e-3]`
 - Baselines: plain BP+OSD (order 0 and 10), Relay-BP
 - Classical backend for predecoder: OSD
-- **Code artifact**: explicit `parity_check_matrix` (`.npy` files for Hx, Hz). BP+OSD requires a parity-check matrix as input — it does not consume Stim circuits directly. For envs using `stim_circuit` type, the `detector_error_model()` provides the error mechanisms but not CSS parity-check matrices. The BP+OSD baseline is therefore scoped to envs that supply H explicitly (like bb72). The current implementation uses `from ldpc import bposd_decoder` with `osd_method="osd_cs"` (see `autoqec/decoders/backend_adapter.py` and `autoqec/decoders/baselines/bposd_wrap.py` for the exact parameterisation).
-- Parity-check matrices built via `scripts/scout_bb72.py` (manual bivariate-bicycle construction).
+- Stim circuit path TBD during Day-1 environment bring-up — candidates: (a) `qLDPC` Python package, (b) `stimbposd` examples, (c) Bravyi et al 2024 github. If none usable, hand-construct ~200 LOC (documented in DECODER_ROADMAP.md §3).
 
 ### 5.3 User extensions
 
-- Primary path: write YAML → `python -m cli.autoqec run envs/my_env.yaml`
+- Primary path: write YAML → `autoqec run envs/my_env.yaml`
 - Non-Python users: `/add-env` skill walks them through it interactively
 - Python escape hatch for custom noise channels: post-MVP
 
@@ -435,7 +419,7 @@ This frames compute as a **first-class variable the agent optimizes**, matching 
 
 ### 7.1 Metrics
 
-- **Accuracy**: `Δ_LER = LER(plain_classical) − LER(predecoder + classical)`. Measured with bootstrap 95% CI over 200K holdout shots. LER is the **logical error rate**: whether the *combined* correction + true error has a non-trivial logical-observable component. The runner projects both the predicted and true observables to the same space before comparison: `(predicted_observables != true_observables).any(axis=1).mean()` (see `autoqec/runner/runner.py::_failure_rate`). Both baselines and predecoder go through the same projection so the comparison is like-for-like.
+- **Accuracy**: `Δ_LER = LER(plain_classical) − LER(predecoder + classical)`. Measured with bootstrap 95% CI over 200K holdout shots.
 - **Latency proxy**: FLOPs per syndrome evaluation (via `fvcore` / `ptflops`). Hardware-agnostic, reproducible. Wall-clock reported as a secondary column (host-dependent).
 - **Params**: `sum(p.numel() for p in model.parameters())`.
 - **Cost**: LLM tokens + GPU wall-clock per round. Logged to `history.jsonl`, **not** a Pareto axis (would create a reward-hacking incentive to short-train).
@@ -464,7 +448,7 @@ Main entry. Orchestrates the agent loop.
 - **Input**: env YAML path, round budget, LLM-budget cap.
 - **Behavior**: reads env, loops rounds. Each round: (a) call Ideator subagent, (b) call Coder subagent, (c) invoke Runner CLI, (d) call Analyst subagent, (e) if candidate, invoke `/verify-decoder`, (f) append to log.md + history.jsonl + pareto.json.
 - **LLM reasoning**: when to stop, how to route failures, how much to summarize into L2 context.
-- **Underlying CLI**: `python -m cli.autoqec run <env.yaml>`.
+- **Underlying CLI**: `autoqec run <env.yaml>`.
 
 ### 8.2 `/add-env`
 
@@ -479,9 +463,9 @@ Interactive env creation for non-Python users.
 Independent Pareto candidate audit.
 
 - **Input**: path to `runs/<id>/round_N/`.
-- **Behavior**: invokes `python -m cli.autoqec verify` CLI (which calls `independent_eval.py`). Reads the mechanical `VERIFIED/SUSPICIOUS/FAILED` verdict + raw metrics. LLM **interprets** borderline cases: reads `training.log`, the DSL config, the history of previous rounds; writes a diagnostic paragraph explaining root cause (overfitting / underfitting / reward-hacking pattern) and recommends next action.
+- **Behavior**: invokes `autoqec verify` CLI (which calls `independent_eval.py`). Reads the mechanical `VERIFIED/SUSPICIOUS/FAILED` verdict + raw metrics. LLM **interprets** borderline cases: reads `training.log`, the DSL config, the history of previous rounds; writes a diagnostic paragraph explaining root cause (overfitting / underfitting / reward-hacking pattern) and recommends next action.
 - **LLM reasoning**: interpretation of statistics in context, detective work across multiple files.
-- **Underlying CLI**: `python -m cli.autoqec verify <run_dir>`.
+- **Underlying CLI**: `autoqec verify <run_dir>`.
 
 ### 8.4 `/review-log`
 
@@ -573,8 +557,7 @@ qec-ai-decoder/
 ├── runs/                           # .gitignore'd; per-run training output (shared by all branches)
 ├── .worktrees/                     # .gitignore'd; transient git worktree checkouts per round (§15)
 ├── knowledge/                      # committed: INDEX, bib, roadmaps; gitignored: PDFs, markdown, refs
-├── docs/specs/                     # design specs (this file lives here)
-├── docs/plans/                     # implementation plans
+├── docs/superpowers/specs/         # this file lives here
 ├── tests/
 ├── Makefile
 ├── pyproject.toml
@@ -602,10 +585,10 @@ COMMON_ENV = \
 
 .PHONY: run verify pareto test demo-1 demo-2 demo-3 demo-4 demo-5
 
-run:        ; $(COMMON_ENV) python -m cli.autoqec run $(ENV) --rounds $(ROUNDS)
-verify:     ; python -m cli.autoqec verify $(RUN_DIR)
-pareto:     ; python -m cli.autoqec pareto compare $(RUN_DIRS)
-test:       ; pytest tests/ -m "not integration" -v
+run:        ; $(COMMON_ENV) python -m autoqec run $(ENV) --rounds $(ROUNDS)
+verify:     ; python -m autoqec verify $(RUN_DIR)
+pareto:     ; python -m autoqec pareto compare $(RUN_DIRS)
+test:       ; pytest tests/ -v
 
 # Demo-specific targets — composable
 demo-1: ; bash demos/demo-1-surface-d5/run.sh
@@ -653,7 +636,7 @@ This split ensures all three directly touch QEC content:
 | Day | Chen Jiahan / Claude Code | Xie Jingu / GLM | Lin Tengxiang / Codex |
 |---|---|---|---|
 | **Day 1** | Bring up `surface_d5` circuit + PyMatching baseline + 1M-shot benchmark; draft `.claude/agents/autoqec-*.md`; define env/orchestrator input schema | Scout / wire `bb72` source path; wrap BP+OSD baseline; define verify metrics schema and holdout protocol; draft reward-hacking test case | Implement **DSL schema + compiler**; add 3 GNN + 3 Neural-BP seed templates; define Runner config contract and predecoder I/O contract |
-| **Day 2** | Integrate orchestrator with Ideator/Coder/Analyst calls; complete one full dev-profile round on `surface_d5`; own integration debugging on the orchestration side | Implement **`independent_eval.py`** and `python -m cli.autoqec verify`; add bootstrap-CI + ablation sanity; wire Pareto update logic and qLDPC eval if time permits | Implement Runner train/eval/FLOPs + `RunnerSafety`; connect predecoder output to MWPM / OSD; fix compile/runtime failures from first end-to-end round |
+| **Day 2** | Integrate orchestrator with Ideator/Coder/Analyst calls; complete one full dev-profile round on `surface_d5`; own integration debugging on the orchestration side | Implement **`independent_eval.py`** and `autoqec verify`; add bootstrap-CI + ablation sanity; wire Pareto update logic and qLDPC eval if time permits | Implement Runner train/eval/FLOPs + `RunnerSafety`; connect predecoder output to MWPM / OSD; fix compile/runtime failures from first end-to-end round |
 | **Day 3** | Run **Demo 1** full prod on `surface_d5`; package `/autoqec-run` and `/add-env`; produce walkthrough and lab-notebook narrative | Run **Demo 4** cheating-predecoder audit; finalize `/verify-decoder`, `/review-log`, `/diagnose-failure`; summarize result tables and failure analysis for final PR | Support Demo 1 stability; attempt **Demo 2** `bb72` run; finalize Runner / DSL / CLI polish and fallback configs for dev-profile reruns |
 
 ### 12.3 Shared checkpoints and backup coverage
@@ -676,7 +659,7 @@ Days 1-2 prioritize the novelty-carrying infrastructure (`DSL`, `independent_eva
 | Day | Primary outcomes |
 |---|---|
 | **Day 1** | Port `open-coscientist/framework.py` skeleton; draft 3 subagent `.md` stubs; set up Agent-tool dispatch scaffolding; bring up Stim + sinter and `surface_d5` circuit; add PyMatching baseline wrapper; run **1M-shot train benchmark** to pin compute numbers; implement **DSL schema (pydantic) + `dsl_compiler.py`**; add 3 GNN + 3 Neural-BP seed templates for `example_db/`; add `machine_state` tool |
-| **Day 2** | **🔴 Main loop integration** so Runner ↔ Orchestrator ↔ Subagents complete 1 round end-to-end; implement Runner (train + eval + FLOPs) + `RunnerSafety` sentinels; wire `bb72` env if time; implement **`independent_eval.py`** with 3 MVP guards + `python -m cli.autoqec verify` CLI; add **Pareto maintenance + visualization** + `python -m cli.autoqec pareto` CLI |
+| **Day 2** | **🔴 Main loop integration** so Runner ↔ Orchestrator ↔ Subagents complete 1 round end-to-end; implement Runner (train + eval + FLOPs) + `RunnerSafety` sentinels; wire `bb72` env if time; implement **`independent_eval.py`** with 3 MVP guards + `autoqec verify` CLI; add **Pareto maintenance + visualization** + `autoqec pareto` CLI |
 | **Day 3** | Run Demo 1 (`surface_d5` full prod); attempt Demo 2 (`bb72` full run, P1 stretch); finalize baseline scripts; ship **5 SKILL.md thin wrappers** (P0: `/autoqec-run`, `/verify-decoder`; P1: `/add-env`; P2: `/review-log`, `/diagnose-failure`); finish Demo 4 cheating-predecoder, walkthroughs, and final PR |
 
 ### Skill priority (Day 3)

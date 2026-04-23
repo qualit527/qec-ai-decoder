@@ -13,7 +13,41 @@ ALLOWED_FROM_IMPORTS: frozenset[str] = frozenset(
     {"torch", "torch.nn", "torch.nn.functional", "typing"}
 )
 FORBIDDEN_NAMES: frozenset[str] = frozenset(
-    {"os", "subprocess", "sys", "shutil", "socket", "urllib", "eval", "exec", "open"}
+    {
+        # process / filesystem / network escape modules
+        "os",
+        "subprocess",
+        "sys",
+        "shutil",
+        "socket",
+        "urllib",
+        "pathlib",
+        "io",
+        "tempfile",
+        "pickle",
+        "marshal",
+        "ctypes",
+        "importlib",
+        # builtin escape hatches — names must not appear bare even though
+        # the validator also shadows __builtins__ at exec time.
+        "eval",
+        "exec",
+        "open",
+        "compile",
+        "input",
+        "breakpoint",
+        "help",
+        "__import__",
+        "__builtins__",
+        # reflective builtins that can reach out to __class__ / globals etc.
+        "getattr",
+        "setattr",
+        "delattr",
+        "vars",
+        "globals",
+        "locals",
+        "dir",
+    }
 )
 SLOT_SIGNATURES: dict[str, list[str]] = {
     "message_fn": ["x_src", "x_dst", "e_ij", "params"],

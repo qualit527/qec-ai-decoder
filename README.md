@@ -1,10 +1,19 @@
+<p align="center">
+  <img src="docs/branding/autoqec-ai-logo.png" alt="AutoQEC AI logo" width="720">
+</p>
+
 # QEC AI-Enhanced Decoder — **AutoQEC**
+
+[![CI](https://github.com/qualit527/qec-ai-decoder/actions/workflows/ci.yml/badge.svg)](https://github.com/qualit527/qec-ai-decoder/actions/workflows/ci.yml)
+[![testcov](https://codecov.io/github/qualit527/qec-ai-decoder/graph/badge.svg)](https://codecov.io/github/qualit527/qec-ai-decoder)
+[![API docs](https://img.shields.io/badge/API-docs-blue)](https://qualit527.github.io/qec-ai-decoder/)
 
 AutoQEC is an LLM-agent-driven auto-research harness for discovering **neural predecoders** for quantum error-correcting codes. Given an environment triple `(code_spec, noise_model, constraints)`, the system runs 10–20 rounds of *hypothesis → DSL config → training → evaluation → analysis* and emits verified predecoder checkpoints on the accuracy–latency–parameters Pareto front.
 
-- **Spec**: [`docs/specs/2026-04-20-autoqec-design.md`](docs/specs/2026-04-20-autoqec-design.md) (v2.2)
-- **Master plan**: [`docs/plans/2026-04-21-autoqec-master.md`](docs/plans/2026-04-21-autoqec-master.md)
-- **Per-owner plans**: [`docs/plans/`](docs/plans/)
+- **Spec**: [`docs/superpowers/specs/2026-04-20-autoqec-design.md`](docs/superpowers/specs/2026-04-20-autoqec-design.md) (v2.2)
+- **API documentation**: [`docs/api-documentation.md`](docs/api-documentation.md)
+- **Master plan**: [`docs/superpowers/plans/2026-04-21-autoqec-master.md`](docs/superpowers/plans/2026-04-21-autoqec-master.md)
+- **Per-owner plans**: [`docs/superpowers/plans/`](docs/superpowers/plans/)
 - **Knowledge base**: `knowledge/` — 81-paper index + 3 synthesis documents (roadmap, strategic assessment, autoresearch patterns)
 
 ## Architecture at a glance
@@ -44,9 +53,9 @@ parent-B` as a first-class scientific probe. Startup reconciliation
 
 | Owner | Model binding | Primary responsibility | Plan file |
 |---|---|---|---|
-| **Chen Jiahan (team leader / repo maintainer)** | Claude Code | Orchestration + `surface_d5` env bring-up + `/autoqec-run` + `/add-env` + Demo 1 | [`person-a-chen.md`](docs/plans/2026-04-21-autoqec-person-a-chen.md) |
-| **Xie Jingu** | GLM | `independent_eval` + `bb72` qLDPC benchmarking + 3 audit/triage skills + Demo 4 & 5 | [`person-b-xie.md`](docs/plans/2026-04-21-autoqec-person-b-xie.md) |
-| **Lin Tengxiang** | Codex | DSL + Runner + predecoder templates + Makefile + Demo 2 | [`person-c-lin.md`](docs/plans/2026-04-21-autoqec-person-c-lin.md) |
+| **Chen Jiahan (team leader / repo maintainer)** | Claude Code | Orchestration + `surface_d5` env bring-up + `/autoqec-run` + `/add-env` + Demo 1 | [`person-a-chen.md`](docs/superpowers/plans/2026-04-21-autoqec-person-a-chen.md) |
+| **Xie Jingu** | GLM | `independent_eval` + `bb72` qLDPC benchmarking + 3 audit/triage skills + Demo 4 & 5 | [`person-b-xie.md`](docs/superpowers/plans/2026-04-21-autoqec-person-b-xie.md) |
+| **Lin Tengxiang** | Codex | DSL + Runner + predecoder templates + Makefile + Demo 2 | [`person-c-lin.md`](docs/superpowers/plans/2026-04-21-autoqec-person-c-lin.md) |
 
 Phase-0 contract file (once created): `docs/contracts/interfaces.md` — edits require 3-of-3 owner sign-off.
 
@@ -228,8 +237,8 @@ qec-ai-decoder/
 ├── circuits/                       # *.stim files
 ├── runs/                           # .gitignore'd; per-run outputs
 ├── knowledge/                      # Literature, roadmap, strategic docs
-├── docs/specs/                     # Design specs
-├── docs/plans/                     # Implementation plans
+├── docs/superpowers/specs/         # Design specs
+├── docs/superpowers/plans/         # Implementation plans
 ├── docs/contracts/                 # Phase-0 interface contracts
 ├── tests/
 ├── Makefile

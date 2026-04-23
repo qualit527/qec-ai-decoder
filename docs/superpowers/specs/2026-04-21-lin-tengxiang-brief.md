@@ -78,7 +78,7 @@ Day 3 的最低交付物：
 第一轮先发给 Agent 的 prompt：
 
 ```text
-请基于 docs/specs/2026-04-20-autoqec-design.md 和当前仓库，实现 AutoQEC predecoder 的最小 DSL + compiler。
+请基于 docs/superpowers/specs/2026-04-20-autoqec-design.md 和当前仓库，实现 AutoQEC predecoder 的最小 DSL + compiler。
 
 目标：
 1. 支持 gnn 和 neural_bp 两个 family 的最小可用配置

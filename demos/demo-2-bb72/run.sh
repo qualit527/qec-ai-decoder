@@ -19,6 +19,5 @@ fi
   --no-llm
 
 RUN_DIR=$(ls -t runs | head -1)
-echo "Pareto:"
-cat "runs/$RUN_DIR/pareto.json" 2>/dev/null || echo "(no pareto yet)"
-
+echo "Candidate Pareto:"
+cat "runs/$RUN_DIR/candidate_pareto.json" 2>/dev/null || echo "(no candidate pareto yet)"

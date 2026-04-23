@@ -79,7 +79,7 @@ Day 3 的最低交付物：
 第一轮先发给 Agent 的 prompt：
 
 ```text
-请基于 docs/specs/2026-04-20-autoqec-design.md 和当前仓库，优先打通 surface_d5_depol 的最小可运行环境。
+请基于 docs/superpowers/specs/2026-04-20-autoqec-design.md 和当前仓库，优先打通 surface_d5_depol 的最小可运行环境。
 
 目标：
 1. 检查仓库里已有的 env / Stim / PyMatching 相关代码与缺口

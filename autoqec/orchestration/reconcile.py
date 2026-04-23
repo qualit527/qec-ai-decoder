@@ -190,6 +190,18 @@ def _try_read_pointer(repo_root: Path, branch: str) -> Optional[dict[str, Any]]:
 
 
 def _append_history_row(run_dir: Path, row: dict[str, Any]) -> None:
+    """Append a synthetic reconcile row to ``history.jsonl``.
+
+    Validates the row through :class:`RoundMetrics` first so the §15.2
+    mutual-exclusion invariant (``round_attempt_id`` XOR ``reconcile_id``)
+    and the status-specific branch/commit_sha rules are enforced even for
+    the synthetic rows reconcile emits. Any schema drift in reconcile's
+    row construction fails loudly instead of writing a malformed row that
+    would later break L2 consumers.
+    """
+    from autoqec.runner.schema import RoundMetrics
+
+    RoundMetrics.model_validate(row)
     with (run_dir / "history.jsonl").open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 

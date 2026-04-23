@@ -98,18 +98,32 @@ _VERIFY_REPORT_FIELDS = frozenset({
 })
 
 
+_PARETO_AXES = ("delta_vs_baseline_holdout", "flops_per_syndrome", "n_params")
+
+
+def _has_all_pareto_axes(row: Mapping[str, Any]) -> bool:
+    """Pareto admission requires all three axes to be present and non-None.
+
+    Earlier we coerced missing cost fields to 0 inside ``_dominates``, which
+    let a malformed VERIFIED row "dominate" every real candidate on the
+    cost axes and quietly evict genuine winners from ``pareto.json``.
+    """
+    return all(row.get(k) is not None for k in _PARETO_AXES)
+
+
 def _dominates(a: dict, b: dict) -> bool:
     """Return True iff candidate `a` dominates `b` on holdout-delta / flops / params.
 
     Axes: `+delta_vs_baseline_holdout` (maximize), `-flops_per_syndrome` (minimize),
-    `-n_params` (minimize). Missing numeric fields coerce to 0.
+    `-n_params` (minimize). Assumes ``_has_all_pareto_axes`` has already passed
+    on both rows — callers guarantee this at admission time.
     """
-    a_d = float(a.get("delta_vs_baseline_holdout") or 0)
-    b_d = float(b.get("delta_vs_baseline_holdout") or 0)
-    a_f = int(a.get("flops_per_syndrome") or 0)
-    b_f = int(b.get("flops_per_syndrome") or 0)
-    a_p = int(a.get("n_params") or 0)
-    b_p = int(b.get("n_params") or 0)
+    a_d = float(a["delta_vs_baseline_holdout"])
+    b_d = float(b["delta_vs_baseline_holdout"])
+    a_f = int(a["flops_per_syndrome"])
+    b_f = int(b["flops_per_syndrome"])
+    a_p = int(a["n_params"])
+    b_p = int(b["n_params"])
     at_least_as_good = (a_d >= b_d) and (a_f <= b_f) and (a_p <= b_p)
     strictly_better = (a_d > b_d) or (a_f < b_f) or (a_p < b_p)
     return at_least_as_good and strictly_better
@@ -208,6 +222,14 @@ def record_round(
 
     front = json.loads(mem.pareto_path.read_text(encoding="utf-8") or "[]")
     candidate = _pareto_row(round_metrics, verify_report)
+    if not _has_all_pareto_axes(candidate):
+        missing = [k for k in _PARETO_AXES if candidate.get(k) is None]
+        log.warning(
+            "record_round: VERIFIED round %s missing Pareto axes %s — skipping admission",
+            round_metrics.get("round"),
+            missing,
+        )
+        return
     front = _non_dominated_merge(front, candidate)
     mem.update_pareto(front)
     _write_preview(mem.run_dir, front)

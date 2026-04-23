@@ -104,6 +104,93 @@ def test_run_round_internal_flag_skips_subprocess_dispatch(tmp_path):
     assert result.exit_code == 0, result.output
 
 
+def test_internal_flag_strips_code_cwd_before_in_process_runner(tmp_path):
+    """Regression: the child hop must call run_round with cfg.code_cwd=None.
+
+    In-process ``run_round`` raises ``RunnerCallPathError`` whenever
+    ``cfg.code_cwd is not None`` (§15.8). The recursion guard already skips
+    the subprocess dispatcher, but if the child CLI forwards ``code_cwd``
+    into ``RunnerConfig`` verbatim the local runner call still blows up.
+    Worktree metadata (branch/fork_from/compose_mode/round_attempt_id) must
+    still flow through the round record.
+    """
+    import sys
+    import types
+
+    from cli.autoqec import run_round_cmd
+    from autoqec.runner.schema import RoundMetrics
+
+    env_yaml = str(Path("autoqec/envs/builtin/surface_d5_depol.yaml").absolute())
+    cfg_yaml_path = tmp_path / "cfg.yaml"
+    cfg_yaml_path.write_text("type: gnn\noutput_mode: soft_priors\n")
+    round_dir = str(tmp_path / "round_1")
+
+    captured: dict = {}
+
+    def _fake_run_round(cfg, _env, **_kw):
+        captured["cfg"] = cfg
+        # Emulate the real in-process guard: if code_cwd is set we must crash.
+        if cfg.code_cwd is not None:
+            from autoqec.runner.runner import RunnerCallPathError
+
+            raise RunnerCallPathError("in-process run_round rejects code_cwd")
+        return RoundMetrics(
+            status="ok",
+            ler_plain_classical=1e-3,
+            ler_predecoder=5e-4,
+            delta_ler=5e-4,
+            branch=cfg.branch,
+            commit_sha="deadbeef" if cfg.branch else None,
+            fork_from=cfg.fork_from,
+            round_attempt_id="test-uuid",
+        )
+
+    fake_runner_mod = types.ModuleType("autoqec.runner.runner")
+
+    class _FakeRunnerCallPathError(RuntimeError):
+        pass
+
+    fake_runner_mod.run_round = _fake_run_round
+    fake_runner_mod.RunnerCallPathError = _FakeRunnerCallPathError
+
+    original = sys.modules.get("autoqec.runner.runner")
+    sys.modules["autoqec.runner.runner"] = fake_runner_mod
+    try:
+        cli_runner = CliRunner()
+        result = cli_runner.invoke(
+            run_round_cmd,
+            [
+                env_yaml,
+                str(cfg_yaml_path),
+                round_dir,
+                "--code-cwd",
+                str(tmp_path),
+                "--branch",
+                "exp/foo/01-bar",
+                "--round-attempt-id",
+                "test-uuid",
+                "--_internal-execute-locally",
+            ],
+            catch_exceptions=False,
+        )
+    finally:
+        if original is not None:
+            sys.modules["autoqec.runner.runner"] = original
+        else:
+            sys.modules.pop("autoqec.runner.runner", None)
+
+    assert result.exit_code == 0, result.output
+    cfg = captured.get("cfg")
+    assert cfg is not None, "run_round was never called"
+    assert cfg.code_cwd is None, (
+        "child hop must null out code_cwd before the in-process Runner; "
+        f"got code_cwd={cfg.code_cwd!r}"
+    )
+    # Worktree metadata must still flow through so the parent can attach
+    # branch/fork_from to the final metrics row.
+    assert cfg.branch == "exp/foo/01-bar"
+
+
 def test_fork_from_malformed_json_is_bad_parameter(tmp_path):
     """Broken JSON in --fork-from must surface as click.BadParameter, not JSONDecodeError."""
     import click
@@ -225,13 +312,18 @@ def test_fork_from_valid_json_list_parses(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_subprocess_runner_injects_internal_flag(tmp_path):
-    """The argv emitted by run_round_in_subprocess must carry the guard flag."""
+def test_subprocess_runner_uses_internal_command_env_bridge(tmp_path):
+    """The subprocess bridge must avoid dynamic CLI argv payloads.
+
+    subprocess_runner now also issues git invocations to commit the
+    §15.10 pointer, so capture only the first child CLI call (the one
+    carrying ``run-round-internal``) rather than "whatever was last run".
+    """
     from autoqec.orchestration import subprocess_runner
     from autoqec.envs.schema import load_env_yaml
     from autoqec.runner.schema import RunnerConfig
 
-    captured = {}
+    captured: dict = {}
 
     class _FakeCompletedProcess:
         returncode = 0
@@ -239,7 +331,9 @@ def test_subprocess_runner_injects_internal_flag(tmp_path):
         stderr = ""
 
     def _fake_run(argv, **kwargs):
-        captured["argv"] = argv
+        if "run-round-internal" in argv and "argv" not in captured:
+            captured["argv"] = list(argv)
+            captured["kwargs"] = kwargs
         return _FakeCompletedProcess()
 
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
@@ -256,4 +350,5 @@ def test_subprocess_runner_injects_internal_flag(tmp_path):
     with patch.object(subprocess_runner.subprocess, "run", side_effect=_fake_run):
         subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id="u1")
 
-    assert "--_internal-execute-locally" in captured["argv"], captured["argv"]
+    assert captured["argv"] == ["python", "-m", "cli.autoqec", "run-round-internal"]
+    assert captured["kwargs"]["env"]["AUTOQEC_CHILD_BRANCH"] == "exp/foo/01-bar"
