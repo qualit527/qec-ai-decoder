@@ -129,6 +129,8 @@ def run_round_in_subprocess(
     if safe_round_attempt_id is not None:
         child_env[AUTOQEC_CHILD_ROUND_ATTEMPT_ID] = safe_round_attempt_id
 
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
+    # Static child command only; all dynamic values go through validated env vars.
     proc = subprocess.run(
         SUBPROCESS_CHILD_CMD,
         executable=str(Path(sys.executable).resolve()),
