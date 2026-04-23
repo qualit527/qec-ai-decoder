@@ -1,13 +1,29 @@
 # AutoQEC — Design Specification
 
-**Version**: v2.2
+**Version**: v2.3
 **Date (v1)**: 2026-04-20
 **Date (v2)**: 2026-04-21
 **Date (v2.2)**: 2026-04-21
-**Status**: Draft, ready for team review
-**Authors**: Team (Chen Jiahan、Xie Jingu、Lin Tengxiang) + brainstorming with Claude
+**Date (v2.3)**: 2026-04-23
+**Status**: Draft; frozen contracts in `docs/contracts/interfaces.md` supersede where they differ
+**Authors**: Team (Chen Jiahan, Xie Jingu, Lin Tengxiang) + brainstorming with Claude
 **Project**: QEC AI-enhanced decoder (AutoQEC)
 **Repo**: `qec-ai-decoder`
+
+> **Pre-Phase-0 historical draft note.** This spec was written before Phase-0
+> contract freeze. Some names and entry points drifted during implementation.
+> Where this document conflicts with `docs/contracts/interfaces.md` or the
+> actual repo code, the frozen contracts and repo are authoritative. Key
+> mapping:
+>
+> | This spec says | Frozen contract / repo uses | Notes |
+> |---|---|---|
+> | `noise.error_rates` | `EnvSpec.noise.p` | Renamed during Phase 0 |
+> | `data.`, `training.`, `evaluation.*` | Flat `EnvSpec` fields | Structured into `code`, `noise`, `constraints`, `eval_protocol` |
+> | `observable_flip` / `pauli_per_qubit` / `full_error` | `hard_flip` / `soft_priors` | Output modes renamed |
+> | `main.py` | `cli/autoqec.py` | Entry point moved to `cli/` package |
+> | `requirements.txt` | `pyproject.toml` | Standard Python packaging |
+> | `evaluation.baselines` | `baseline_decoders` + `classical_backend` | Split into two fields |
 **Companion docs**: `knowledge/DECODER_ROADMAP.md` · `knowledge/STRATEGIC_ASSESSMENT.md` · `knowledge/AUTORESEARCH_PATTERNS.md`
 
 ---
@@ -52,7 +68,7 @@ Target venue: **Quantum** (primary), IEEE QCE (secondary). Skip Nature QI / PRX 
 - **G1.** Working end-to-end harness: user invokes a skill / runs CLI → agent loop completes ≥10 rounds → outputs verified Pareto candidates.
 - **G2.** Two reference environments as evidence: `surface_d5_depol` (PyMatching baseline) and `bb72_depol` (BP+OSD + Relay-BP baselines). The same harness code runs both.
 - **G3.** 5 user-facing skills covering the user journey (see §8).
-- **G4.** 5 demos, each producing a reproducible artifact, together exercising all skills (see §9).
+- **G4.** 5 demos, each producing a reproducible artifact, together exercising all skills (see §9). Reproducibility: all data generation uses deterministic seed ranges (`train: 1-999`, `val: 1000-1999`, `holdout: 9000-9999` via `EnvSpec.seed_policy`), with `random`/`numpy`/`torch`/Stim sampler all seeded from `RunnerConfig.seed`. LLM calls are non-deterministic by nature; the non-LLM smoke path (`--no-llm`) is fully deterministic.
 - **G5.** Independent decoder verification catches a hand-crafted cheating predecoder.
 - **G6.** Codex-cli primary backend (server deployment friendly); claude-cli works for inline development and demos.
 - **G7.** Agent is *self-aware* about compute: no hard DSL limits, Ideator queries `machine_state` tool and reads historical round timings.
@@ -201,7 +217,7 @@ AUTOQEC_ANALYST_MODEL   ?= claude-haiku-4-5
 
 ### 4.5 Runner and `RunnerSafety`
 
-The runner (`autoqec/runner/`) is pure Python, deterministic, seed-pinned. It does not call any LLM. Its interface:
+The runner (`autoqec/runner/`) is pure Python, deterministic, seed-pinned (`random`, `numpy`, `torch`, and Stim sampler all seeded from `RunnerConfig.seed`). It does not call any LLM. Its interface:
 
 ```python
 def run_round(config: dict, env_spec: EnvSpec, round_dir: Path) -> RoundMetrics
@@ -299,7 +315,8 @@ Three groups (`code`, `noise`, `constraints`) are decoupled — users recombine 
 - p sweep: `[1e-3, 3e-3, 5e-3]`
 - Baselines: plain BP+OSD (order 0 and 10), Relay-BP
 - Classical backend for predecoder: OSD
-- Stim circuit path TBD during Day-1 environment bring-up — candidates: (a) `qLDPC` Python package, (b) `stimbposd` examples, (c) Bravyi et al 2024 github. If none usable, hand-construct ~200 LOC (documented in DECODER_ROADMAP.md §3).
+- **Code artifact**: explicit `parity_check_matrix` (`.npy` files for Hx, Hz). BP+OSD requires a parity-check matrix as input — it does not consume Stim circuits directly. For envs using `stim_circuit` type, the `detector_error_model()` provides the error mechanisms but not CSS parity-check matrices. The BP+OSD baseline is therefore scoped to envs that supply H explicitly (like bb72). The current implementation uses `from ldpc import bposd_decoder` with `bp_method="ms"/"ps"`, `osd_method="osd0"/"osd_cs"`.
+- Parity-check matrices built via `scripts/scout_bb72.py` (manual bivariate-bicycle construction).
 
 ### 5.3 User extensions
 
@@ -415,7 +432,7 @@ This frames compute as a **first-class variable the agent optimizes**, matching 
 
 ### 7.1 Metrics
 
-- **Accuracy**: `Δ_LER = LER(plain_classical) − LER(predecoder + classical)`. Measured with bootstrap 95% CI over 200K holdout shots.
+- **Accuracy**: `Δ_LER = LER(plain_classical) − LER(predecoder + classical)`. Measured with bootstrap 95% CI over 200K holdout shots. LER is the **logical error rate**: whether the *combined* correction + true error has a non-trivial logical-observable component. For Stim circuits this is `(correction[:, :n_obs] != observables).any(axis=1)`. For parity-check-matrix envs without logical-operator metadata, an exact-recovery surrogate is used: `(correction != true_error).any(axis=1)`. Both baselines and predecoder go through the same projection so the comparison is like-for-like.
 - **Latency proxy**: FLOPs per syndrome evaluation (via `fvcore` / `ptflops`). Hardware-agnostic, reproducible. Wall-clock reported as a secondary column (host-dependent).
 - **Params**: `sum(p.numel() for p in model.parameters())`.
 - **Cost**: LLM tokens + GPU wall-clock per round. Logged to `history.jsonl`, **not** a Pareto axis (would create a reward-hacking incentive to short-train).
@@ -575,10 +592,10 @@ COMMON_ENV = \
 
 .PHONY: run verify pareto test demo-1 demo-2 demo-3 demo-4 demo-5
 
-run:        ; $(COMMON_ENV) python -m autoqec run $(ENV) --rounds $(ROUNDS)
-verify:     ; python -m autoqec verify $(RUN_DIR)
-pareto:     ; python -m autoqec pareto compare $(RUN_DIRS)
-test:       ; pytest tests/ -v
+run:        ; $(COMMON_ENV) python -m cli.autoqec run $(ENV) --rounds $(ROUNDS)
+verify:     ; python -m cli.autoqec verify $(RUN_DIR)
+pareto:     ; python -m cli.autoqec pareto compare $(RUN_DIRS)
+test:       ; pytest tests/ -m "not integration" -v
 
 # Demo-specific targets — composable
 demo-1: ; bash demos/demo-1-surface-d5/run.sh
