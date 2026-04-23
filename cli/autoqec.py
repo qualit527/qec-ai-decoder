@@ -13,6 +13,7 @@ import yaml
 
 from autoqec.envs.schema import EnvSpec, load_env_yaml
 from autoqec.orchestration.memory import RunMemory
+from autoqec.orchestration.round_recorder import refresh_fork_graph
 from autoqec.orchestration.subprocess_runner import (
     AUTOQEC_CHILD_BRANCH,
     AUTOQEC_CHILD_CODE_CWD,
@@ -472,6 +473,7 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
         history.append(record)
         mem.append_round(record)
         mem.update_pareto(_candidate_pareto(history))
+        refresh_fork_graph(mem)
         click.echo(f"Round {round_idx}: {metrics.status} Δ={metrics.delta_ler}")
     (run_dir / "history.json").write_text(
         json.dumps(history, indent=2),

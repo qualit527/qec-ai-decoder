@@ -38,6 +38,7 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
+from autoqec.orchestration.fork_graph import build_fork_graph
 from autoqec.orchestration.memory import RunMemory
 
 log = logging.getLogger(__name__)
@@ -241,16 +242,38 @@ def record_round(
         f"- round {round_metrics.get('round')}: status={round_metrics.get('status')}"
     )
 
-    if verify_verdict != "VERIFIED":
-        return
+    if verify_verdict == "VERIFIED":
+        if verify_report is None:
+            log.warning(
+                "record_round: VERIFIED round %s has no verify_report — skipping Pareto admission",
+                round_metrics.get("round"),
+            )
+        else:
+            verify_payload = dict(verify_report)
+            verify_payload.setdefault("verdict", verify_verdict)
+            admit_verified_round_to_pareto(mem, round_metrics, verify_payload)
 
-    if verify_report is None:
-        log.warning(
-            "record_round: VERIFIED round %s has no verify_report — skipping Pareto admission",
-            round_metrics.get("round"),
+    refresh_fork_graph(mem)
+
+
+def refresh_fork_graph(mem: RunMemory) -> None:
+    """Rebuild ``fork_graph.json`` from the current history + pareto.
+
+    Called after every ``record_round`` (and from the no-LLM path in
+    ``cli/autoqec.py``) so the on-disk graph always matches the two files
+    the Ideator ultimately reads. Never raises — graph assembly is
+    best-effort, and a transient I/O error should not block the much more
+    important history/pareto writes that already succeeded.
+    """
+    try:
+        history = [
+            json.loads(line)
+            for line in mem.history_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        pareto = json.loads(mem.pareto_path.read_text(encoding="utf-8") or "[]")
+        mem.update_fork_graph(
+            build_fork_graph(history=history, pareto=pareto, run_id=mem.run_dir.name)
         )
-        return
-
-    verify_payload = dict(verify_report)
-    verify_payload.setdefault("verdict", verify_verdict)
-    admit_verified_round_to_pareto(mem, round_metrics, verify_payload)
+    except Exception:  # noqa: BLE001 — see docstring
+        log.exception("record_round: failed to refresh fork_graph.json")
