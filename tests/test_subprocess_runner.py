@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import sys
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -63,3 +65,62 @@ def test_subprocess_runner_rejects_missing_code_cwd():
 
     with pytest.raises(ValueError, match="code_cwd"):
         run_round_in_subprocess(cfg, env)
+
+
+def test_subprocess_runner_rejects_suspicious_branch_value(tmp_path):
+    """Shell-style metacharacters in branch names must be rejected before spawn."""
+    from autoqec.orchestration.subprocess_runner import run_round_in_subprocess
+
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    cfg = RunnerConfig(
+        env_name=env.name,
+        predecoder_config={"type": "gnn", "output_mode": "soft_priors"},
+        training_profile="dev",
+        seed=0,
+        round_dir=str(tmp_path / "round_1"),
+        code_cwd=str(tmp_path),
+        branch="exp/t/01-a;rm -rf /",
+    )
+
+    with pytest.raises(ValueError, match="branch"):
+        run_round_in_subprocess(cfg, env, round_attempt_id="u1")
+
+
+def test_subprocess_runner_uses_shell_false_and_resolved_cwd(tmp_path):
+    """The child process must spawn via a static internal command."""
+    from autoqec.orchestration import subprocess_runner
+
+    captured = {}
+
+    class _FakeCompletedProcess:
+        returncode = 0
+        stdout = '{"status": "ok", "commit_sha": "abc123", "round_attempt_id": "u1"}'
+        stderr = ""
+
+    def _fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        captured["kwargs"] = kwargs
+        return _FakeCompletedProcess()
+
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    cfg = RunnerConfig(
+        env_name=env.name,
+        predecoder_config={"type": "gnn", "output_mode": "soft_priors"},
+        training_profile="dev",
+        seed=0,
+        round_dir=str(tmp_path / "round_1"),
+        code_cwd=str(tmp_path),
+        branch="exp/foo/01-bar",
+    )
+
+    with patch.object(subprocess_runner.subprocess, "run", side_effect=_fake_run):
+        subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id="u1")
+
+    assert captured["argv"] == ["python", "-m", "cli.autoqec", "run-round-internal"]
+    assert captured["kwargs"]["shell"] is False
+    assert captured["kwargs"]["cwd"] == str(tmp_path.resolve())
+    assert captured["kwargs"]["executable"] == str(Path(sys.executable).resolve())
+    child_env = captured["kwargs"]["env"]
+    assert child_env["AUTOQEC_CHILD_ROUND_DIR"] == str((tmp_path / "round_1").resolve())
+    assert child_env["AUTOQEC_CHILD_BRANCH"] == "exp/foo/01-bar"
+    assert child_env["AUTOQEC_CHILD_ROUND_ATTEMPT_ID"] == "u1"
