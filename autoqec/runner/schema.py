@@ -23,6 +23,8 @@ class RunnerConfig(BaseModel):
     round_attempt_id: Optional[str] = None
     commit_message: Optional[str] = None
     """Coder's proposed commit message when the round runs on a branch; falls back to 'round-attempt <uuid>'."""
+    env_yaml_path: Optional[str] = None
+    """Path to the environment YAML used for this round; populated by the CLI so the Runner can hash it into `artifact_manifest.json` (P0.3)."""
 
     @model_validator(mode="after")
     def _worktree_fields_consistent(self):
