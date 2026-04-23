@@ -8,6 +8,7 @@ For project overview, team structure, and demo walkthroughs, see `README.md`.
 ```bash
 pip install -e '.[dev]'                     # install with dev deps
 python -m pytest tests/ -m "not integration" -v   # unit tests (CI uses this)
+python -m pytest tests/ -m "integration" -v --run-integration  # integration tests (manual entry)
 python -m pytest tests/test_bootstrap.py -v        # single test file
 python -m pytest tests/test_bootstrap.py::test_bootstrap_ci_basic -v  # single test
 ruff check autoqec cli tests scripts              # lint (CI uses this)
@@ -20,6 +21,7 @@ python -m cli.autoqec run autoqec/envs/builtin/surface_d5_depol.yaml --rounds 1 
 ```makefile
 make install        # pip install -e '.[dev]'
 make test           # pytest tests/ -m "not integration" -v
+make test-integration # pytest tests/ -m "integration" -v --run-integration
 make lint           # ruff check autoqec cli tests scripts
 make run            # full research loop with LLM agents (needs API keys)
 make run-nollm      # N-round random-template smoke loop (no LLM needed)
@@ -27,6 +29,10 @@ make demo-2         # run bb72 qLDPC demo
 make run-all-claude # run with Claude models for all agents
 make run-cheap      # run with cheaper haiku model for ideator
 ```
+
+Integration execution guidance lives in `docs/test-plan.md`. The default
+repo gate stays `make lint` + `make test`; use `make test-integration`
+only when you explicitly want the end-to-end layer.
 
 ## Architecture
 

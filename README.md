@@ -5,6 +5,7 @@ AutoQEC is an LLM-agent-driven auto-research harness for discovering **neural pr
 - **Spec**: [`docs/specs/2026-04-20-autoqec-design.md`](docs/specs/2026-04-20-autoqec-design.md) (v2.2)
 - **Master plan**: [`docs/plans/2026-04-21-autoqec-master.md`](docs/plans/2026-04-21-autoqec-master.md)
 - **Per-owner plans**: [`docs/plans/`](docs/plans/)
+- **Test plan**: [`docs/test-plan.md`](docs/test-plan.md)
 - **Knowledge base**: `knowledge/` — 81-paper index + 3 synthesis documents (roadmap, strategic assessment, autoresearch patterns)
 
 ## Architecture at a glance
@@ -96,6 +97,7 @@ committed in `demos/demo-1-surface-d5/expected_output/baseline_benchmark.json`).
 ```bash
 pip install -e '.[dev]'            # torch, stim, pymatching, pydantic, click, …
 pytest tests/ -m "not integration" # unit suite: should be all green
+make test-integration              # manual integration suite; see docs/test-plan.md
 ```
 
 ### Run — two paths
