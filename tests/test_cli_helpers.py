@@ -10,6 +10,7 @@ import pytest
 
 import cli.autoqec as cli
 from autoqec.envs.schema import load_env_yaml
+from autoqec.eval.schema import VerifyReport
 from autoqec.runner.schema import RoundMetrics
 
 
@@ -195,3 +196,104 @@ def test_candidate_pareto_skips_ok_rows_with_missing_metrics() -> None:
         ]
     )
     assert [row["round"] for row in front] == [2]
+
+
+def test_verify_command_writes_report_artifacts(monkeypatch, tmp_path) -> None:
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    round_dir = tmp_path / "round_1"
+    round_dir.mkdir()
+    (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
+    captured = {}
+
+    def fake_verify(ckpt, env_spec, holdout_seeds, n_shots):
+        captured["ckpt"] = ckpt
+        captured["env"] = env_spec
+        captured["holdout_seeds"] = holdout_seeds
+        captured["n_shots"] = n_shots
+        return VerifyReport(
+            verdict="VERIFIED",
+            ler_holdout=0.1,
+            ler_holdout_ci=(0.08, 0.12),
+            delta_ler_holdout=0.02,
+            ler_shuffled=0.11,
+            ablation_sanity_ok=True,
+            holdout_seeds_used=holdout_seeds,
+            seed_leakage_check_ok=True,
+            notes="ok",
+        )
+
+    monkeypatch.setattr("autoqec.eval.independent_eval.independent_verify", fake_verify)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.verify,
+        [str(round_dir), "--env", "autoqec/envs/builtin/surface_d5_depol.yaml", "--n-seeds", "3"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "VERIFIED" in result.output
+    assert captured["ckpt"] == round_dir / "checkpoint.pt"
+    assert captured["holdout_seeds"] == [9000, 9001, 9002]
+    assert json.loads((round_dir / "verification_report.json").read_text())["verdict"] == "VERIFIED"
+    assert "Verification Report" in (round_dir / "verification_report.md").read_text()
+
+
+def test_review_log_handles_missing_history(tmp_path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli.review_log, [str(tmp_path)], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert "No history.jsonl" in result.output
+
+
+def test_review_log_summarizes_existing_run(tmp_path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "history.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"status": "ok", "train_wallclock_s": 1.0, "hypothesis": "alpha"}),
+                json.dumps({"status": "killed_by_safety", "train_wallclock_s": 3.0, "hypothesis": "beta"}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "pareto.json").write_text(json.dumps([{"delta_ler": 0.1}]), encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli.review_log, [str(run_dir)], catch_exceptions=False)
+    payload = json.loads(result.output)
+    assert payload["n_rounds"] == 2
+    assert payload["n_pareto"] == 1
+    assert payload["n_killed_by_safety"] == 1
+
+
+def test_diagnose_handles_round_dir_and_missing_rounds(tmp_path) -> None:
+    round_dir = tmp_path / "round_1"
+    round_dir.mkdir()
+    (round_dir / "metrics.json").write_text(json.dumps({"status": "ok"}), encoding="utf-8")
+    (round_dir / "train.log").write_text("0\t0.1\n", encoding="utf-8")
+    (round_dir / "config.yaml").write_text("type: gnn\n", encoding="utf-8")
+
+    runner = CliRunner()
+    direct = runner.invoke(cli.diagnose, [str(round_dir)], catch_exceptions=False)
+    payload = json.loads(direct.output)
+    assert payload["has_metrics.json"] is True
+    assert payload["metrics"]["status"] == "ok"
+
+    empty = runner.invoke(cli.diagnose, [str(tmp_path / "empty")], catch_exceptions=False)
+    assert "No round dirs found" in empty.output
+
+
+def test_diagnose_uses_latest_round_from_run_dir(tmp_path) -> None:
+    run_dir = tmp_path / "run"
+    (run_dir / "round_1").mkdir(parents=True)
+    (run_dir / "round_2").mkdir(parents=True)
+    (run_dir / "round_2" / "metrics.json").write_text(json.dumps({"status": "compile_error"}), encoding="utf-8")
+    (run_dir / "round_2" / "train.log").write_text("", encoding="utf-8")
+    (run_dir / "round_2" / "config.yaml").write_text("type: gnn\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli.diagnose, [str(run_dir)], catch_exceptions=False)
+    payload = json.loads(result.output)
+    assert payload["path"].endswith("round_2")
