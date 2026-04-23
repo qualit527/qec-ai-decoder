@@ -62,7 +62,24 @@ class RunMemory:
     # ─── L1 writes ───────────────────────────────────────────────────
 
     def append_round(self, record: dict) -> None:
-        """Append one round record to history.jsonl (one JSON object per line)."""
+        """Append one round record to history.jsonl (one JSON object per line).
+
+        The record is validated through :class:`RoundMetrics` before the
+        disk write so the §15.2 mutual-exclusion invariant
+        (``round_attempt_id`` XOR ``reconcile_id``), the
+        ``branch ⇒ commit_sha`` implication, and the
+        ``compose_conflict ⇒ branch=None`` rule are enforced at ingress
+        instead of silently polluting the log. Extra keys (``round``,
+        ``hypothesis``, free-form ``note``) are preserved unchanged — only
+        the schema-owned fields are re-validated.
+        """
+        # Lazy import to keep memory.py importable in torch-free contexts.
+        from autoqec.runner.schema import RoundMetrics
+
+        # Pydantic ignores unknown keys by default; validate a projection
+        # and keep the original dict's shape when writing so callers'
+        # extra metadata (e.g. ``hypothesis``, ``note``) survives.
+        RoundMetrics.model_validate(record)
         with self.history_path.open("a", encoding="utf-8") as f:
             # ensure_ascii=False so Chinese / Δ / other non-ASCII survives
             f.write(json.dumps(record, default=str, ensure_ascii=False) + "\n")

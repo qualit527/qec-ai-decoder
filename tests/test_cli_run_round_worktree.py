@@ -313,20 +313,26 @@ def test_fork_from_valid_json_list_parses(tmp_path):
 
 
 def test_subprocess_runner_injects_internal_flag(tmp_path):
-    """The argv emitted by run_round_in_subprocess must carry the guard flag."""
+    """The argv emitted by run_round_in_subprocess must carry the guard flag.
+
+    subprocess_runner now also issues git invocations to commit the
+    §15.10 pointer; capture only the child CLI call (the one carrying
+    ``run-round``) rather than "whatever was last run".
+    """
     from autoqec.orchestration import subprocess_runner
     from autoqec.envs.schema import load_env_yaml
     from autoqec.runner.schema import RunnerConfig
 
-    captured = {}
+    captured: dict[str, list[str]] = {}
 
     class _FakeCompletedProcess:
         returncode = 0
         stdout = '{"status": "ok", "commit_sha": "abc123", "round_attempt_id": "u1"}'
         stderr = ""
 
-    def _fake_run(argv, **kwargs):
-        captured["argv"] = argv
+    def _fake_run(argv, **_kw):
+        if "run-round" in argv and "child_argv" not in captured:
+            captured["child_argv"] = list(argv)
         return _FakeCompletedProcess()
 
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
@@ -343,4 +349,5 @@ def test_subprocess_runner_injects_internal_flag(tmp_path):
     with patch.object(subprocess_runner.subprocess, "run", side_effect=_fake_run):
         subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id="u1")
 
-    assert "--_internal-execute-locally" in captured["argv"], captured["argv"]
+    assert "child_argv" in captured, "child CLI call was never issued"
+    assert "--_internal-execute-locally" in captured["child_argv"], captured["child_argv"]

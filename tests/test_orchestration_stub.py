@@ -204,6 +204,58 @@ def test_parse_response_enforces_analyst_verdict() -> None:
 # ─── UTF-8 encoding ───────────────────────────────────────────────────
 
 
+def test_run_memory_append_round_rejects_schema_violation(tmp_path: Path) -> None:
+    """M3: history.jsonl must not grow rows that violate §15.2 invariants.
+
+    Before the guard, ``append_round`` happily json.dumps'd any dict, so a
+    caller could drop a row with both ``round_attempt_id`` and ``reconcile_id``
+    set, or a ``branch`` with no ``commit_sha`` on an ok-status row. The
+    schema exists, but it only fired when a caller voluntarily constructed
+    a ``RoundMetrics`` instance — which many paths didn't.
+    """
+    import pytest
+
+    from autoqec.orchestration.memory import RunMemory
+
+    mem = RunMemory(tmp_path / "run_m3")
+
+    # Both round_attempt_id and reconcile_id set — mutual-exclusion violation.
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        mem.append_round(
+            {
+                "status": "ok",
+                "branch": "exp/t/01-a",
+                "commit_sha": "abc",
+                "round_attempt_id": "u1",
+                "reconcile_id": "r1",
+            }
+        )
+    # History file is untouched after the failed append.
+    assert not mem.history_path.exists() or mem.history_path.read_text() == ""
+
+    # Branch set but commit_sha missing on an ok row — also rejected.
+    with pytest.raises(ValueError, match="commit_sha"):
+        mem.append_round(
+            {
+                "status": "ok",
+                "branch": "exp/t/01-a",
+                "round_attempt_id": "u1",
+            }
+        )
+
+    # A valid row still writes.
+    mem.append_round(
+        {
+            "status": "ok",
+            "round": 1,
+            "branch": "exp/t/01-a",
+            "commit_sha": "abc",
+            "round_attempt_id": "u1",
+        }
+    )
+    assert mem.history_path.read_text(encoding="utf-8").strip() != ""
+
+
 def test_run_memory_append_log_roundtrips_utf8(tmp_path: Path) -> None:
     """Codex review (medium): log.md / jsonl must be UTF-8 on Windows too."""
     from autoqec.orchestration.memory import RunMemory
@@ -211,7 +263,7 @@ def test_run_memory_append_log_roundtrips_utf8(tmp_path: Path) -> None:
     mem = RunMemory(tmp_path / "run_utf8")
     chinese = "第 1 轮：尝试 GNN 带门控消息 — Δ LER ≈ 5e-5"
     mem.append_log(chinese)
-    mem.append_round({"round": 1, "note": chinese})
+    mem.append_round({"round": 1, "status": "ok", "note": chinese})
 
     assert mem.log_path.read_text(encoding="utf-8").strip() == chinese
     snap = mem.l2_snapshot()
