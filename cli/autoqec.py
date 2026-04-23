@@ -11,7 +11,6 @@ import yaml
 
 from autoqec.envs.schema import EnvSpec, load_env_yaml
 from autoqec.orchestration.memory import RunMemory
-from autoqec.runner.runner import run_round
 from autoqec.runner.schema import RunnerConfig
 
 
