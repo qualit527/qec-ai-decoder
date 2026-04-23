@@ -60,6 +60,9 @@ EXPECTED_FIELDS: dict[str, set[str]] = {
         "fork_from_canonical",
         "fork_from_ordered",
         "compose_mode",
+        "round_attempt_id",
+        "commit_message",
+        "env_yaml_path",
     },
     # §2.2 + §15 RoundMetrics
     "RoundMetrics": {

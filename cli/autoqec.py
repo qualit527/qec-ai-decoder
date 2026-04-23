@@ -296,9 +296,10 @@ def _run_round_impl(
     else:
         # Child hop (or plain in-process invocation): strip code_cwd so the
         # in-process Runner's §15.8 guard does not fire. Parent subprocess_runner
-        # already pinned cwd + PYTHONPATH before spawning us; branch /
-        # fork_from / compose_mode / round_attempt_id still flow through so
-        # the metrics row carries full provenance.
+        # already pinned cwd + PYTHONPATH before spawning us. Keep branch /
+        # fork_from / compose_mode out of the in-process RunnerConfig because
+        # RoundMetrics requires branch rows to already carry commit_sha.
+        # Worktree provenance is attached below after the local runner returns.
         cfg = RunnerConfig(
             env_name=env.name,
             predecoder_config=cfg_dict,
@@ -306,9 +307,6 @@ def _run_round_impl(
             seed=0,
             round_dir=round_dir,
             code_cwd=None,
-            branch=branch,
-            fork_from=parsed_fork_from,
-            compose_mode=compose_mode,
         )
         from autoqec.runner.runner import run_round
 

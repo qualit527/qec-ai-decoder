@@ -58,11 +58,17 @@ def _parse_fenced_json(stdout: str) -> dict:
 
 def invoke_subagent(role: Role, prompt: str, timeout: float = 300.0) -> dict:
     argv = _build_cli_argv(role)
+    child_env = os.environ.copy()
+    child_env["PYTHONIOENCODING"] = "utf-8"
+    child_env["PYTHONUTF8"] = "1"
     result = subprocess.run(
         argv,
         input=prompt,
         text=True,
         capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=child_env,
         timeout=timeout,
     )
     if result.returncode != 0:

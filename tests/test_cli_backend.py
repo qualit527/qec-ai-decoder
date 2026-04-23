@@ -40,15 +40,24 @@ def test_parse_fenced_json_malformed_raises():
 def test_invoke_subagent_returns_parsed(monkeypatch):
     monkeypatch.setenv("AUTOQEC_IDEATOR_BACKEND", "codex-cli")
     monkeypatch.setenv("AUTOQEC_IDEATOR_MODEL", "gpt-5.4")
+    captured = {}
 
     class FakeCompleted:
         stdout = '```json\n{"hypothesis": "try GNN", "fork_from": "baseline"}\n```'
         stderr = ""
         returncode = 0
 
-    with patch("subprocess.run", return_value=FakeCompleted()):
+    def fake_run(*args, **kwargs):
+        captured["kwargs"] = kwargs
+        return FakeCompleted()
+
+    with patch("subprocess.run", side_effect=fake_run):
         out = invoke_subagent("ideator", "prompt here")
     assert out["hypothesis"] == "try GNN"
+    assert captured["kwargs"]["encoding"] == "utf-8"
+    assert captured["kwargs"]["errors"] == "replace"
+    assert captured["kwargs"]["env"]["PYTHONIOENCODING"] == "utf-8"
+    assert captured["kwargs"]["env"]["PYTHONUTF8"] == "1"
 
 
 def test_invoke_subagent_propagates_nonzero(monkeypatch):

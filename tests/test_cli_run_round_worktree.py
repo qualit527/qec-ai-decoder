@@ -266,9 +266,12 @@ def test_internal_flag_strips_code_cwd_before_in_process_runner(tmp_path):
         "child hop must null out code_cwd before the in-process Runner; "
         f"got code_cwd={cfg.code_cwd!r}"
     )
-    # Worktree metadata must still flow through so the parent can attach
-    # branch/fork_from to the final metrics row.
-    assert cfg.branch == "exp/foo/01-bar"
+    assert cfg.branch is None
+    assert cfg.fork_from is None
+    assert cfg.compose_mode is None
+    payload = json.loads(result.output)
+    assert payload["branch"] == "exp/foo/01-bar"
+    assert payload["commit_sha"] == "deadbeef"
 
 
 def test_fork_from_malformed_json_is_bad_parameter(tmp_path):

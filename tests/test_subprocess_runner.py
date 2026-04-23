@@ -310,6 +310,60 @@ def test_subprocess_runner_writes_and_commits_pointer(tmp_path):
     assert metrics.commit_sha == head_sha
 
 
+def test_subprocess_runner_writes_artifact_manifest(tmp_path):
+    """Worktree rounds should leave a manifest next to metrics.json."""
+    from autoqec.orchestration import subprocess_runner
+
+    _init_git_repo(tmp_path)
+    subprocess.check_call(
+        ["git", "-C", str(tmp_path), "checkout", "-q", "-b", "exp/test/09-manifest"]
+    )
+
+    child_stdout = json.dumps({
+        "status": "ok",
+        "ler_plain_classical": 1e-3,
+        "ler_predecoder": 5e-4,
+        "delta_ler": 5e-4,
+        "round_attempt_id": "attempt-manifest",
+    })
+
+    class _FakeCompletedProcess:
+        returncode = 0
+        stdout = child_stdout
+        stderr = ""
+
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    cfg = RunnerConfig(
+        env_name=env.name,
+        predecoder_config={"type": "gnn", "output_mode": "soft_priors"},
+        training_profile="dev",
+        seed=0,
+        round_dir=str(tmp_path / "runs" / "r1" / "round_1"),
+        code_cwd=str(tmp_path),
+        branch="exp/test/09-manifest",
+    )
+
+    real_subprocess_run = subprocess.run
+
+    def _stub_child_pass_through_git(argv, **kw):
+        if "run-round-internal" in argv:
+            return _FakeCompletedProcess()
+        return real_subprocess_run(argv, **kw)
+
+    with patch.object(
+        subprocess_runner.subprocess, "run", side_effect=_stub_child_pass_through_git
+    ):
+        subprocess_runner.run_round_in_subprocess(
+            cfg, env, round_attempt_id="attempt-manifest"
+        )
+
+    manifest_path = Path(cfg.round_dir) / "artifact_manifest.json"
+    assert manifest_path.exists()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["dsl_sha256"]
+    assert manifest["cmd_line"] == ["python", "-m", "cli.autoqec", "run-round-internal"]
+
+
 def test_subprocess_runner_skips_pointer_on_compose_conflict(tmp_path):
     """compose_conflict rows carry branch=None — no commit target, no pointer."""
     from autoqec.orchestration import subprocess_runner
