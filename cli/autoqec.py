@@ -79,6 +79,18 @@ def _diagnose_failure_signature(metrics: dict | None, train_log_text: str, confi
     if degenerate_signal is not None:
         return "degenerate_p_zero", [degenerate_signal]
 
+    compile_signal = _first_matching_line(
+        candidates,
+        lambda line: (
+            "compile_error" in line
+            or "validation failed" in line
+            or "must be >=" in line
+            or "pydantic" in line
+        ),
+    )
+    if compile_signal is not None:
+        return "compile_error", [compile_signal]
+
     return "unknown", []
 def _write_round_metrics(round_dir: str, metrics: RoundMetrics) -> RoundMetrics:
     metrics_path = Path(round_dir).resolve() / "metrics.json"

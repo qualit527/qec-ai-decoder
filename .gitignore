@@ -47,6 +47,7 @@ htmlcov/
 # IDE
 .idea/
 .vscode/
+.worktrees/
 *.swp
 
 # OS
