@@ -35,8 +35,6 @@ AUTOQEC_CHILD_FORK_FROM = "AUTOQEC_CHILD_FORK_FROM"
 AUTOQEC_CHILD_COMPOSE_MODE = "AUTOQEC_CHILD_COMPOSE_MODE"
 AUTOQEC_CHILD_ROUND_ATTEMPT_ID = "AUTOQEC_CHILD_ROUND_ATTEMPT_ID"
 
-SUBPROCESS_CHILD_CMD = ["python", "-m", "cli.autoqec", "run-round-internal"]
-
 _SAFE_GIT_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$")
 _SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
 
@@ -132,7 +130,7 @@ def run_round_in_subprocess(
     # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
     # Static child command only; all dynamic values go through validated env vars.
     proc = subprocess.run(
-        SUBPROCESS_CHILD_CMD,
+        ["python", "-m", "cli.autoqec", "run-round-internal"],
         executable=str(Path(sys.executable).resolve()),
         cwd=code_cwd,
         env=child_env,
