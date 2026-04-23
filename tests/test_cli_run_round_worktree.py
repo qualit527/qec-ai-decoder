@@ -225,8 +225,8 @@ def test_fork_from_valid_json_list_parses(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_subprocess_runner_injects_internal_flag(tmp_path):
-    """The argv emitted by run_round_in_subprocess must carry the guard flag."""
+def test_subprocess_runner_uses_internal_command_env_bridge(tmp_path):
+    """The subprocess bridge must avoid dynamic CLI argv payloads."""
     from autoqec.orchestration import subprocess_runner
     from autoqec.envs.schema import load_env_yaml
     from autoqec.runner.schema import RunnerConfig
@@ -240,6 +240,7 @@ def test_subprocess_runner_injects_internal_flag(tmp_path):
 
     def _fake_run(argv, **kwargs):
         captured["argv"] = argv
+        captured["kwargs"] = kwargs
         return _FakeCompletedProcess()
 
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
@@ -256,4 +257,5 @@ def test_subprocess_runner_injects_internal_flag(tmp_path):
     with patch.object(subprocess_runner.subprocess, "run", side_effect=_fake_run):
         subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id="u1")
 
-    assert "--_internal-execute-locally" in captured["argv"], captured["argv"]
+    assert captured["argv"] == ["python", "-m", "cli.autoqec", "run-round-internal"]
+    assert captured["kwargs"]["env"]["AUTOQEC_CHILD_BRANCH"] == "exp/foo/01-bar"

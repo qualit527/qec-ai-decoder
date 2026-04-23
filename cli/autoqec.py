@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from importlib import resources
 import json
+import os
 import random
 import time
 from pathlib import Path
@@ -11,6 +12,17 @@ import yaml
 
 from autoqec.envs.schema import EnvSpec, load_env_yaml
 from autoqec.orchestration.memory import RunMemory
+from autoqec.orchestration.subprocess_runner import (
+    AUTOQEC_CHILD_BRANCH,
+    AUTOQEC_CHILD_CODE_CWD,
+    AUTOQEC_CHILD_COMPOSE_MODE,
+    AUTOQEC_CHILD_CONFIG_YAML,
+    AUTOQEC_CHILD_ENV_YAML,
+    AUTOQEC_CHILD_FORK_FROM,
+    AUTOQEC_CHILD_PROFILE,
+    AUTOQEC_CHILD_ROUND_ATTEMPT_ID,
+    AUTOQEC_CHILD_ROUND_DIR,
+)
 from autoqec.runner.schema import RunnerConfig
 
 
@@ -100,6 +112,71 @@ def _candidate_pareto(records: list[dict]) -> list[dict]:
     return unique_front
 
 
+def _parse_fork_from_option(fork_from: str | None) -> str | list[str] | None:
+    parsed_fork_from: str | list[str] | None = None
+    if fork_from is not None:
+        if fork_from.strip().startswith("["):
+            try:
+                parsed = json.loads(fork_from)
+            except json.JSONDecodeError as e:
+                raise click.BadParameter(
+                    f"--fork-from looks like JSON but failed to parse: {e}"
+                ) from e
+            if not isinstance(parsed, list) or not all(
+                isinstance(x, str) for x in parsed
+            ):
+                raise click.BadParameter(
+                    "--fork-from JSON must be a list of strings"
+                )
+            parsed_fork_from = parsed
+        else:
+            parsed_fork_from = fork_from
+    return parsed_fork_from
+
+
+def _run_round_impl(
+    env_yaml: str,
+    config_yaml: str,
+    round_dir: str,
+    profile: str,
+    code_cwd: str | None,
+    branch: str | None,
+    fork_from: str | None,
+    compose_mode: str | None,
+    round_attempt_id: str | None,
+    _internal_execute_locally: bool,
+) -> None:
+    env = load_env_yaml(env_yaml)
+    with open(config_yaml) as f:
+        cfg_dict = yaml.safe_load(f)
+
+    parsed_fork_from = _parse_fork_from_option(fork_from)
+
+    cfg = RunnerConfig(
+        env_name=env.name,
+        predecoder_config=cfg_dict,
+        training_profile=profile,
+        seed=0,
+        round_dir=round_dir,
+        code_cwd=code_cwd,
+        branch=branch,
+        fork_from=parsed_fork_from,
+        compose_mode=compose_mode,
+    )
+
+    # Worktree-path runs go through subprocess_runner; in-process runs use the legacy Runner.
+    # --_internal-execute-locally is the recursion guard for the user-visible command.
+    if code_cwd is not None and not _internal_execute_locally:
+        from autoqec.orchestration.subprocess_runner import run_round_in_subprocess
+
+        metrics = run_round_in_subprocess(cfg, env, round_attempt_id=round_attempt_id)
+    else:
+        from autoqec.runner.runner import run_round
+
+        metrics = run_round(cfg, env)
+    click.echo(metrics.model_dump_json(indent=2))
+
+
 @main.command(name="run-round")
 @click.argument("env_yaml")
 @click.argument("config_yaml")
@@ -155,54 +232,45 @@ def run_round_cmd(
     round_attempt_id: str | None,
     _internal_execute_locally: bool,
 ) -> None:
-    env = load_env_yaml(env_yaml)
-    with open(config_yaml) as f:
-        cfg_dict = yaml.safe_load(f)
-
-    # Parse fork_from: JSON list -> list[str]; bare string -> str.
-    parsed_fork_from: str | list[str] | None = None
-    if fork_from is not None:
-        if fork_from.strip().startswith("["):
-            try:
-                parsed = json.loads(fork_from)
-            except json.JSONDecodeError as e:
-                raise click.BadParameter(
-                    f"--fork-from looks like JSON but failed to parse: {e}"
-                ) from e
-            if not isinstance(parsed, list) or not all(
-                isinstance(x, str) for x in parsed
-            ):
-                raise click.BadParameter(
-                    "--fork-from JSON must be a list of strings"
-                )
-            parsed_fork_from = parsed
-        else:
-            parsed_fork_from = fork_from
-
-    cfg = RunnerConfig(
-        env_name=env.name,
-        predecoder_config=cfg_dict,
-        training_profile=profile,
-        seed=0,
+    _run_round_impl(
+        env_yaml=env_yaml,
+        config_yaml=config_yaml,
         round_dir=round_dir,
+        profile=profile,
         code_cwd=code_cwd,
         branch=branch,
-        fork_from=parsed_fork_from,
+        fork_from=fork_from,
         compose_mode=compose_mode,
+        round_attempt_id=round_attempt_id,
+        _internal_execute_locally=_internal_execute_locally,
     )
 
-    # Worktree-path runs go through subprocess_runner; in-process runs use the legacy Runner.
-    # --_internal-execute-locally is the recursion guard: when subprocess_runner spawns us,
-    # it sets this flag so this branch collapses back to the in-process Runner.
-    if code_cwd is not None and not _internal_execute_locally:
-        from autoqec.orchestration.subprocess_runner import run_round_in_subprocess
 
-        metrics = run_round_in_subprocess(cfg, env, round_attempt_id=round_attempt_id)
-    else:
-        from autoqec.runner.runner import run_round
+@main.command(name="run-round-internal", hidden=True)
+def run_round_internal_cmd() -> None:
+    """Internal subprocess entrypoint using env vars instead of dynamic argv."""
+    env_yaml = os.environ[AUTOQEC_CHILD_ENV_YAML]
+    config_yaml = os.environ[AUTOQEC_CHILD_CONFIG_YAML]
+    round_dir = os.environ[AUTOQEC_CHILD_ROUND_DIR]
+    profile = os.environ[AUTOQEC_CHILD_PROFILE]
+    code_cwd = os.environ[AUTOQEC_CHILD_CODE_CWD]
+    branch = os.environ[AUTOQEC_CHILD_BRANCH]
+    fork_from = os.environ.get(AUTOQEC_CHILD_FORK_FROM)
+    compose_mode = os.environ.get(AUTOQEC_CHILD_COMPOSE_MODE)
+    round_attempt_id = os.environ.get(AUTOQEC_CHILD_ROUND_ATTEMPT_ID)
 
-        metrics = run_round(cfg, env)
-    click.echo(metrics.model_dump_json(indent=2))
+    _run_round_impl(
+        env_yaml=env_yaml,
+        config_yaml=config_yaml,
+        round_dir=round_dir,
+        profile=profile,
+        code_cwd=code_cwd,
+        branch=branch,
+        fork_from=fork_from,
+        compose_mode=compose_mode,
+        round_attempt_id=round_attempt_id,
+        _internal_execute_locally=True,
+    )
 
 
 @main.command()

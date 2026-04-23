@@ -25,6 +25,18 @@ class RunnerSubprocessError(RuntimeError):
     """Raised when the child process returns a non-zero exit code."""
 
 
+AUTOQEC_CHILD_ENV_YAML = "AUTOQEC_CHILD_ENV_YAML"
+AUTOQEC_CHILD_CONFIG_YAML = "AUTOQEC_CHILD_CONFIG_YAML"
+AUTOQEC_CHILD_ROUND_DIR = "AUTOQEC_CHILD_ROUND_DIR"
+AUTOQEC_CHILD_PROFILE = "AUTOQEC_CHILD_PROFILE"
+AUTOQEC_CHILD_CODE_CWD = "AUTOQEC_CHILD_CODE_CWD"
+AUTOQEC_CHILD_BRANCH = "AUTOQEC_CHILD_BRANCH"
+AUTOQEC_CHILD_FORK_FROM = "AUTOQEC_CHILD_FORK_FROM"
+AUTOQEC_CHILD_COMPOSE_MODE = "AUTOQEC_CHILD_COMPOSE_MODE"
+AUTOQEC_CHILD_ROUND_ATTEMPT_ID = "AUTOQEC_CHILD_ROUND_ATTEMPT_ID"
+
+SUBPROCESS_CHILD_CMD = ["python", "-m", "cli.autoqec", "run-round-internal"]
+
 _SAFE_GIT_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$")
 _SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
 
@@ -99,40 +111,27 @@ def run_round_in_subprocess(
 
     child_env = os.environ.copy()
     child_env["PYTHONPATH"] = code_cwd + os.pathsep + child_env.get("PYTHONPATH", "")
+    child_env[AUTOQEC_CHILD_ENV_YAML] = str(env_file)
+    child_env[AUTOQEC_CHILD_CONFIG_YAML] = str(config_path)
+    child_env[AUTOQEC_CHILD_ROUND_DIR] = round_dir
+    child_env[AUTOQEC_CHILD_PROFILE] = cfg.training_profile
+    child_env[AUTOQEC_CHILD_CODE_CWD] = code_cwd
+    child_env[AUTOQEC_CHILD_BRANCH] = branch
 
-    optional_argv: list[str] = []
     if safe_fork_from is not None:
-        fork_arg = (
+        child_env[AUTOQEC_CHILD_FORK_FROM] = (
             json.dumps(safe_fork_from)
             if isinstance(safe_fork_from, list)
             else safe_fork_from
         )
-        optional_argv += ["--fork-from", fork_arg]
     if cfg.compose_mode is not None:
-        optional_argv += ["--compose-mode", cfg.compose_mode]
+        child_env[AUTOQEC_CHILD_COMPOSE_MODE] = cfg.compose_mode
     if safe_round_attempt_id is not None:
-        optional_argv += ["--round-attempt-id", safe_round_attempt_id]
-    # Recursion guard: the child must NOT re-dispatch through subprocess_runner.
-    # See cli/autoqec.py:run_round_cmd — when this flag is set, the child runs
-    # the in-process Runner even though --code-cwd is present.
+        child_env[AUTOQEC_CHILD_ROUND_ATTEMPT_ID] = safe_round_attempt_id
+
     proc = subprocess.run(
-        [
-            str(Path(sys.executable).resolve()),
-            "-m",
-            "cli.autoqec",
-            "run-round",
-            str(env_file),
-            str(config_path),
-            round_dir,
-            "--profile",
-            cfg.training_profile,
-            "--code-cwd",
-            code_cwd,
-            "--branch",
-            branch,
-            *optional_argv,
-            "--_internal-execute-locally",
-        ],
+        SUBPROCESS_CHILD_CMD,
+        executable=str(Path(sys.executable).resolve()),
         cwd=code_cwd,
         env=child_env,
         shell=False,
