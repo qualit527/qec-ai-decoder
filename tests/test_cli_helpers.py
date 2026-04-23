@@ -69,18 +69,32 @@ def test_run_round_internal_cmd_reads_env_bridge(monkeypatch, tmp_path) -> None:
     assert captured["round_attempt_id"] == "uuid-1"
 
 
-def test_run_command_rejects_llm_mode(monkeypatch, tmp_path) -> None:
+def test_run_command_delegates_to_llm_loop(monkeypatch, tmp_path) -> None:
+    """P0.1 wired the LLM path; the CLI should now call run_llm_loop (not raise)."""
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "load_env_yaml", lambda _path: env)
-    monkeypatch.setattr(cli.time, "strftime", lambda _fmt: "20260423-000000")
-    monkeypatch.setattr(cli, "RunMemory", lambda *_args, **_kwargs: SimpleNamespace())
-    monkeypatch.setattr(cli, "load_example_templates", lambda: [("gnn_small", {"type": "gnn"})])
+
+    calls: dict = {}
+
+    def fake_run_llm_loop(*, env, rounds, profile):
+        calls["env_name"] = env.name
+        calls["rounds"] = rounds
+        calls["profile"] = profile
+        run_dir = tmp_path / "fake_run"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    import autoqec.orchestration.llm_loop as llm_loop
+    monkeypatch.setattr(llm_loop, "run_llm_loop", fake_run_llm_loop)
 
     runner = CliRunner()
-    result = runner.invoke(cli.run, [env.model_dump()["name"]], catch_exceptions=True)
-    assert result.exit_code != 0
-    assert "LLM mode is not wired" in result.output
+    result = runner.invoke(
+        cli.run, [env.model_dump()["name"], "--rounds", "2"], catch_exceptions=False
+    )
+    assert result.exit_code == 0, result.output
+    assert calls == {"env_name": env.name, "rounds": 2, "profile": "dev"}
+    assert cli.RESULT_PREFIX in result.output
 
 
 def test_add_env_writes_yaml_for_mwpm_and_osd(tmp_path) -> None:

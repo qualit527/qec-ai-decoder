@@ -430,9 +430,19 @@ def run_round_internal_cmd() -> None:
 @click.option("--profile", type=click.Choice(["dev", "prod"]), default="dev")
 @click.option("--no-llm", is_flag=True, help="Pick random seed templates instead of calling subagents")
 def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
+    env = load_env_yaml(env_yaml)
+    if not no_llm:
+        # live LLM path — P0.1
+        from autoqec.orchestration.llm_loop import run_llm_loop
+        run_dir = run_llm_loop(env=env, rounds=rounds, profile=profile)
+        click.echo(
+            f"{RESULT_PREFIX}"
+            + json.dumps({"run_dir": str(run_dir), "rounds": rounds})
+        )
+        return
+
     from autoqec.runner.runner import run_round
 
-    env = load_env_yaml(env_yaml)
     run_id = time.strftime("%Y%m%d-%H%M%S")
     run_dir = (Path("runs") / run_id).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -442,18 +452,15 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
     history: list[dict] = []
     for round_idx in range(1, rounds + 1):
         round_dir = run_dir / f"round_{round_idx}"
-        if no_llm:
-            candidates = templates
-            if profile == "dev":
-                candidates = [item for item in templates if item[0] in dev_safe_templates]
-            if not candidates:
-                raise click.ClickException(
-                    f"No bundled templates are available for profile={profile!r}. "
-                    "This install is missing the expected demo template assets."
-                )
-            _, cfg_dict = random.choice(candidates)
-        else:
-            raise click.ClickException("LLM mode is not wired in this branch yet; use --no-llm")
+        candidates = templates
+        if profile == "dev":
+            candidates = [item for item in templates if item[0] in dev_safe_templates]
+        if not candidates:
+            raise click.ClickException(
+                f"No bundled templates are available for profile={profile!r}. "
+                "This install is missing the expected demo template assets."
+            )
+        _, cfg_dict = random.choice(candidates)
         cfg = RunnerConfig(
             env_name=env.name,
             predecoder_config=cfg_dict,
