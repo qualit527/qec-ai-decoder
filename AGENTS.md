@@ -102,6 +102,22 @@ Do not commit runtime artifacts, coverage outputs, or packaging byproducts.
   `docs/superpowers/plans/`.
 - Demo-specific instructions belong under `demos/<demo-name>/README.md`.
 
+## Zulip Context
+
+- When task context may depend on prior hackathon discussion, use the repo
+  skill at `.claude/skills/read-zulip/SKILL.md` before making assumptions.
+- Default Zulip context for this repository:
+  - site: `https://quantum-info.zulipchat.com`
+  - stream/channel: `VibeYoga-Hackathon-QEC` (`591576`)
+  - topic: `general`
+  - URL:
+    `https://quantum-info.zulipchat.com/#channels/591576/VibeYoga-Hackathon-QEC/general`
+  - If `general` returns no relevant messages, retry the same stream without a
+    topic narrow, then check the `channel events` topic.
+- Authentication should come from `ZULIPRC`, `~/.zuliprc`, or
+  `~/.config/zulip/zuliprc`.
+- Never store Zulip credentials in the repository.
+
 ## Commit Convention
 
 Use concise conventional-style commit prefixes:
