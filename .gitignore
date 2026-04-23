@@ -1,21 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# PyTorch / checkpoints
+*.pt
+*.pth
+*.ckpt
+checkpoints/
+outputs/
+runs/
+wandb/
+
+# Data
+data/
+datasets/
+*.npy
+*.npz
+*.h5
+*.hdf5
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# mkdocs build output
+site/
+
+# Knowledge base
 knowledge/papers/
+knowledge/papers_md/
 knowledge/download.log
 knowledge/venue_check.log
 knowledge/venue_info.json
 knowledge/retry_*.py
 knowledge/retry_*.log
-__pycache__/
-*.pyc
-.venv/
-venv/
-site/
-*.pt
-*.ckpt
-runs/
-.env
-.DS_Store
-Thumbs.db
-knowledge/papers_md/
 knowledge/convert_with_images.log
 knowledge/convert_markdown.log
 knowledge/markdown_status.json

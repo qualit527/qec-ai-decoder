@@ -11,7 +11,7 @@ For each repo below:
 - **What to steal** lists the specific patterns worth adopting.
 - **What to skip** calls out the tied-to-their-domain parts we do NOT adopt.
 
-See also `knowledge/INDEX.md` for the paper literature, and `docs/superpowers/specs/2026-04-20-autoqec-design.md` for how these inform AutoQEC.
+See also `knowledge/INDEX.md` for the paper literature, and `docs/specs/2026-04-20-autoqec-design.md` for how these inform AutoQEC.
 
 ---
 

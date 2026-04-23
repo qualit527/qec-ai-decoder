@@ -1,6 +1,6 @@
 # AutoQEC Code-Borrowing Recipe
 
-Companion to `knowledge/autoresearch_refs/INDEX.md` (which catalogs each repo) and `docs/superpowers/specs/2026-04-20-autoqec-design.md` (which defines the AutoQEC modules). This file is the **implementation-time decision guide**: for each AutoQEC module, which reference project do we lift code from, how much work is the port, and where does our domain force a divergence. Written for a 3-person team making "adapt vs reinvent" calls as they start coding.
+Companion to `knowledge/autoresearch_refs/INDEX.md` (which catalogs each repo) and `docs/specs/2026-04-20-autoqec-design.md` (which defines the AutoQEC modules). This file is the **implementation-time decision guide**: for each AutoQEC module, which reference project do we lift code from, how much work is the port, and where does our domain force a divergence. Written for a 3-person team making "adapt vs reinvent" calls as they start coding.
 
 Cross-references: `knowledge/DECODER_ROADMAP.md` (QEC decoder landscape), `knowledge/STRATEGIC_ASSESSMENT.md` (why this project, scoped risks) — treat their conclusions as given.
 

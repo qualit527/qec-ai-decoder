@@ -8,7 +8,6 @@ from pydantic import BaseModel, model_validator
 class VerifyReport(BaseModel):
     """Hold-out evaluation + ablation report (docs/contracts/interfaces.md §2.6)."""
 
-    # === existing fields unchanged ===
     verdict: Literal["VERIFIED", "SUSPICIOUS", "FAILED"]
     ler_holdout: float
     ler_holdout_ci: tuple[float, float]
@@ -19,7 +18,7 @@ class VerifyReport(BaseModel):
     seed_leakage_check_ok: bool
     notes: str
 
-    # === §15 additions ===
+    # §15 worktree fields
     branch: Optional[str] = None
     commit_sha: Optional[str] = None
     delta_vs_baseline_holdout: Optional[float] = None

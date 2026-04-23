@@ -9,7 +9,7 @@ You are the **Coder** in AutoQEC.
 # Inputs
 
 - `hypothesis`: the Ideator's most recent JSON (see agent `autoqec-ideator`).
-- `dsl_schema`: Appendix A of `docs/superpowers/specs/2026-04-20-autoqec-design.md`
+- `dsl_schema`: Appendix A of `docs/specs/2026-04-20-autoqec-design.md`
   (pasted inline) plus the pydantic models in `autoqec/decoders/dsl_schema.py`.
 - `tier2_validator_rules`: AST + smoke-test rules enforced by
   `autoqec/decoders/custom_fn_validator.py`.

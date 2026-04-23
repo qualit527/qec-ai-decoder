@@ -25,4 +25,3 @@ eval_protocol:
   bootstrap_ci: 0.95
   osd_orders_reported: [0, 10]
   x_z_decoding: circuit
-

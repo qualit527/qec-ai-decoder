@@ -388,5 +388,76 @@ def add_env(out: str, name: str, code_source: str, noise_p: str, backend: str) -
     click.echo(f"Wrote {out}")
 
 
+@main.command()
+@click.argument("round_dir")
+@click.option("--env", required=True, help="Env YAML path")
+@click.option("--n-shots", type=int, default=None)
+@click.option("--n-seeds", type=int, default=50, help="Number of holdout seeds to sample")
+def verify(round_dir: str, env: str, n_shots: int | None, n_seeds: int) -> None:
+    from autoqec.eval.independent_eval import independent_verify
+
+    rd = Path(round_dir)
+    env_spec = load_env_yaml(env)
+    ckpt = rd / "checkpoint.pt"
+    holdout = list(range(env_spec.noise.seed_policy.holdout[0],
+                          env_spec.noise.seed_policy.holdout[1] + 1))[:n_seeds]
+    report = independent_verify(ckpt, env_spec, holdout_seeds=holdout, n_shots=n_shots)
+    (rd / "verification_report.json").write_text(report.model_dump_json(indent=2))
+    (rd / "verification_report.md").write_text(
+        f"# Verification Report\n\n**Verdict:** {report.verdict}\n\n"
+        f"- Δ_LER (holdout): {report.delta_ler_holdout:.4g}\n"
+        f"- CI: {report.ler_holdout_ci}\n"
+        f"- Ablation sanity: {report.ablation_sanity_ok}\n"
+        f"- Seed-leakage check: {report.seed_leakage_check_ok}\n\n"
+        f"Notes: {report.notes}\n"
+    )
+    click.echo(report.verdict)
+
+
+@main.command(name="review-log")
+@click.argument("run_dir")
+def review_log(run_dir: str) -> None:
+    rd = Path(run_dir)
+    hist_path = rd / "history.jsonl"
+    pareto_path = rd / "pareto.json"
+    if not hist_path.exists():
+        click.echo("No history.jsonl")
+        return
+    with hist_path.open() as f:
+        rounds = [json.loads(line) for line in f if line.strip()]
+    pareto = json.loads(pareto_path.read_text()) if pareto_path.exists() else []
+    killed = sum(1 for r in rounds if r.get("status") == "killed_by_safety")
+    stats = {
+        "n_rounds": len(rounds),
+        "n_pareto": len(pareto),
+        "n_killed_by_safety": killed,
+        "mean_wallclock_s": sum(r.get("train_wallclock_s", 0) for r in rounds) / max(len(rounds), 1),
+        "top_hypotheses": [r.get("hypothesis", "")[:80] for r in rounds[-5:]],
+    }
+    click.echo(json.dumps(stats, indent=2))
+
+
+@main.command()
+@click.argument("run_dir")
+def diagnose(run_dir: str) -> None:
+    rd = Path(run_dir)
+    # Accept either a run_dir (contains round_*) or a round_dir directly
+    if (rd / "metrics.json").exists() or (rd / "train.log").exists():
+        target = rd
+    else:
+        round_dirs = sorted(rd.glob("round_*"))
+        if not round_dirs:
+            click.echo("No round dirs found and no metrics in given path")
+            return
+        target = round_dirs[-1]
+    out: dict = {"path": str(target)}
+    for fn in ("config.yaml", "metrics.json", "train.log"):
+        p = target / fn
+        out[f"has_{fn}"] = p.exists()
+        if fn == "metrics.json" and p.exists():
+            out["metrics"] = json.loads(p.read_text())
+    click.echo(json.dumps(out, indent=2))
+
+
 if __name__ == "__main__":
     main()
