@@ -2,23 +2,35 @@
 
 Python's import cache can't hot-reload edited ``modules/*.py`` files, so we
 launch a fresh interpreter with ``cwd=cfg.code_cwd`` and ``PYTHONPATH``
-pinned to the worktree. The child invokes ``python -m cli.autoqec run-round``
-and prints a ``metrics.json``-shaped JSON payload; we parse it here.
+pinned to the worktree. The child invokes ``python -m cli.autoqec
+run-round-internal`` (static argv) and reads its payload from
+``AUTOQEC_CHILD_*`` env vars so no dynamic user value ever lands on the
+child's argv.
+
+After a successful non-``compose_conflict`` round the parent also writes
+and commits ``round_<N>/round_<N>_pointer.json`` on the branch — this is
+the producer side of the §15.10 reconcile contract. Without it reconcile
+cannot auto-heal an orphaned branch after a crash and always falls through
+to ``pause``.
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
 from autoqec.envs.schema import EnvSpec
 from autoqec.runner.schema import RoundMetrics, RunnerConfig
+
+log = logging.getLogger(__name__)
 
 
 class RunnerSubprocessError(RuntimeError):
@@ -37,6 +49,7 @@ AUTOQEC_CHILD_ROUND_ATTEMPT_ID = "AUTOQEC_CHILD_ROUND_ATTEMPT_ID"
 
 _SAFE_GIT_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$")
 _SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
+_ROUND_DIR_RE = re.compile(r"^round_(?P<idx>\d+)$")
 
 
 def _resolve_existing_dir(path_str: str, *, field: str) -> str:
@@ -64,6 +77,83 @@ def _validate_optional_token(value: str | None, *, field: str) -> str | None:
     if not _SAFE_TOKEN_RE.fullmatch(value):
         raise ValueError(f"{field} contains unsafe characters: {value!r}")
     return value
+
+
+def _extract_round_idx(round_dir: str) -> int | None:
+    """Pull ``N`` from a ``round_<N>`` directory name. Return None on mismatch."""
+    match = _ROUND_DIR_RE.match(Path(round_dir).name)
+    return int(match.group("idx")) if match else None
+
+
+def _write_and_commit_pointer(
+    code_cwd: str,
+    round_idx: int,
+    round_attempt_id: str | None,
+    branch: str,
+) -> str | None:
+    """Write ``round_<N>/round_<N>_pointer.json`` into the worktree, commit it,
+    and return the new HEAD sha.
+
+    This is the §15.10 auto-heal producer. The pointer lives on the branch so
+    ``git show <branch>:round_<N>/round_<N>_pointer.json`` resolves it even
+    after a crash / kill that wiped the in-memory history append.
+    Returns None on any git failure so the caller can still produce metrics
+    instead of masking a training-side success with a pointer-side error.
+    """
+    pointer_dir = Path(code_cwd) / f"round_{round_idx}"
+    pointer_dir.mkdir(parents=True, exist_ok=True)
+    pointer_path = pointer_dir / f"round_{round_idx}_pointer.json"
+    pointer_path.write_text(
+        json.dumps(
+            {
+                "round_attempt_id": round_attempt_id,
+                "round_idx": round_idx,
+                "branch": branch,
+                "written_at_utc": datetime.now(tz=timezone.utc).isoformat(),
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    rel_pointer = f"round_{round_idx}/round_{round_idx}_pointer.json"
+    try:
+        subprocess.run(
+            ["git", "-C", code_cwd, "add", rel_pointer],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                code_cwd,
+                "commit",
+                "-q",
+                "-m",
+                f"round {round_idx}: pointer for attempt {round_attempt_id or 'unknown'}",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        head = subprocess.run(
+            ["git", "-C", code_cwd, "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return head.stdout.strip()
+    except subprocess.CalledProcessError as exc:
+        log.warning(
+            "pointer commit failed for round %s (branch=%s): %s",
+            round_idx,
+            branch,
+            (exc.stderr or "").strip(),
+        )
+        return None
 
 
 def run_round_in_subprocess(
@@ -147,5 +237,28 @@ def run_round_in_subprocess(
 
     metrics_data = json.loads(proc.stdout)
     metrics_data.setdefault("round_attempt_id", round_attempt_id)
-    metrics_data.setdefault("branch", cfg.branch)
+
+    # compose_conflict rows must have branch=None / commit_sha=None per §15.6.3.
+    # For every other status attach the branch so downstream joins work, and
+    # write + commit the §15.10 pointer so reconcile can auto-heal later.
+    if metrics_data.get("status") != "compose_conflict":
+        metrics_data.setdefault("branch", cfg.branch)
+        if cfg.branch is not None:
+            round_idx = _extract_round_idx(cfg.round_dir)
+            if round_idx is not None:
+                commit_sha = _write_and_commit_pointer(
+                    code_cwd,
+                    round_idx,
+                    round_attempt_id or metrics_data.get("round_attempt_id"),
+                    cfg.branch,
+                )
+                if commit_sha is not None:
+                    # Pointer commit is the authoritative round provenance.
+                    metrics_data["commit_sha"] = commit_sha
+            else:
+                log.warning(
+                    "cfg.round_dir=%r does not match round_<N>; skipping pointer",
+                    cfg.round_dir,
+                )
+
     return RoundMetrics(**metrics_data)

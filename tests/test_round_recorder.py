@@ -185,6 +185,88 @@ def test_pareto_dominance_uses_holdout_not_training_delta(tmp_path: Path) -> Non
     assert branches == {"exp/t/02-b"}
 
 
+def test_pareto_skips_verified_round_without_flops(tmp_path: Path) -> None:
+    """VERIFIED round missing flops_per_syndrome must NOT enter the archive.
+
+    Before this guard, ``_dominates`` silently coerced missing cost fields
+    to 0, so a row with no flops instantly "dominated" every real candidate
+    on the flops axis. That could prune a clean Pareto front with a single
+    malformed submission.
+    """
+    mem = RunMemory(tmp_path)
+    record_round(
+        mem,
+        round_metrics={
+            "round": 1, "status": "ok", "hypothesis": "h",
+            "delta_ler": 1e-4,
+            # flops_per_syndrome intentionally omitted
+            "n_params": 50_000,
+            "branch": "exp/t/01-a", "commit_sha": "sha_a", "round_attempt_id": "u1",
+        },
+        verify_verdict="VERIFIED",
+        verify_report={
+            "verdict": "VERIFIED", "delta_vs_baseline_holdout": 1e-4,
+            "ler_holdout": 4e-4, "paired_eval_bundle_id": "b1",
+        },
+    )
+    pareto = json.loads((tmp_path / "pareto.json").read_text())
+    assert pareto == []
+
+
+def test_pareto_skips_verified_round_without_n_params(tmp_path: Path) -> None:
+    """VERIFIED round missing n_params must NOT enter the archive (symmetric M1)."""
+    mem = RunMemory(tmp_path)
+    record_round(
+        mem,
+        round_metrics={
+            "round": 1, "status": "ok", "hypothesis": "h",
+            "delta_ler": 1e-4,
+            "flops_per_syndrome": 100_000,
+            # n_params intentionally omitted
+            "branch": "exp/t/01-a", "commit_sha": "sha_a", "round_attempt_id": "u1",
+        },
+        verify_verdict="VERIFIED",
+        verify_report={
+            "verdict": "VERIFIED", "delta_vs_baseline_holdout": 1e-4,
+            "ler_holdout": 4e-4, "paired_eval_bundle_id": "b1",
+        },
+    )
+    pareto = json.loads((tmp_path / "pareto.json").read_text())
+    assert pareto == []
+
+
+def test_pareto_missing_cost_does_not_evict_real_candidate(tmp_path: Path) -> None:
+    """A row missing cost axes must not displace an existing valid row.
+
+    Regression for M1: the old ``_dominates`` turned missing axes into 0,
+    so a row with delta≥existing, flops=None, n_params=None would
+    "dominate" everything on disk. After the fix the bad row is dropped
+    at admission time, keeping the true non-dominated front intact.
+    """
+    mem = RunMemory(tmp_path)
+    # Valid candidate first.
+    _admit(mem, round=1, delta_ler=1e-4, flops_per_syndrome=100_000, n_params=40_000,
+           branch="exp/t/01-a", commit_sha="a1", round_attempt_id="u1")
+    # Malformed VERIFIED row arrives — same delta, no cost fields.
+    record_round(
+        mem,
+        round_metrics={
+            "round": 2, "status": "ok", "hypothesis": "h",
+            "delta_ler": 1e-4,
+            # both cost fields absent
+            "branch": "exp/t/02-b", "commit_sha": "b1", "round_attempt_id": "u2",
+        },
+        verify_verdict="VERIFIED",
+        verify_report={
+            "verdict": "VERIFIED", "delta_vs_baseline_holdout": 1e-4,
+            "ler_holdout": 5e-4, "paired_eval_bundle_id": "b2",
+        },
+    )
+    pareto = json.loads((tmp_path / "pareto.json").read_text())
+    assert len(pareto) == 1
+    assert pareto[0]["branch"] == "exp/t/01-a"
+
+
 def test_pareto_skips_verified_round_without_verify_report(tmp_path: Path) -> None:
     """VERIFIED verdict without verify_report cannot be admitted — no holdout axis."""
     mem = RunMemory(tmp_path)

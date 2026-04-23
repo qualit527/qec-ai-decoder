@@ -152,28 +152,46 @@ def _run_round_impl(
 
     parsed_fork_from = _parse_fork_from_option(fork_from)
 
-    cfg = RunnerConfig(
-        env_name=env.name,
-        predecoder_config=cfg_dict,
-        training_profile=profile,
-        seed=0,
-        round_dir=round_dir,
-        code_cwd=code_cwd,
-        branch=branch,
-        fork_from=parsed_fork_from,
-        compose_mode=compose_mode,
-    )
-
     # Worktree-path runs go through subprocess_runner; in-process runs use the legacy Runner.
-    # --_internal-execute-locally is the recursion guard for the user-visible command.
+    # ``_internal_execute_locally`` is set by the child hop (run-round-internal)
+    # so the child can skip the subprocess dispatcher.
     if code_cwd is not None and not _internal_execute_locally:
+        cfg = RunnerConfig(
+            env_name=env.name,
+            predecoder_config=cfg_dict,
+            training_profile=profile,
+            seed=0,
+            round_dir=round_dir,
+            code_cwd=code_cwd,
+            branch=branch,
+            fork_from=parsed_fork_from,
+            compose_mode=compose_mode,
+        )
         from autoqec.orchestration.subprocess_runner import run_round_in_subprocess
 
         metrics = run_round_in_subprocess(cfg, env, round_attempt_id=round_attempt_id)
     else:
+        # Child hop (or plain in-process invocation): strip code_cwd so the
+        # in-process Runner's §15.8 guard does not fire. Parent subprocess_runner
+        # already pinned cwd + PYTHONPATH before spawning us; branch /
+        # fork_from / compose_mode / round_attempt_id still flow through so
+        # the metrics row carries full provenance.
+        cfg = RunnerConfig(
+            env_name=env.name,
+            predecoder_config=cfg_dict,
+            training_profile=profile,
+            seed=0,
+            round_dir=round_dir,
+            code_cwd=None,
+            branch=branch,
+            fork_from=parsed_fork_from,
+            compose_mode=compose_mode,
+        )
         from autoqec.runner.runner import run_round
 
         metrics = run_round(cfg, env)
+        if round_attempt_id is not None and metrics.round_attempt_id is None:
+            metrics = metrics.model_copy(update={"round_attempt_id": round_attempt_id})
     click.echo(metrics.model_dump_json(indent=2))
 
 
