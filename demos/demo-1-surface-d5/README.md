@@ -73,6 +73,20 @@ runs/<run_id>/
     └── metrics.json     # RoundMetrics (status, Δ LER, FLOPs, n_params, …)
 ```
 
+For the no-LLM smoke path, the run root is slightly different:
+
+```
+runs/<run_id>/
+├── history.jsonl
+├── history.json
+├── candidate_pareto.json   # unverified non-dominated successful rounds
+└── round_<N>/
+    ├── config.yaml
+    ├── train.log
+    ├── checkpoint.pt
+    └── metrics.json
+```
+
 Headline metric: compare `round_<N>/metrics.json::ler_predecoder` to
 the committed 1M-shot PyMatching reference at
 `demos/demo-1-surface-d5/expected_output/baseline_benchmark.json`
