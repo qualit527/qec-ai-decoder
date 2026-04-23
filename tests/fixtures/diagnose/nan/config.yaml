@@ -1,0 +1,5 @@
+type: gnn
+training:
+  learning_rate: 10.0
+  batch_size: 32
+  epochs: 1

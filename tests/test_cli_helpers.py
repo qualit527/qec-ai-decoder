@@ -265,6 +265,37 @@ def test_review_log_summarizes_existing_run(tmp_path) -> None:
     assert payload["n_rounds"] == 2
     assert payload["n_pareto"] == 1
     assert payload["n_killed_by_safety"] == 1
+    assert payload["mean_wallclock_s"] == 2.0
+    assert payload["top_hypotheses"] == ["alpha", "beta"]
+
+
+def test_review_log_falls_back_to_candidate_pareto(tmp_path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "history.jsonl").write_text(json.dumps({"status": "ok"}) + "\n", encoding="utf-8")
+    (run_dir / "candidate_pareto.json").write_text(
+        json.dumps([{"delta_ler": 0.1}, {"delta_ler": 0.2}]),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli.review_log, [str(run_dir)], catch_exceptions=False)
+
+    payload = json.loads(result.output)
+    assert payload["n_pareto"] == 2
+
+
+def _materialize_diagnose_fixture(tmp_path: Path, fixture_name: str) -> Path:
+    src = Path(__file__).parent / "fixtures" / "diagnose" / fixture_name
+    dst = tmp_path / fixture_name
+    dst.mkdir()
+    for src_name, dst_name in (
+        ("config.yaml", "config.yaml"),
+        ("metrics.json", "metrics.json"),
+        ("train_log.txt", "train.log"),
+    ):
+        (dst / dst_name).write_text((src / src_name).read_text(encoding="utf-8"), encoding="utf-8")
+    return dst
 
 
 def test_diagnose_handles_round_dir_and_missing_rounds(tmp_path) -> None:
@@ -296,3 +327,39 @@ def test_diagnose_uses_latest_round_from_run_dir(tmp_path) -> None:
     result = runner.invoke(cli.diagnose, [str(run_dir)], catch_exceptions=False)
     payload = json.loads(result.output)
     assert payload["path"].endswith("round_2")
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "expected_root_cause", "expected_signal"),
+    [
+        ("oom", "oom", "cuda out of memory"),
+        ("nan", "nan_loss", "nan"),
+        ("degenerate_p_zero", "degenerate_p_zero", "p = 0"),
+    ],
+)
+def test_diagnose_identifies_known_failure_signatures(
+    tmp_path: Path,
+    fixture_name: str,
+    expected_root_cause: str,
+    expected_signal: str,
+) -> None:
+    round_dir = _materialize_diagnose_fixture(tmp_path, fixture_name)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.diagnose, [str(round_dir)], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["root_cause"] == expected_root_cause
+    assert expected_signal in "\n".join(payload["signals"]).lower()
+
+
+def test_diagnose_never_claims_to_apply_a_fix(tmp_path: Path) -> None:
+    round_dir = _materialize_diagnose_fixture(tmp_path, "oom")
+
+    runner = CliRunner()
+    result = runner.invoke(cli.diagnose, [str(round_dir)], catch_exceptions=False)
+
+    payload = json.loads(result.output)
+    assert payload["read_only"] is True
+    assert "applied_fix" not in payload
