@@ -153,3 +153,86 @@ def message(x_src, x_dst, e_ij, params):
     fn = _load_function(code)
     assert fn(None, None, None, None) == 1
 
+
+def test_rejects_syntax_error() -> None:
+    ok, reason = validate_custom_fn("def broken(", slot="message_fn")
+    assert not ok
+    assert "SyntaxError" in reason
+
+
+def test_rejects_multiple_function_definitions() -> None:
+    code = """
+def one(x_src, x_dst, e_ij, params):
+    return x_src
+
+def two(x_src, x_dst, e_ij, params):
+    return x_dst
+"""
+    ok, reason = validate_custom_fn(code, slot="message_fn")
+    assert not ok
+    assert "exactly one function" in reason
+
+
+def test_rejects_wrong_signature() -> None:
+    code = """
+def message(x_src, params):
+    return x_src
+"""
+    ok, reason = validate_custom_fn(code, slot="message_fn")
+    assert not ok
+    assert "Signature must be" in reason
+
+
+def test_rejects_unknown_slot() -> None:
+    code = """
+def message(x_src, x_dst, e_ij, params):
+    return x_src
+"""
+    ok, reason = validate_custom_fn(code, slot="unknown")
+    assert not ok
+    assert "Unknown slot" in reason
+
+
+def test_rejects_non_whitelisted_top_import() -> None:
+    code = """
+def message(x_src, x_dst, e_ij, params):
+    import math
+    return x_src
+"""
+    ok, reason = validate_custom_fn(code, slot="message_fn")
+    assert not ok
+    assert "whitelist" in reason.lower()
+
+
+def test_rejects_non_whitelisted_from_import() -> None:
+    code = """
+def message(x_src, x_dst, e_ij, params):
+    from math import sqrt
+    return x_src
+"""
+    ok, reason = validate_custom_fn(code, slot="message_fn")
+    assert not ok
+    assert "whitelist" in reason.lower()
+
+
+@pytest.mark.skipif(not _TORCH_AVAILABLE, reason="smoke test needs torch")
+def test_aggregation_smoke_rejects_non_tensor_output() -> None:
+    code = """
+def aggregate(messages, edge_index):
+    return 1
+"""
+    ok, reason = validate_custom_fn(code, slot="aggregation")
+    assert not ok
+    assert "non-tensor" in reason.lower()
+
+
+@pytest.mark.skipif(not _TORCH_AVAILABLE, reason="smoke test needs torch")
+def test_head_smoke_rejects_non_finite_output() -> None:
+    code = """
+def head(hidden_state):
+    import torch
+    return torch.full((hidden_state.shape[0], hidden_state.shape[1]), float("nan"))
+"""
+    ok, reason = validate_custom_fn(code, slot="head")
+    assert not ok
+    assert "nan" in reason.lower()

@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+import numpy as np
+import stim
+import torch
+
+from autoqec.envs.schema import load_env_yaml
+from autoqec.runner import data as runner_data
+
+
+def test_select_seeds_respects_range_and_caps_unique_count() -> None:
+    assert runner_data._select_seeds((10, 12), 0) == [10]
+    assert runner_data._select_seeds((10, 12), 2) == [10, 11]
+    assert runner_data._select_seeds((10, 30), 20) == list(range(10, 18))
+
+
+def test_stim_artifacts_and_sampling_cover_stim_path() -> None:
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    artifacts = runner_data.load_code_artifacts(env)
+
+    assert artifacts.code_type == "stim_circuit"
+    assert artifacts.n_var > 0
+    assert artifacts.n_check > 0
+    assert artifacts.edge_index.shape[0] == 2
+    assert artifacts.prior_p.shape[0] == artifacts.n_var
+
+    syndrome, targets = runner_data.sample_syndromes(
+        env,
+        artifacts,
+        env.noise.seed_policy.train,
+        5,
+    )
+    assert syndrome.shape[0] == 5
+    assert syndrome.shape[1] == artifacts.n_check
+    assert targets.shape[0] == 5
+
+
+def test_stim_edge_index_and_prior_skips_non_error_instructions() -> None:
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    circuit = stim.Circuit.from_file(env.code.source)
+    edge_index, prior = runner_data._stim_edge_index_and_prior(circuit)
+
+    assert edge_index.shape[0] == 2
+    assert prior.ndim == 1
+    assert prior.numel() > 0
+
+
+def test_parity_edge_index_and_sampling_cover_parity_path() -> None:
+    env = load_env_yaml("autoqec/envs/builtin/bb72_depol.yaml")
+    artifacts = runner_data.load_code_artifacts(env)
+
+    assert artifacts.code_type == "parity_check_matrix"
+    assert artifacts.parity_check_matrix is not None
+    assert artifacts.edge_index.shape[0] == 2
+    assert artifacts.prior_p.shape[0] == artifacts.n_var
+
+    syndrome, errors = runner_data.sample_syndromes(
+        env,
+        artifacts,
+        env.noise.seed_policy.train,
+        6,
+    )
+    assert syndrome.shape == (6, artifacts.n_check)
+    assert errors.shape == (6, artifacts.n_var)
+
+
+def test_parity_edge_index_uses_nonzero_entries() -> None:
+    parity = np.array([[1, 0, 1], [0, 1, 0]], dtype=np.uint8)
+    edge_index = runner_data._parity_edge_index(parity)
+    assert torch.equal(edge_index, torch.tensor([[0, 2, 1], [0, 0, 1]]))
+
+
+def test_sample_parity_respects_requested_shot_count() -> None:
+    parity = np.array([[1, 0, 1], [0, 1, 1]], dtype=np.uint8)
+    syndrome, errors = runner_data._sample_parity(parity, 0.1, (1, 5), 3)
+    assert syndrome.shape == (3, 2)
+    assert errors.shape == (3, 3)
+
+
+def test_load_code_artifacts_rejects_unsupported_code_type() -> None:
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    bad_env = env.model_copy(
+        update={"code": env.code.model_copy(update={"type": "tanner_graph"})}
+    )
+    try:
+        runner_data.load_code_artifacts(bad_env)
+    except ValueError as exc:
+        assert "Unsupported code type" in str(exc)
+    else:
+        raise AssertionError("expected unsupported code type to raise ValueError")

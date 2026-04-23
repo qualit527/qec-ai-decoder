@@ -97,6 +97,7 @@ Orchestration writes **only** at the run root; the Runner writes **only** inside
 ## Skills & Subagents
 
 - `.claude/skills/autoqec-run/SKILL.md` — driver recipe for the full research loop. Invoked as `/autoqec-run`.
+- `.claude/skills/read-zulip/SKILL.md` — read hackathon Zulip history for off-repo context recovery. Invoked as `/read-zulip`.
 - `.claude/skills/add-env/SKILL.md` — wizard for adding a new environment YAML. Invoked as `/add-env`.
 - `.claude/agents/autoqec-ideator.md` — Ideator subagent prompt (consumes `fork_graph`, emits `fork_from` + `compose_mode`).
 - `.claude/agents/autoqec-coder.md` — Coder subagent prompt (aware that cwd is a worktree; emits `commit_message`).
