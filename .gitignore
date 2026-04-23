@@ -8,6 +8,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+site/
 *.pt
 *.ckpt
 runs/

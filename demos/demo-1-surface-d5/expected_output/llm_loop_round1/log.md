@@ -1,0 +1,1 @@
+### round 1 — Round 1 status=ok, 68,865 params at 36M FLOPs/syndrome trained in 11s and evaluated in 0.3s. Predecoder achieved delta_ler=0 (ler=0.01563 matches plain-classical), so compute spent without measurable LER improvement and CI bounds are null. No previous round for comparison.

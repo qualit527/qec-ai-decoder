@@ -26,9 +26,16 @@ dev = [
   "pytest-cov>=5.0",
   "ruff>=0.15",
 ]
+docs = [
+  "mkdocs>=1.6",
+  "mkdocs-material>=9.6",
+]
 
 [tool.setuptools.packages.find]
 include = ["autoqec*", "cli*"]
+
+[tool.setuptools.package-data]
+autoqec = ["example_db/*.yaml", "envs/builtin/*.yaml"]
 
 [tool.pytest.ini_options]
 addopts = '-m "not integration" -v'
