@@ -139,6 +139,30 @@ def test_build_prompt_mentions_role_and_context() -> None:
     assert "json" in prompt.lower()  # reminds the subagent to emit fenced JSON
 
 
+def test_ideator_prompt_contains_fork_graph_and_not_legacy_hypotheses() -> None:
+    """Phase 2.4.1 — the rendered ideator prompt string must carry fork_graph
+    (per §15.4) and must not carry the pre-§15 last_5_hypotheses key even if
+    a caller accidentally passes it in, the plain JSON serialisation will
+    surface any regression."""
+    from autoqec.agents.dispatch import build_prompt
+
+    ctx = {
+        "env_spec": {"name": "surface_d5_depol"},
+        "fork_graph": {
+            "nodes": [
+                {"branch": "baseline", "parent": None},
+                {"branch": "exp/t/01-a", "parent": "baseline", "on_pareto": True},
+            ]
+        },
+        "pareto": [{"branch": "exp/t/01-a", "delta_ler": 1e-4}],
+        "machine_state": {"gpu": {}},
+    }
+    prompt = build_prompt("ideator", ctx)
+    assert "fork_graph" in prompt
+    assert "exp/t/01-a" in prompt
+    assert "last_5_hypotheses" not in prompt
+
+
 def test_parse_response_extracts_first_json_block() -> None:
     from autoqec.agents.dispatch import parse_response
 
