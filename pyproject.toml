@@ -51,6 +51,8 @@ source = ["autoqec", "cli"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
+precision = 2
+fail_under = 95
 
 [tool.ruff]
 line-length = 100
