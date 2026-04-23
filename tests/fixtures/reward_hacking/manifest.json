@@ -1,0 +1,6 @@
+{
+  "trap_A": "training_seed_leak",
+  "trap_B": "paired_batch_mismatch",
+  "trap_C": "overfit_memorizer",
+  "source_env": "autoqec\\envs\\builtin\\surface_d5_depol.yaml"
+}
