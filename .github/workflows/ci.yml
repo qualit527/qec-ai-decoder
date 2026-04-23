@@ -32,8 +32,8 @@ jobs:
       - name: Run lint
         run: make lint
 
-      - name: Run non-integration tests
-        run: make test
+      - name: Run non-integration tests with coverage
+        run: make coverage
 
       - name: Export coverage.xml
         run: ./.venv/bin/python -m coverage xml -o coverage.xml
