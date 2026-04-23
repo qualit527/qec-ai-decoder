@@ -248,6 +248,35 @@ def test_reconcile_no_op_on_clean_repo(repo_with_run: tuple[Path, Path]) -> None
     assert actions == []
 
 
+def test_pareto_entry_with_unreachable_commit_emits_pause(
+    repo_with_run: tuple[Path, Path],
+) -> None:
+    """§15.10 both-missing: a Pareto entry points at a commit that is neither
+    on a live exp/ branch nor otherwise reachable — reconcile emits `pause`.
+    """
+    from autoqec.orchestration.reconcile import reconcile_at_startup
+
+    repo, run_dir = repo_with_run
+    # Write a Pareto entry with a fabricated 40-char SHA that resolves to nothing.
+    pareto = [
+        {
+            "branch": "exp/t/11-missing",
+            "commit_sha": "0" * 40,
+            "delta_vs_baseline_holdout": 0.01,
+            "flops_per_syndrome": 1000,
+            "n_params": 2000,
+        }
+    ]
+    (run_dir / "pareto.json").write_text(json.dumps(pareto), encoding="utf-8")
+
+    actions = reconcile_at_startup(repo_root=repo, run_id="t", run_dir=run_dir)
+    paused = [a for a in actions if a["kind"] == "pause"]
+    assert any(
+        a.get("branch") == "exp/t/11-missing" and "unreachable" in a.get("reason", "")
+        for a in paused
+    ), actions
+
+
 def test_branch_manually_deleted_is_idempotent(repo_with_run: tuple[Path, Path]) -> None:
     """Running reconcile twice must not duplicate the branch_manually_deleted row.
 

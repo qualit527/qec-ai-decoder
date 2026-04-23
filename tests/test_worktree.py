@@ -38,6 +38,37 @@ def test_create_round_worktree_returns_paths(git_repo):
     assert plan["branch"] == "exp/20260422-140000/01-gated-mlp"
 
 
+def test_create_compose_worktree_pure_merge_succeeds(git_repo):
+    from autoqec.orchestration.worktree import (
+        create_compose_worktree,
+        create_round_worktree,
+    )
+
+    # Parents touch disjoint files — merge must succeed cleanly (§15.6 compose_pure).
+    plan_a = create_round_worktree(git_repo, "t", 1, "a", fork_from="main")
+    (Path(plan_a["worktree_dir"]) / "a.txt").write_text("A\n")
+    subprocess.run(["git", "add", "."], cwd=plan_a["worktree_dir"], check=True)
+    subprocess.run(["git", "commit", "-m", "a"], cwd=plan_a["worktree_dir"], check=True)
+
+    plan_b = create_round_worktree(git_repo, "t", 2, "b", fork_from="main")
+    (Path(plan_b["worktree_dir"]) / "b.txt").write_text("B\n")
+    subprocess.run(["git", "add", "."], cwd=plan_b["worktree_dir"], check=True)
+    subprocess.run(["git", "commit", "-m", "b"], cwd=plan_b["worktree_dir"], check=True)
+
+    result = create_compose_worktree(
+        repo_root=git_repo,
+        run_id="t",
+        round_idx=3,
+        slug="compose-pure",
+        parents=[plan_a["branch"], plan_b["branch"]],
+    )
+    assert result["status"] == "ok"
+    assert result["parents"] == [plan_a["branch"], plan_b["branch"]]
+    # Both disjoint files survive the merge.
+    assert (Path(result["worktree_dir"]) / "a.txt").read_text(encoding="utf-8") == "A\n"
+    assert (Path(result["worktree_dir"]) / "b.txt").read_text(encoding="utf-8") == "B\n"
+
+
 def test_create_compose_worktree_detects_conflict(git_repo):
     from autoqec.orchestration.worktree import (
         create_compose_worktree,

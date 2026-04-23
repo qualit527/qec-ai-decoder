@@ -21,6 +21,7 @@ checkpoints/
 outputs/
 runs/
 wandb/
+.worktrees/
 
 # Data
 data/
@@ -29,6 +30,12 @@ datasets/
 *.npz
 *.h5
 *.hdf5
+
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 
 # Jupyter
 .ipynb_checkpoints/
