@@ -141,3 +141,41 @@ def test_run_cli_works_from_foreign_cwd_and_writes_candidate_pareto(tmp_path: Pa
     pareto = json.loads((run_dir / "candidate_pareto.json").read_text(encoding="utf-8"))
     assert isinstance(pareto, list)
     assert payload["candidate_pareto_path"].endswith("candidate_pareto.json")
+
+
+def test_run_cli_no_llm_appends_one_history_row_per_round(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    env_yaml = repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = (
+        f"{repo_root}{os.pathsep}{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(repo_root)
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "cli.autoqec",
+            "run",
+            str(env_yaml),
+            "--rounds",
+            "2",
+            "--profile",
+            "dev",
+            "--no-llm",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+        encoding="utf-8",
+        env=env,
+    )
+
+    payload = _extract_result_payload(completed.stdout)
+    run_dir = Path(payload["run_dir"])
+    history_lines = (run_dir / "history.jsonl").read_text(encoding="utf-8").splitlines()
+
+    assert len(history_lines) == 2
+    rows = [json.loads(line) for line in history_lines]
+    assert [row["round"] for row in rows] == [1, 2]

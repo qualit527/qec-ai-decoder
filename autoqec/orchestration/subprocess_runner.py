@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import re
 import subprocess
 import sys
@@ -83,6 +84,16 @@ def _extract_round_idx(round_dir: str) -> int | None:
     """Pull ``N`` from a ``round_<N>`` directory name. Return None on mismatch."""
     match = _ROUND_DIR_RE.match(Path(round_dir).name)
     return int(match.group("idx")) if match else None
+
+
+def _write_round_metrics(round_dir: str, metrics: RoundMetrics) -> RoundMetrics:
+    metrics_path = Path(round_dir).resolve() / "metrics.json"
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics_path.write_text(
+        metrics.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    return metrics
 
 
 def _write_and_commit_pointer(
@@ -184,10 +195,14 @@ def run_round_in_subprocess(
     elif isinstance(safe_fork_from, str):
         safe_fork_from = _validate_git_ref(safe_fork_from, field="fork_from")
 
+    cleanup_files: list[Path] = []
+    cleanup_dirs: list[Path] = []
+
     # Persist predecoder config to a temp YAML the subprocess can read.
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
         yaml.safe_dump(cfg.predecoder_config, f)
         config_path = Path(f.name).resolve()
+        cleanup_files.append(config_path)
 
     # Env YAML on disk: the subprocess re-loads it, so the in-memory EnvSpec
     # is not enough. Prefer the builtin path if the env name matches one.
@@ -196,9 +211,14 @@ def run_round_in_subprocess(
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
             yaml.safe_dump(env.model_dump(), f)
             env_file = Path(f.name).resolve()
+            cleanup_files.append(env_file)
 
     child_env = os.environ.copy()
     child_env["PYTHONPATH"] = code_cwd + os.pathsep + child_env.get("PYTHONPATH", "")
+    if "MPLCONFIGDIR" not in child_env:
+        mpl_config_dir = Path(tempfile.mkdtemp(prefix="autoqec-mpl-")).resolve()
+        cleanup_dirs.append(mpl_config_dir)
+        child_env["MPLCONFIGDIR"] = str(mpl_config_dir)
     child_env[AUTOQEC_CHILD_ENV_YAML] = str(env_file)
     child_env[AUTOQEC_CHILD_CONFIG_YAML] = str(config_path)
     child_env[AUTOQEC_CHILD_ROUND_DIR] = round_dir
@@ -217,18 +237,24 @@ def run_round_in_subprocess(
     if safe_round_attempt_id is not None:
         child_env[AUTOQEC_CHILD_ROUND_ATTEMPT_ID] = safe_round_attempt_id
 
-    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
-    # Static child command only; all dynamic values go through validated env vars.
-    proc = subprocess.run(
-        ["python", "-m", "cli.autoqec", "run-round-internal"],
-        executable=str(Path(sys.executable).resolve()),
-        cwd=code_cwd,
-        env=child_env,
-        shell=False,
-        capture_output=True,
-        text=True,
-        timeout=timeout_s,
-    )
+    try:
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
+        # Static child command only; all dynamic values go through validated env vars.
+        proc = subprocess.run(
+            ["python", "-m", "cli.autoqec", "run-round-internal"],
+            executable=str(Path(sys.executable).resolve()),
+            cwd=code_cwd,
+            env=child_env,
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    finally:
+        for path in cleanup_files:
+            path.unlink(missing_ok=True)
+        for path in cleanup_dirs:
+            shutil.rmtree(path, ignore_errors=True)
     if proc.returncode != 0:
         raise RunnerSubprocessError(
             f"subprocess runner failed: rc={proc.returncode}\n"
@@ -261,4 +287,5 @@ def run_round_in_subprocess(
                     cfg.round_dir,
                 )
 
-    return RoundMetrics(**metrics_data)
+    final_metrics = RoundMetrics(**metrics_data)
+    return _write_round_metrics(round_dir, final_metrics)

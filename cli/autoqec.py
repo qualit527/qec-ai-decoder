@@ -4,6 +4,7 @@ from importlib import resources
 import json
 import os
 import random
+import subprocess
 import time
 from pathlib import Path
 
@@ -23,7 +24,7 @@ from autoqec.orchestration.subprocess_runner import (
     AUTOQEC_CHILD_ROUND_ATTEMPT_ID,
     AUTOQEC_CHILD_ROUND_DIR,
 )
-from autoqec.runner.schema import RunnerConfig
+from autoqec.runner.schema import RoundMetrics, RunnerConfig
 
 
 @click.group()
@@ -32,6 +33,115 @@ def main() -> None:
 
 
 RESULT_PREFIX = "AUTOQEC_RESULT_JSON="
+
+
+def _read_text_if_exists(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def _first_matching_line(candidates: list[str], predicate) -> str | None:
+    for text in candidates:
+        for raw_line in text.splitlines():
+            line = " ".join(raw_line.strip().split())
+            if line and predicate(line.lower()):
+                return line
+    return None
+
+
+def _diagnose_failure_signature(metrics: dict | None, train_log_text: str, config_text: str) -> tuple[str, list[str]]:
+    status_reason = ""
+    if metrics is not None:
+        status_reason = str(metrics.get("status_reason") or "")
+    candidates = [status_reason, train_log_text, config_text]
+
+    oom_signal = _first_matching_line(
+        candidates,
+        lambda line: "out of memory" in line or "oom" in line or "vram" in line,
+    )
+    if oom_signal is not None:
+        return "oom", [oom_signal]
+
+    nan_signal = _first_matching_line(
+        candidates,
+        lambda line: "nan" in line,
+    )
+    if nan_signal is not None:
+        return "nan_loss", [nan_signal]
+
+    degenerate_signal = _first_matching_line(
+        candidates,
+        lambda line: "p = 0" in line or "p=0" in line or "degenerate" in line,
+    )
+    if degenerate_signal is not None:
+        return "degenerate_p_zero", [degenerate_signal]
+
+    return "unknown", []
+def _write_round_metrics(round_dir: str, metrics: RoundMetrics) -> RoundMetrics:
+    metrics_path = Path(round_dir).resolve() / "metrics.json"
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics_path.write_text(
+        metrics.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    return metrics
+
+
+def _git_head_commit(cwd: str) -> str:
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=cwd,
+        text=True,
+    ).strip()
+
+
+def _enrich_local_worktree_metrics(
+    metrics: RoundMetrics,
+    *,
+    round_dir: str,
+    code_cwd: str,
+    branch: str,
+    fork_from: str | list[str] | None,
+    compose_mode: str | None,
+    round_attempt_id: str | None,
+) -> RoundMetrics:
+    updates = {
+        "fork_from": fork_from,
+        "compose_mode": compose_mode,
+        "round_attempt_id": round_attempt_id or metrics.round_attempt_id,
+    }
+    if metrics.status == "compose_conflict":
+        return _write_round_metrics(
+            round_dir,
+            metrics.model_copy(update=updates),
+        )
+
+    try:
+        commit_sha = _git_head_commit(code_cwd)
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        failure_metrics = metrics.model_copy(
+            update={
+                "status": "train_error",
+                "status_reason": f"git rev-parse HEAD failed for branch {branch!r}: {exc}",
+                "branch": None,
+                "commit_sha": None,
+                **updates,
+            }
+        )
+        _write_round_metrics(round_dir, failure_metrics)
+        raise
+
+    return _write_round_metrics(
+        round_dir,
+        metrics.model_copy(
+            update={
+                "branch": branch,
+                "commit_sha": commit_sha,
+                **updates,
+            }
+        ),
+    )
 
 
 def load_example_templates() -> list[tuple[str, dict]]:
@@ -147,7 +257,7 @@ def _run_round_impl(
     _internal_execute_locally: bool,
 ) -> None:
     env = load_env_yaml(env_yaml)
-    with open(config_yaml) as f:
+    with open(config_yaml, encoding="utf-8") as f:
         cfg_dict = yaml.safe_load(f)
 
     parsed_fork_from = _parse_fork_from_option(fork_from)
@@ -192,6 +302,16 @@ def _run_round_impl(
         metrics = run_round(cfg, env)
         if round_attempt_id is not None and metrics.round_attempt_id is None:
             metrics = metrics.model_copy(update={"round_attempt_id": round_attempt_id})
+        if _internal_execute_locally and code_cwd is not None and branch is not None:
+            metrics = _enrich_local_worktree_metrics(
+                metrics,
+                round_dir=round_dir,
+                code_cwd=code_cwd,
+                branch=branch,
+                fork_from=parsed_fork_from,
+                compose_mode=compose_mode,
+                round_attempt_id=round_attempt_id,
+            )
     click.echo(metrics.model_dump_json(indent=2))
 
 
@@ -335,7 +455,10 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
         mem.append_round(record)
         mem.update_pareto(_candidate_pareto(history))
         click.echo(f"Round {round_idx}: {metrics.status} Δ={metrics.delta_ler}")
-    (run_dir / "history.json").write_text(json.dumps(history, indent=2))
+    (run_dir / "history.json").write_text(
+        json.dumps(history, indent=2),
+        encoding="utf-8",
+    )
     click.echo(
         f"{RESULT_PREFIX}"
         + json.dumps(
@@ -343,7 +466,8 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
                 "run_dir": str(run_dir),
                 "rounds": rounds,
                 "candidate_pareto_path": str(run_dir / "candidate_pareto.json"),
-            }
+            },
+            ensure_ascii=False,
         )
     )
 
@@ -420,6 +544,8 @@ def review_log(run_dir: str) -> None:
     rd = Path(run_dir)
     hist_path = rd / "history.jsonl"
     pareto_path = rd / "pareto.json"
+    if not pareto_path.exists():
+        pareto_path = rd / "candidate_pareto.json"
     if not hist_path.exists():
         click.echo("No history.jsonl")
         return
@@ -450,12 +576,25 @@ def diagnose(run_dir: str) -> None:
             click.echo("No round dirs found and no metrics in given path")
             return
         target = round_dirs[-1]
-    out: dict = {"path": str(target)}
+    metrics_path = target / "metrics.json"
+    train_log_path = target / "train.log"
+    config_path = target / "config.yaml"
+    metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else None
+    train_log_text = _read_text_if_exists(train_log_path)
+    config_text = _read_text_if_exists(config_path)
+    root_cause, signals = _diagnose_failure_signature(metrics, train_log_text, config_text)
+
+    out: dict = {
+        "path": str(target),
+        "root_cause": root_cause,
+        "signals": signals,
+        "read_only": True,
+    }
     for fn in ("config.yaml", "metrics.json", "train.log"):
         p = target / fn
         out[f"has_{fn}"] = p.exists()
         if fn == "metrics.json" and p.exists():
-            out["metrics"] = json.loads(p.read_text())
+            out["metrics"] = metrics
     click.echo(json.dumps(out, indent=2))
 
 if __name__ == "__main__":  # pragma: no cover

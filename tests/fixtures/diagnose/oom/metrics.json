@@ -1,0 +1,4 @@
+{
+  "status": "train_error",
+  "status_reason": "RuntimeError: CUDA out of memory while allocating tensor"
+}
