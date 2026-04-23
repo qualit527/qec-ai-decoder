@@ -12,6 +12,8 @@ class RunnerConfig(BaseModel):
     training_profile: Literal["dev", "prod"] = "dev"
     seed: int = 0
     round_dir: str
+    env_yaml_path: Optional[str] = None
+    invocation_argv: Optional[list[str]] = None
 
     # === §15 additions ===
     code_cwd: Optional[str] = None

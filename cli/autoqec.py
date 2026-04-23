@@ -6,6 +6,7 @@ import os
 import random
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -42,6 +43,13 @@ _COMPILE_RE = re.compile(
     r"(compile_error|validation failed|must be >=|must be <=|valueerror|validationerror)",
     re.IGNORECASE,
 )
+
+
+def _current_invocation_argv() -> list[str]:
+    argv = list(getattr(sys, "orig_argv", sys.argv))
+    if not argv:
+        return []
+    return [os.fspath(Path(argv[0]))] + argv[1:]
 
 
 def _read_text_if_exists(path: Path) -> str:
@@ -367,6 +375,8 @@ def _run_round_impl(
             training_profile=profile,
             seed=0,
             round_dir=round_dir,
+            env_yaml_path=env_yaml,
+            invocation_argv=_current_invocation_argv(),
             code_cwd=code_cwd,
             branch=branch,
             fork_from=parsed_fork_from,
@@ -388,6 +398,8 @@ def _run_round_impl(
             training_profile=profile,
             seed=0,
             round_dir=round_dir,
+            env_yaml_path=env_yaml,
+            invocation_argv=_current_invocation_argv(),
             code_cwd=None,
         )
         from autoqec.runner.runner import run_round
@@ -547,6 +559,8 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
             training_profile=profile,
             seed=round_idx,
             round_dir=str(round_dir),
+            env_yaml_path=env_yaml,
+            invocation_argv=_current_invocation_argv(),
         )
         metrics = run_round(cfg, env)
         record = metrics.model_dump()
@@ -642,6 +656,31 @@ def verify(round_dir: str, env: str, n_shots: int | None, n_seeds: int) -> None:
         )
 
     click.echo(report.verdict)
+
+
+@main.command(name="package-run")
+@click.argument("run_dir")
+def package_run(run_dir: str) -> None:
+    from autoqec.tools.advisor_replay import package_run_dir
+
+    rd = Path(run_dir).resolve()
+    rounds = sorted(path.name for path in rd.glob("round_*") if path.is_dir())
+    try:
+        package_path = package_run_dir(rd)
+    except (FileExistsError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(
+        RESULT_PREFIX
+        + json.dumps(
+            {
+                "run_dir": str(rd),
+                "package_path": str(package_path),
+                "rounds": rounds,
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 @main.command(name="review-log")
