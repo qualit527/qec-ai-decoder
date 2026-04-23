@@ -312,27 +312,28 @@ def test_fork_from_valid_json_list_parses(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_subprocess_runner_injects_internal_flag(tmp_path):
-    """The argv emitted by run_round_in_subprocess must carry the guard flag.
+def test_subprocess_runner_uses_internal_command_env_bridge(tmp_path):
+    """The subprocess bridge must avoid dynamic CLI argv payloads.
 
     subprocess_runner now also issues git invocations to commit the
-    §15.10 pointer; capture only the child CLI call (the one carrying
-    ``run-round``) rather than "whatever was last run".
+    §15.10 pointer, so capture only the first child CLI call (the one
+    carrying ``run-round-internal``) rather than "whatever was last run".
     """
     from autoqec.orchestration import subprocess_runner
     from autoqec.envs.schema import load_env_yaml
     from autoqec.runner.schema import RunnerConfig
 
-    captured: dict[str, list[str]] = {}
+    captured: dict = {}
 
     class _FakeCompletedProcess:
         returncode = 0
         stdout = '{"status": "ok", "commit_sha": "abc123", "round_attempt_id": "u1"}'
         stderr = ""
 
-    def _fake_run(argv, **_kw):
-        if "run-round" in argv and "child_argv" not in captured:
-            captured["child_argv"] = list(argv)
+    def _fake_run(argv, **kwargs):
+        if "run-round-internal" in argv and "argv" not in captured:
+            captured["argv"] = list(argv)
+            captured["kwargs"] = kwargs
         return _FakeCompletedProcess()
 
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
@@ -349,5 +350,5 @@ def test_subprocess_runner_injects_internal_flag(tmp_path):
     with patch.object(subprocess_runner.subprocess, "run", side_effect=_fake_run):
         subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id="u1")
 
-    assert "child_argv" in captured, "child CLI call was never issued"
-    assert "--_internal-execute-locally" in captured["child_argv"], captured["child_argv"]
+    assert captured["argv"] == ["python", "-m", "cli.autoqec", "run-round-internal"]
+    assert captured["kwargs"]["env"]["AUTOQEC_CHILD_BRANCH"] == "exp/foo/01-bar"

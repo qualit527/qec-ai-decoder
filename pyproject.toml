@@ -30,6 +30,9 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["autoqec*", "cli*"]
 
+[tool.setuptools.package-data]
+autoqec = ["example_db/*.yaml", "envs/builtin/*.yaml"]
+
 [tool.pytest.ini_options]
 markers = [
   "integration: marks tests that exercise the end-to-end runner",

@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -86,6 +87,79 @@ def test_subprocess_runner_rejects_missing_code_cwd():
         run_round_in_subprocess(cfg, env)
 
 
+def test_subprocess_runner_rejects_suspicious_branch_value(tmp_path):
+    """Shell-style metacharacters in branch names must be rejected before spawn."""
+    from autoqec.orchestration.subprocess_runner import run_round_in_subprocess
+
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    cfg = RunnerConfig(
+        env_name=env.name,
+        predecoder_config={"type": "gnn", "output_mode": "soft_priors"},
+        training_profile="dev",
+        seed=0,
+        round_dir=str(tmp_path / "round_1"),
+        code_cwd=str(tmp_path),
+        branch="exp/t/01-a;rm -rf /",
+    )
+
+    with pytest.raises(ValueError, match="branch"):
+        run_round_in_subprocess(cfg, env, round_attempt_id="u1")
+
+
+def test_subprocess_runner_uses_shell_false_and_resolved_cwd(tmp_path):
+    """The child process must spawn via a static internal command.
+
+    subprocess_runner now also issues git invocations for the §15.10
+    pointer commit, so we capture only the first ``run-round-internal``
+    call instead of "whatever was last run".
+    """
+    from autoqec.orchestration import subprocess_runner
+
+    captured: dict = {}
+
+    class _FakeChild:
+        returncode = 0
+        stdout = '{"status": "ok", "commit_sha": "abc123", "round_attempt_id": "u1"}'
+        stderr = ""
+
+    class _FakeGit:
+        returncode = 0
+        stdout = "deadbeef\n"
+        stderr = ""
+
+    def _fake_run(argv, **kwargs):
+        if "run-round-internal" in argv:
+            captured["argv"] = list(argv)
+            captured["kwargs"] = kwargs
+            return _FakeChild()
+        # Short-circuit the pointer-commit git invocations so the test
+        # stays hermetic and we don't need a real repo on disk.
+        return _FakeGit()
+
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    cfg = RunnerConfig(
+        env_name=env.name,
+        predecoder_config={"type": "gnn", "output_mode": "soft_priors"},
+        training_profile="dev",
+        seed=0,
+        round_dir=str(tmp_path / "round_1"),
+        code_cwd=str(tmp_path),
+        branch="exp/foo/01-bar",
+    )
+
+    with patch.object(subprocess_runner.subprocess, "run", side_effect=_fake_run):
+        subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id="u1")
+
+    assert captured["argv"] == ["python", "-m", "cli.autoqec", "run-round-internal"]
+    assert captured["kwargs"]["shell"] is False
+    assert captured["kwargs"]["cwd"] == str(tmp_path.resolve())
+    assert captured["kwargs"]["executable"] == str(Path(sys.executable).resolve())
+    child_env = captured["kwargs"]["env"]
+    assert child_env["AUTOQEC_CHILD_ROUND_DIR"] == str((tmp_path / "round_1").resolve())
+    assert child_env["AUTOQEC_CHILD_BRANCH"] == "exp/foo/01-bar"
+    assert child_env["AUTOQEC_CHILD_ROUND_ATTEMPT_ID"] == "u1"
+
+
 # ─── M2: round_N_pointer.json writer ─────────────────────────────────────
 
 
@@ -129,10 +203,10 @@ def test_subprocess_runner_writes_and_commits_pointer(tmp_path):
     real_subprocess_run = subprocess.run
 
     def _stub_child_pass_through_git(argv, **kw):
-        # The child invocation is ``python -m cli.autoqec run-round ...``;
+        # The child invocation is ``python -m cli.autoqec run-round-internal``;
         # stub that. Everything else (git add / git commit / git rev-parse)
-        # is real so the pointer commit actually lands on the branch.
-        if "run-round" in argv:
+        # runs for real so the pointer commit actually lands on the branch.
+        if "run-round-internal" in argv:
             return _FakeCompletedProcess()
         return real_subprocess_run(argv, **kw)
 

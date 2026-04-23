@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -31,3 +34,14 @@ jobs:
 
       - name: Run non-integration tests
         run: make test
+
+      - name: Export coverage.xml
+        run: ./.venv/bin/python -m coverage xml -o coverage.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

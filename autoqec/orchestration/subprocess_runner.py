@@ -2,8 +2,10 @@
 
 Python's import cache can't hot-reload edited ``modules/*.py`` files, so we
 launch a fresh interpreter with ``cwd=cfg.code_cwd`` and ``PYTHONPATH``
-pinned to the worktree. The child invokes ``python -m cli.autoqec run-round``
-and prints a ``metrics.json``-shaped JSON payload; we parse it here.
+pinned to the worktree. The child invokes ``python -m cli.autoqec
+run-round-internal`` (static argv) and reads its payload from
+``AUTOQEC_CHILD_*`` env vars so no dynamic user value ever lands on the
+child's argv.
 
 After a successful non-``compose_conflict`` round the parent also writes
 and commits ``round_<N>/round_<N>_pointer.json`` on the branch — this is
@@ -35,7 +37,46 @@ class RunnerSubprocessError(RuntimeError):
     """Raised when the child process returns a non-zero exit code."""
 
 
+AUTOQEC_CHILD_ENV_YAML = "AUTOQEC_CHILD_ENV_YAML"
+AUTOQEC_CHILD_CONFIG_YAML = "AUTOQEC_CHILD_CONFIG_YAML"
+AUTOQEC_CHILD_ROUND_DIR = "AUTOQEC_CHILD_ROUND_DIR"
+AUTOQEC_CHILD_PROFILE = "AUTOQEC_CHILD_PROFILE"
+AUTOQEC_CHILD_CODE_CWD = "AUTOQEC_CHILD_CODE_CWD"
+AUTOQEC_CHILD_BRANCH = "AUTOQEC_CHILD_BRANCH"
+AUTOQEC_CHILD_FORK_FROM = "AUTOQEC_CHILD_FORK_FROM"
+AUTOQEC_CHILD_COMPOSE_MODE = "AUTOQEC_CHILD_COMPOSE_MODE"
+AUTOQEC_CHILD_ROUND_ATTEMPT_ID = "AUTOQEC_CHILD_ROUND_ATTEMPT_ID"
+
+_SAFE_GIT_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$")
+_SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
 _ROUND_DIR_RE = re.compile(r"^round_(?P<idx>\d+)$")
+
+
+def _resolve_existing_dir(path_str: str, *, field: str) -> str:
+    path = Path(path_str).expanduser().resolve()
+    if not path.exists() or not path.is_dir():
+        raise ValueError(f"{field} must point to an existing directory: {path_str!r}")
+    return str(path)
+
+
+def _resolve_path_arg(path_str: str) -> str:
+    return str(Path(path_str).expanduser().resolve())
+
+
+def _validate_git_ref(value: str, *, field: str) -> str:
+    if not _SAFE_GIT_REF_RE.fullmatch(value):
+        raise ValueError(f"{field} contains unsafe characters: {value!r}")
+    if value.endswith("/") or "//" in value or ".." in value or "@{" in value:
+        raise ValueError(f"{field} is not a safe git ref: {value!r}")
+    return value
+
+
+def _validate_optional_token(value: str | None, *, field: str) -> str | None:
+    if value is None:
+        return None
+    if not _SAFE_TOKEN_RE.fullmatch(value):
+        raise ValueError(f"{field} contains unsafe characters: {value!r}")
+    return value
 
 
 def _extract_round_idx(round_dir: str) -> int | None:
@@ -129,58 +170,61 @@ def run_round_in_subprocess(
     """
     if cfg.code_cwd is None:
         raise ValueError("run_round_in_subprocess requires cfg.code_cwd")
+    code_cwd = _resolve_existing_dir(cfg.code_cwd, field="code_cwd")
+    branch = _validate_git_ref(cfg.branch or "", field="branch")
+    round_dir = _resolve_path_arg(cfg.round_dir)
+    safe_round_attempt_id = _validate_optional_token(
+        round_attempt_id, field="round_attempt_id"
+    )
+    safe_fork_from = cfg.fork_from
+    if isinstance(safe_fork_from, list):
+        safe_fork_from = [
+            _validate_git_ref(parent, field="fork_from") for parent in safe_fork_from
+        ]
+    elif isinstance(safe_fork_from, str):
+        safe_fork_from = _validate_git_ref(safe_fork_from, field="fork_from")
 
     # Persist predecoder config to a temp YAML the subprocess can read.
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
         yaml.safe_dump(cfg.predecoder_config, f)
-        config_path = f.name
+        config_path = Path(f.name).resolve()
 
     # Env YAML on disk: the subprocess re-loads it, so the in-memory EnvSpec
     # is not enough. Prefer the builtin path if the env name matches one.
-    env_file = Path("autoqec/envs/builtin") / f"{env.name}.yaml"
+    env_file = (Path("autoqec/envs/builtin") / f"{env.name}.yaml").resolve()
     if not env_file.exists():
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
             yaml.safe_dump(env.model_dump(), f)
-            env_file = Path(f.name)
+            env_file = Path(f.name).resolve()
 
     child_env = os.environ.copy()
-    child_env["PYTHONPATH"] = cfg.code_cwd + os.pathsep + child_env.get("PYTHONPATH", "")
+    child_env["PYTHONPATH"] = code_cwd + os.pathsep + child_env.get("PYTHONPATH", "")
+    child_env[AUTOQEC_CHILD_ENV_YAML] = str(env_file)
+    child_env[AUTOQEC_CHILD_CONFIG_YAML] = str(config_path)
+    child_env[AUTOQEC_CHILD_ROUND_DIR] = round_dir
+    child_env[AUTOQEC_CHILD_PROFILE] = cfg.training_profile
+    child_env[AUTOQEC_CHILD_CODE_CWD] = code_cwd
+    child_env[AUTOQEC_CHILD_BRANCH] = branch
 
-    argv: list[str] = [
-        sys.executable,
-        "-m",
-        "cli.autoqec",
-        "run-round",
-        str(env_file),
-        str(config_path),
-        cfg.round_dir,
-        "--profile",
-        cfg.training_profile,
-        "--code-cwd",
-        cfg.code_cwd,
-        "--branch",
-        cfg.branch or "",
-    ]
-    if cfg.fork_from is not None:
-        fork_arg = (
-            json.dumps(cfg.fork_from)
-            if isinstance(cfg.fork_from, list)
-            else cfg.fork_from
+    if safe_fork_from is not None:
+        child_env[AUTOQEC_CHILD_FORK_FROM] = (
+            json.dumps(safe_fork_from)
+            if isinstance(safe_fork_from, list)
+            else safe_fork_from
         )
-        argv += ["--fork-from", fork_arg]
     if cfg.compose_mode is not None:
-        argv += ["--compose-mode", cfg.compose_mode]
-    if round_attempt_id is not None:
-        argv += ["--round-attempt-id", round_attempt_id]
-    # Recursion guard: the child must NOT re-dispatch through subprocess_runner.
-    # See cli/autoqec.py:run_round_cmd — when this flag is set, the child runs
-    # the in-process Runner even though --code-cwd is present.
-    argv += ["--_internal-execute-locally"]
+        child_env[AUTOQEC_CHILD_COMPOSE_MODE] = cfg.compose_mode
+    if safe_round_attempt_id is not None:
+        child_env[AUTOQEC_CHILD_ROUND_ATTEMPT_ID] = safe_round_attempt_id
 
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
+    # Static child command only; all dynamic values go through validated env vars.
     proc = subprocess.run(
-        argv,
-        cwd=cfg.code_cwd,
+        ["python", "-m", "cli.autoqec", "run-round-internal"],
+        executable=str(Path(sys.executable).resolve()),
+        cwd=code_cwd,
         env=child_env,
+        shell=False,
         capture_output=True,
         text=True,
         timeout=timeout_s,
@@ -203,7 +247,7 @@ def run_round_in_subprocess(
             round_idx = _extract_round_idx(cfg.round_dir)
             if round_idx is not None:
                 commit_sha = _write_and_commit_pointer(
-                    cfg.code_cwd,
+                    code_cwd,
                     round_idx,
                     round_attempt_id or metrics_data.get("round_attempt_id"),
                     cfg.branch,
