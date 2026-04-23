@@ -44,6 +44,8 @@ runs/<run_id>/                 ← the RUN (one /autoqec-run invocation)
 | `train.log` | `run_round` | during training (overwritten once at end) |
 | `checkpoint.pt` | `run_round` | after training |
 | `metrics.json` | `run_round` | at round end |
+| `round_<N>_pointer.json` | `run_round` via `autoqec.runner.pointer.write_round_pointer` | at round end, whenever `cfg.branch` and `cfg.code_cwd` are both set |
+| `artifact_manifest.json` | `run_round` via `autoqec.runner.manifest.write_artifact_manifest` | at round end, whenever `cfg.branch` and `cfg.code_cwd` are both set |
 | `verification_report.md` | Verifier (Xie) | when the Analyst verdict is `candidate` |
 
 The orchestration side writes **only** at the run root; the Runner writes
@@ -138,6 +140,18 @@ eval_wallclock_s)` from `history.jsonl`.
 - Failure-path rounds still emit `metrics.json`, and absent artifacts stay
   `null` in `RoundMetrics` instead of claiming files that were never
   produced.
+- `round_<N>/round_<N>_pointer.json` is written for worktree-branch
+  rounds so startup reconciliation can recover the `round_attempt_id`.
+  Covered in `test_pointer_writer.py` (unit) and the worktree
+  subprocess integration tests.
+- `round_<N>/artifact_manifest.json` is written for worktree-branch
+  rounds via `autoqec.runner.manifest.write_artifact_manifest`,
+  capturing repo SHA, dirty files,
+  tool versions (python/torch/stim/pymatching/ldpc/numpy),
+  `env_yaml_sha256`, `dsl_sha256`, and the `sys.argv` command line.
+  Manifest-writer failures never fail the round — they degrade to a
+  `round_<N>/manifest_error.txt` note. Covered in
+  `test_artifact_manifest.py` (unit).
 
 **[TODO-fill-in] aspirational, not enforced yet:**
 
@@ -161,6 +175,15 @@ source: `docs/superpowers/specs/2026-04-20-autoqec-design.md` §15.5
 (pointer file) and §15.7 (pareto / pareto_preview split).
 
 ### `round_N_pointer.json` (committed inside the worktree)
+
+**Enforced as of 2026-04-23 (Runner writes this whenever the round
+runs with a branch).** Producer: `autoqec.runner.runner.run_round` via
+`autoqec.runner.pointer.write_round_pointer`. The pointer is written
+unconditionally inside the `if config.branch is not None and
+config.code_cwd is not None:` block — i.e. whenever the round runs on
+a worktree branch — so §15.10 startup reconciliation can always
+recover `round_attempt_id` even when the post-training `git commit`
+step fails.
 
 Written by the worktree-side Runner after training finishes, then
 committed to the experiment branch `exp/<run_id>/<NN>-<slug>`. This is

@@ -192,16 +192,18 @@ make them required on the worktree path. Authoritative source:
 - `fork_from_canonical: Optional[str]` — sorted, `|`-joined; dedup key for compose.
 - `fork_from_ordered: Optional[list[str]]` — merge-sequence order (drives `git merge` base); compose only.
 - `compose_mode: Optional[Literal["pure", "with_edit"]]` — **required when `fork_from` is a list**.
+- `round_attempt_id: Optional[str]` — UUID minted at Ideator emit-time; threaded through worktree subprocess/pointer paths.
+- `commit_message: Optional[str]` — Coder-proposed commit message for branch-producing paths.
+- `env_yaml_path: Optional[str]` — env YAML path used when hashing per-round artifact provenance.
 
 Validators: `code_cwd` set ⇒ `branch` required; list-form `fork_from` ⇒
 `compose_mode` required.
 
-> **Note:** `round_attempt_id`, `commit_sha`, and `paired_eval_bundle_id` live
-> on `RoundMetrics` / `VerifyReport` (the *output* surfaces), not on
+> **Note:** `commit_sha` and `paired_eval_bundle_id` live on
+> `RoundMetrics` / `VerifyReport` (the *output* surfaces), not on
 > `RunnerConfig` (the *input* surface). The Runner CLI accepts
-> `--round-attempt-id` as a flag and writes it into the emitted
-> `metrics.json`; it is not an input schema field on `RunnerConfig`.
-> See `autoqec/runner/schema.py` for the authoritative shape.
+> `--round-attempt-id` as a flag and threads it through
+> `RunnerConfig.round_attempt_id` / emitted `metrics.json`.
 
 ### `RoundMetrics`
 

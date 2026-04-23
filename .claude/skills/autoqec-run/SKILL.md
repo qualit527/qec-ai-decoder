@@ -173,11 +173,12 @@ python -m cli.autoqec run-round <env_yaml> runs/<run_id>/round_<N>/config.yaml r
 The CLI prints the `RoundMetrics` JSON on stdout. Save it — you also
 need it for the Analyst.
 
-**If `metrics.status != "ok"`**, skip the Analyst for this round. Do not
-call `build_analyst_prompt` or dispatch the `autoqec-analyst` subagent.
-Call `record_round()` at step 9 with only `round_metrics=<metrics>` (omit
-`verify_verdict`); the recorder synthesises a fallback summary from
-`metrics.status` / `status_reason`.
+**If `metrics.status != "ok"`**, skip the Analyst and the verifier for
+this round. Do not call `build_analyst_prompt`, do not dispatch the
+`autoqec-analyst` subagent, and do not run `independent_verify`. Call
+`record_round()` at step 10 with only `round_metrics=<metrics>` (omit
+`verify_verdict` and `verify_report`); the recorder synthesises a
+fallback summary from `metrics.status` / `status_reason`.
 
 ### 7. Build the Analyst prompt (only if `metrics.status == "ok"`)
 
@@ -196,7 +197,35 @@ print(build_analyst_prompt(mem=mem, round_dir='runs/<run_id>/round_<N>', prev_su
 keys (validated): `summary_1line`, `verdict` (`"candidate"` or
 `"ignore"`), `next_hypothesis_seed`.
 
-### 9. Record the round
+### 9. Run the independent verifier (automatic)
+
+If `metrics.status == "ok"` AND the Analyst verdict is `candidate`:
+
+```python
+from pathlib import Path
+from autoqec.envs.schema import load_env_yaml
+from autoqec.eval.independent_eval import independent_verify
+
+env = load_env_yaml("<ENV_YAML_PATH>")
+sp = env.noise.seed_policy
+holdout = list(range(sp.holdout[0], sp.holdout[1] + 1))[:50]
+report = independent_verify(
+    checkpoint=Path("<ROUND_DIR>/checkpoint.pt"),
+    env_spec=env,
+    holdout_seeds=holdout,
+)
+Path("<ROUND_DIR>/verification_report.json").write_text(
+    report.model_dump_json(indent=2), encoding="utf-8",
+)
+verify_verdict = report.verdict       # pass into record_round
+verify_report = report.model_dump()   # ditto
+```
+
+**Skip cases:** `metrics.status != "ok"`, `compose_conflict`, Analyst verdict == `ignore`.
+
+**On verifier crash:** catch, set `verify_verdict="FAILED"`, `verify_report=None`, include the exception in the Analyst summary.
+
+### 10. Record the round
 
 ```bash
 python -c "
@@ -209,6 +238,7 @@ row = record_round(
     mem=mem,
     round_metrics=payload['round_metrics'],
     verify_verdict=payload.get('verify_verdict'),  # 'VERIFIED' | 'FAILED' | None
+    verify_report=payload.get('verify_report'),    # dict or None
 )
 print(json.dumps(row['summary_1line']))
 "
@@ -216,15 +246,17 @@ print(json.dumps(row['summary_1line']))
 
 Pipe one JSON object on stdin with keys: `round_metrics` (the full
 `RoundMetrics` dict including `branch`, `commit_sha`, `fork_from`,
-`round_attempt_id`, `status`, `status_reason`, etc.) and optional
-`verify_verdict` (`"VERIFIED"` / `"FAILED"` / `None`). The recorder
-synthesises a fallback `summary_1line` on the runner-failure path.
+`round_attempt_id`, `status`, `status_reason`, etc.), optional
+`verify_verdict` (`"VERIFIED"` / `"FAILED"` / `None`), and optional
+`verify_report` (the `VerifyReport` dict from Step 9, or `None`). The
+recorder synthesises a fallback `summary_1line` on the runner-failure
+path.
 
 This writes the round to `history.jsonl`, appends to `log.md`, and
 refreshes `pareto.json` (full non-dominated archive) alongside
 `pareto_preview.json` (top-5 projection for humans).
 
-### 10. Loop or stop
+### 11. Loop or stop
 
 If the user asked for more than one round, go back to step 2 with
 `round_idx+=1`. After the last round, print a short summary:
@@ -255,7 +287,7 @@ If a compose round returns `status="compose_conflict"`:
 - `record_round` writes the `compose_conflict` row BEFORE any cleanup
 - The synthetic branch is already deleted by `create_compose_worktree`
 - Ideator on the next round will see the `FAILED_compose` node in `fork_graph` and must not re-propose the same `fork_from_canonical` set
-- Do NOT invoke `/verify-decoder` for compose_conflict rounds — there's no checkpoint
+- Do NOT run the Step 9 verifier for compose_conflict rounds — there's no checkpoint
 
 ## Tool-use rules
 
@@ -270,6 +302,6 @@ If a compose round returns `status="compose_conflict"`:
   run-round`. The rest of the loop is torch-free.
 - Dev profile rounds finish in 1–3 minutes on CPU; prod rounds take
   10–20 min and benefit from GPU.
-- Verification (`/verify-decoder`) is **not** part of this skill.
-  Candidates emerging on `pareto.json` are Analyst-flagged, not holdout-
-  verified.
+- Verification runs **automatically** in this skill for successful
+  rounds with Analyst verdict `candidate` (Step 9). `/verify-decoder`
+  remains available for post-hoc re-audits with different holdout seeds.

@@ -23,6 +23,10 @@ runs/
 wandb/
 .worktrees/
 
+# Reward-hacking fixture checkpoints are deterministic + tiny and must be
+# committed for the verifier acceptance tests.
+!tests/fixtures/reward_hacking/*.pt
+
 # Data
 data/
 datasets/

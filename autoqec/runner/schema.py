@@ -20,6 +20,11 @@ class RunnerConfig(BaseModel):
     fork_from_canonical: Optional[str] = None
     fork_from_ordered: Optional[list[str]] = None
     compose_mode: Optional[Literal["pure", "with_edit"]] = None
+    round_attempt_id: Optional[str] = None
+    commit_message: Optional[str] = None
+    """Coder's proposed commit message when the round runs on a branch; falls back to 'round-attempt <uuid>'."""
+    env_yaml_path: Optional[str] = None
+    """Path to the environment YAML used for this round; populated by the CLI so the Runner can hash it into `artifact_manifest.json` (P0.3)."""
 
     @model_validator(mode="after")
     def _worktree_fields_consistent(self):
@@ -39,6 +44,7 @@ class RoundMetrics(BaseModel):
         "killed_by_safety",
         "compile_error",
         "train_error",
+        "failed",  # P0.7 — post-training git commit step failed
         "compose_conflict",  # §15.6 — no commit, no branch
         "orphaned_branch",  # §15.10 reconciliation — commit may exist, no live loop ran
         "branch_manually_deleted",  # §15.10 — follow-up marker

@@ -29,6 +29,7 @@ from pathlib import Path
 import yaml
 
 from autoqec.envs.schema import EnvSpec
+from autoqec.runner.manifest import write_artifact_manifest
 from autoqec.runner.schema import RoundMetrics, RunnerConfig
 
 log = logging.getLogger(__name__)
@@ -237,11 +238,12 @@ def run_round_in_subprocess(
     if safe_round_attempt_id is not None:
         child_env[AUTOQEC_CHILD_ROUND_ATTEMPT_ID] = safe_round_attempt_id
 
+    child_argv = ["python", "-m", "cli.autoqec", "run-round-internal"]
     try:
         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
         # Static child command only; all dynamic values go through validated env vars.
         proc = subprocess.run(
-            ["python", "-m", "cli.autoqec", "run-round-internal"],
+            child_argv,
             executable=str(Path(sys.executable).resolve()),
             cwd=code_cwd,
             env=child_env,
@@ -250,6 +252,22 @@ def run_round_in_subprocess(
             text=True,
             timeout=timeout_s,
         )
+        if proc.returncode == 0:
+            Path(round_dir).mkdir(parents=True, exist_ok=True)
+            try:
+                write_artifact_manifest(
+                    round_dir=Path(round_dir),
+                    env_yaml_path=env_file,
+                    dsl_config=cfg.predecoder_config,
+                    cmd_line=child_argv,
+                )
+            except Exception as exc:  # noqa: BLE001 - manifest failures must not mask a round.
+                round_path = Path(round_dir)
+                round_path.mkdir(parents=True, exist_ok=True)
+                (round_path / "manifest_error.txt").write_text(
+                    f"{type(exc).__name__}: {exc}",
+                    encoding="utf-8",
+                )
     finally:
         for path in cleanup_files:
             path.unlink(missing_ok=True)

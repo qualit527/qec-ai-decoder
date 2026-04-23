@@ -22,7 +22,7 @@ ENV ?= autoqec/envs/builtin/surface_d5_depol.yaml
 ROUNDS ?= 10
 PROFILE ?= dev
 
-.PHONY: install test test-integration coverage lint run run-nollm verify demo-2 run-all-claude run-cheap
+.PHONY: install test test-integration coverage lint run run-nollm verify demo-2 run-all-claude run-cheap build-trap-fixtures
 
 install:
 	$(PIP) install -e '.[dev]'
@@ -57,3 +57,6 @@ run-all-claude:
 
 run-cheap:
 	$(MAKE) run AUTOQEC_IDEATOR_MODEL=claude-haiku-4-5
+
+build-trap-fixtures:
+	$(PYTHON) scripts/build_trap_fixtures.py --env autoqec/envs/builtin/surface_d5_depol.yaml
