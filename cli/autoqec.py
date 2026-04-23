@@ -235,6 +235,36 @@ def _load_round_metrics_for_verify(round_dir: Path) -> dict | None:
     return metrics
 
 
+def _select_no_llm_template(
+    templates: list[tuple[str, dict]],
+    *,
+    profile: str,
+    template_name: str | None,
+) -> dict:
+    dev_safe_templates = {"gnn_small", "gnn_gated", "neural_bp_min"}
+    candidates = templates
+    if profile == "dev":
+        candidates = [item for item in templates if item[0] in dev_safe_templates]
+    if not candidates:
+        raise click.ClickException(
+            f"No bundled templates are available for profile={profile!r}. "
+            "This install is missing the expected demo template assets."
+        )
+
+    if template_name is None:
+        _, cfg_dict = random.choice(candidates)
+        return cfg_dict
+
+    candidate_map = {name: cfg_dict for name, cfg_dict in candidates}
+    if template_name not in candidate_map:
+        available = ", ".join(sorted(candidate_map))
+        raise click.ClickException(
+            f"Unknown template {template_name!r} for profile={profile!r}. "
+            f"Available templates: {available}"
+        )
+    return candidate_map[template_name]
+
+
 def _parse_fork_from_option(fork_from: str | None) -> str | list[str] | None:
     parsed_fork_from: str | list[str] | None = None
     if fork_from is not None:
@@ -429,7 +459,12 @@ def run_round_internal_cmd() -> None:
 @click.option("--rounds", type=int, default=10)
 @click.option("--profile", type=click.Choice(["dev", "prod"]), default="dev")
 @click.option("--no-llm", is_flag=True, help="Pick random seed templates instead of calling subagents")
-def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
+@click.option(
+    "--template-name",
+    default=None,
+    help="With --no-llm, pin a bundled template name for reproducible runs",
+)
+def run(env_yaml: str, rounds: int, profile: str, no_llm: bool, template_name: str | None) -> None:
     from autoqec.runner.runner import run_round
 
     env = load_env_yaml(env_yaml)
@@ -438,20 +473,15 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     mem = RunMemory(run_dir, pareto_filename="candidate_pareto.json")
     templates = load_example_templates()
-    dev_safe_templates = {"gnn_small", "gnn_gated", "neural_bp_min"}
     history: list[dict] = []
     for round_idx in range(1, rounds + 1):
         round_dir = run_dir / f"round_{round_idx}"
         if no_llm:
-            candidates = templates
-            if profile == "dev":
-                candidates = [item for item in templates if item[0] in dev_safe_templates]
-            if not candidates:
-                raise click.ClickException(
-                    f"No bundled templates are available for profile={profile!r}. "
-                    "This install is missing the expected demo template assets."
-                )
-            _, cfg_dict = random.choice(candidates)
+            cfg_dict = _select_no_llm_template(
+                templates,
+                profile=profile,
+                template_name=template_name,
+            )
         else:
             raise click.ClickException("LLM mode is not wired in this branch yet; use --no-llm")
         cfg = RunnerConfig(

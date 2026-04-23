@@ -42,7 +42,7 @@ fail.
 If you just want to verify the Runner loop without an LLM in play:
 
 ```bash
-bash demos/demo-1-surface-d5/run_quick.sh
+TEMPLATE_NAME=gnn_small bash demos/demo-1-surface-d5/run_quick.sh
 ```
 
 Under the hood this is:
@@ -50,14 +50,16 @@ Under the hood this is:
 ```bash
 python -m cli.autoqec run \
     autoqec/envs/builtin/surface_d5_depol.yaml \
-    --rounds 3 --profile dev --no-llm
+    --rounds 3 --profile dev --no-llm --template-name gnn_small
 ```
 
-`--no-llm` makes the CLI pick a random dev-safe template from
-`autoqec/example_db/` each round. Useful as a smoke test; **not** the
-AutoQEC research experience. The script prints the authoritative
-`run_dir` from the CLI's `AUTOQEC_RESULT_JSON=...` line rather than
-guessing from the newest `runs/` directory.
+`run_quick.sh` defaults `TEMPLATE_NAME=gnn_small`, so the no-LLM smoke
+path uses a fixed dev-safe template from `autoqec/example_db/` and stays
+reproducible across reruns. Override `TEMPLATE_NAME` if you want to
+exercise a different bundled template. This is still only a smoke test,
+**not** the AutoQEC research experience. The script prints the
+authoritative `run_dir` from the CLI's `AUTOQEC_RESULT_JSON=...` line
+rather than guessing from the newest `runs/` directory.
 
 ## Expected outputs
 

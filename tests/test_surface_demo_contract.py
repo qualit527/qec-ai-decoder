@@ -13,6 +13,8 @@ def test_demo1_script_uses_authoritative_result_payload() -> None:
 
     assert "AUTOQEC_RESULT_JSON=" in script
     assert "candidate_pareto.json" in script
+    assert "TEMPLATE_NAME" in script
+    assert "--template-name" in script
     assert "ls -t runs" not in script
 
 
@@ -24,6 +26,8 @@ def test_demo1_readme_describes_no_llm_candidate_path() -> None:
     assert "candidate_pareto.json" in readme
     assert "unverified candidate path" in readme
     assert "without GPU in dev mode" in readme
+    assert "TEMPLATE_NAME=gnn_small" in readme
+    assert "random dev-safe template" not in readme
 
 
 def test_demo1_expected_output_mentions_candidate_snapshot() -> None:

@@ -176,6 +176,101 @@ def test_run_command_emits_result_prefix(monkeypatch, tmp_path) -> None:
     assert cli.RESULT_PREFIX in result.output
 
 
+def test_run_command_honors_pinned_no_llm_template(monkeypatch, tmp_path) -> None:
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "load_env_yaml", lambda _path: env)
+    monkeypatch.setattr(cli.time, "strftime", lambda _fmt: "20260424-000001")
+    monkeypatch.setattr(
+        cli,
+        "load_example_templates",
+        lambda: [
+            ("gnn_small", {"type": "gnn", "gnn": {"hidden_dim": 16}, "training": {"learning_rate": 1e-3, "batch_size": 1, "epochs": 1}}),
+            (
+                "neural_bp_min",
+                {
+                    "type": "neural_bp",
+                    "neural_bp": {"n_iters": 2},
+                    "training": {"learning_rate": 2e-3, "batch_size": 2, "epochs": 1},
+                },
+            ),
+        ],
+    )
+
+    class MemoryStub:
+        def __init__(self, run_dir, pareto_filename):
+            self.run_dir = Path(run_dir)
+            self.pareto_path = self.run_dir / pareto_filename
+            self.pareto_path.write_text("[]", encoding="utf-8")
+
+        def append_round(self, record):
+            pass
+
+        def update_pareto(self, pareto):
+            self.pareto_path.write_text(json.dumps(pareto), encoding="utf-8")
+
+    captured = {}
+
+    def fake_run_round(cfg, _env):
+        captured["config"] = cfg.predecoder_config
+        return RoundMetrics(status="ok", delta_ler=0.0, flops_per_syndrome=1, n_params=1)
+
+    monkeypatch.setattr(cli, "RunMemory", MemoryStub)
+    monkeypatch.setattr("autoqec.runner.runner.run_round", fake_run_round)
+
+    runner_cli = CliRunner()
+    result = runner_cli.invoke(
+        cli.run,
+        [
+            env.model_dump()["name"],
+            "--rounds",
+            "1",
+            "--profile",
+            "dev",
+            "--no-llm",
+            "--template-name",
+            "neural_bp_min",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert captured["config"]["type"] == "neural_bp"
+    assert captured["config"]["training"]["batch_size"] == 2
+
+
+def test_run_command_rejects_unknown_pinned_no_llm_template(monkeypatch, tmp_path) -> None:
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "load_env_yaml", lambda _path: env)
+    monkeypatch.setattr(cli.time, "strftime", lambda _fmt: "20260424-000002")
+    monkeypatch.setattr(cli, "RunMemory", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(
+        cli,
+        "load_example_templates",
+        lambda: [("gnn_small", {"type": "gnn", "training": {"learning_rate": 1e-3, "batch_size": 1, "epochs": 1}})],
+    )
+
+    runner_cli = CliRunner()
+    result = runner_cli.invoke(
+        cli.run,
+        [
+            env.model_dump()["name"],
+            "--rounds",
+            "1",
+            "--profile",
+            "dev",
+            "--no-llm",
+            "--template-name",
+            "missing_template",
+        ],
+        catch_exceptions=True,
+    )
+
+    assert result.exit_code != 0
+    assert "Unknown template" in result.output
+
+
 def test_candidate_pareto_skips_ok_rows_with_missing_metrics() -> None:
     front = cli._candidate_pareto(
         [
