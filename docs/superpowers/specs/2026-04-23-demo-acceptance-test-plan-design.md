@@ -1,9 +1,12 @@
 # Demo-Acceptance Test Plan — qec-ai-decoder
 
-**Status:** design, pending owner review
-**Authors:** Chen Jiahan (drafting), Xie Jingu (Phase 5 owner), Lin Tengxiang (Phase 2/3 owner)
+**Status:** design, revised after Codex cross-model review (2026-04-23)
 **Date:** 2026-04-23
 **Gate:** whether Day-3 sprint output can be handed to the advisor
+**Revision notes:** v2 aligns every CLI invocation and fixture reference
+with actual repo state (as of commit 28a9abf), separates gates that are
+executable today from those that depend on unmerged features, and folds in
+five missing failure modes from the Codex review.
 
 ## 1. Overview
 
@@ -17,40 +20,64 @@ answers a single question: on a cold checkout, can someone reproduce the
 
 1. **Reproducibility** — clone → install → single command reproduces the
    baseline LER within bootstrap CI.
-2. **Correctness** — both reference envs (`surface_d5_depol`, `bb72_depol`)
-   complete a live research loop; `history.jsonl` / `pareto.json` are
-   structurally valid.
-3. **Research integrity** — `independent_eval.py`'s three fair-baseline
-   guards (holdout isolation, paired eval, tool whitelist) can be tripped
-   by deliberately malicious checkpoints.
-4. **Observability** — `/review-log`, `/diagnose-failure`, `/verify-decoder`
-   each produce human-readable output on real run directories.
+2. **Correctness** — at least one reference env (`surface_d5_depol` or
+   `bb72_depol`) completes a full research loop (live-LLM if wired;
+   no-LLM if not) with structurally valid `history.jsonl` / `pareto.json`.
+3. **Research integrity** — `independent_eval.py`'s fair-baseline guards
+   (holdout isolation, paired eval, tool whitelist) can be tripped by
+   deliberately malicious checkpoints.
+4. **Observability** — `review-log`, `diagnose`, and `verify` CLI
+   subcommands each emit structured output over a real run directory.
 5. **Contract hygiene** — every pydantic schema in `docs/contracts/interfaces.md`
    round-trips; `pytest -m "not integration"` is fully green; the GitHub
    Actions workflow on `main` is green.
 
 ### 1.2 Scope
 
-- In scope: the five architectural layers below.
-- Out of scope: cross-advisor acceptance (a different document), long-term
-  regression / release gating (`ci-coverage-design.md`), research novelty
-  evaluation (advisor's own judgement).
+- In scope: the five phases below.
+- Out of scope: long-term regression / release gating (owned by
+  `ci-coverage-design.md`) and subjective research novelty (advisor's
+  own judgement).
 
 ### 1.3 Structure
 
-Five phases, each with inline hard-number thresholds in every checkbox. No
-separate "Success Criteria" section; every checkbox is its own gate. This
-mirrors the QuAIR FPGA decoder test plan (GitHub issue #3) but tightens
-the quantification of pass/fail, which was the main weakness of that
-reference.
+Five phases, each with inline hard-number thresholds in every checkbox.
+Every checkbox is its own gate — there is no separate softer "Success
+Criteria" table. This mirrors the QuAIR FPGA decoder test plan
+(GitHub issue `QuAIR/0420-FPGA-Decoder#3`) but tightens the quantification
+of pass/fail that that reference left soft.
 
-### 1.4 How to execute
+### 1.4 Environment assumption
+
+Commands are written for Linux or macOS (or Windows under WSL). A native
+Windows PowerShell checklist is out of scope for Day-3 — commands like
+`./.venv/bin/...`, `/tmp`, `wc`, `find`, `grep` do not have direct Windows
+equivalents and porting them now is not the bottleneck.
+
+### 1.5 How to execute
 
 Each phase is run top-to-bottom. A FAIL must be filed as a GitHub issue
 labelled `blocks-demo` (hard gate) or `quarantine` (soft gate) before the
-phase is considered complete. Quarantine issues must carry an owner and a
-deadline; demo can proceed only if the per-phase Gate rule admits the
+phase is considered complete. Quarantine issues must carry an owner and
+a deadline; demo can proceed only if the per-phase Gate rule admits the
 quarantine count.
+
+### 1.6 Prerequisites (must land before the phase can execute)
+
+Some phases depend on features that are not on `main` as of commit
+`28a9abf`. The plan marks these with a **`DEPENDS-ON`** callout and the
+plan executor is allowed to skip the dependent checkboxes until the
+listed prerequisite is merged. Skipping is recorded as `blocked` (not
+`quarantine`) and does not count against the per-phase gate denominator
+until the prerequisite lands.
+
+| Prerequisite | Required by | Status |
+|---|---|---|
+| `cli.autoqec run` wires a live Ideator → Coder → Analyst DAG (currently raises unless `--no-llm`) | Phase 4 (§5) | not landed |
+| `autoqec verify` persists `paired_eval_bundle_id` in `VerifyReport` and updates the run's `pareto.json` on VERIFIED | Phase 5.1 (§6.1) | schema field exists but writer unset; pareto integration absent |
+| `tests/fixtures/reward_hacking/trap_{A,B,C}.pt` fixtures and matching `test_reward_hacking.py` cases | Phase 5.2 (§6.2) | fixtures absent; only synthetic memorizer tests exist |
+| `review-log` emits a structured `review.md`; `diagnose` emits a `diagnosis.md` (both currently print JSON to stdout only) | Phase 5.3 + 5.4 (§6.3, §6.4) | not landed |
+| `autoqec cleanup-worktree` CLI wrapper (or documented Python API call convention) | Phase 3.4.5 (§4.4.5) | Python API `cleanup_round_worktree` exists; no CLI wrapper |
 
 ---
 
@@ -60,7 +87,7 @@ quarantine count.
 runnable command. Any FAIL here invalidates every downstream phase.
 
 **Operator:** advisor or new collaborator. **Environment:** clean
-Linux/Windows, Python 3.12, no pre-existing `.venv/`.
+Linux / macOS / WSL, Python 3.12, no pre-existing `.venv/`.
 
 ```
 [ ] 1.1 git clone <repo_url> && cd qec-ai-decoder
@@ -77,16 +104,15 @@ Linux/Windows, Python 3.12, no pre-existing `.venv/`.
 [ ] 1.6 ./.venv/bin/pytest tests/ -m "not integration" --cov=autoqec --cov-report=term
         # line coverage >= 70% (aligns with ci-coverage-design.md)
 [ ] 1.7 most recent main-branch CI run is green
-        # gh run list --branch main --limit 1 -> conclusion=success
+        # `gh run list --branch main --limit 1 --json conclusion` -> [{"conclusion":"success"}]
 [ ] 1.8 directory structure matches spec §10:
         autoqec/{envs,agents,decoders,runner,eval,orchestration,tools}/,
         cli/, circuits/, demos/, tests/, docs/{contracts,superpowers}/
 [ ] 1.9 docs/contracts/{interfaces.md,round_dir_layout.md} last commit has
         `contract-change` label or 3-of-3 owner sign-off
-[ ] 1.10 ./.venv/bin/python -c "from autoqec.envs.schema import EnvSpec; \
-         import yaml; EnvSpec.model_validate(
-         yaml.safe_load(open('autoqec/envs/builtin/surface_d5_depol.yaml')))"
-         # no ValidationError; repeat for bb72_depol.yaml
+[ ] 1.10 ./.venv/bin/python -c "from autoqec.envs.schema import load_env_yaml; \
+         load_env_yaml('autoqec/envs/builtin/surface_d5_depol.yaml')"
+         # exits 0; repeat for autoqec/envs/builtin/bb72_depol.yaml
 ```
 
 **Gate:** 10/10 green -> proceed to Phase 2. Any FAIL -> open issue labelled
@@ -109,8 +135,10 @@ sufficient for most checks; GPU-gated ones are noted.
 [ ] 2.1.1 pytest tests/test_dsl_schema.py tests/test_agent_schemas_worktree.py \
           tests/test_runner_schema_worktree.py tests/test_verify_report_worktree.py -v
           # all green; count >= 20
-[ ] 2.1.2 hand-crafted malformed IdeatorResponse (fork_from missing) -> parse_response
-          raises pydantic ValidationError; error message names the missing field
+[ ] 2.1.2 hand-crafted IdeatorResponse with `rationale` field removed
+          (rationale IS a required field; fork_from defaults to "baseline")
+          -> `parse_response` wraps the underlying pydantic ValidationError
+          as a ValueError whose message names the missing field
 [ ] 2.1.3 the 6 pydantic signatures in docs/contracts/interfaces.md match the code
           (grep cross-check: EnvSpec, RunnerConfig, RoundMetrics, VerifyReport,
           IdeatorResponse, CoderResponse, AnalystResponse)
@@ -145,14 +173,16 @@ sufficient for most checks; GPU-gated ones are noted.
 ### 3.4 Runner (train + eval)
 
 ```
-[ ] 2.4.1 scripts/e2e_handshake.py --round-dir /tmp/hs1 writes
-          checkpoint.pt + metrics.json + train.log; train.log step count >= 100
-[ ] 2.4.2 metrics.json parses as RoundMetrics;
-          delta_vs_baseline_holdout / flops_per_syndrome / n_params are not None
+[ ] 2.4.1 ./.venv/bin/python scripts/e2e_handshake.py --round-dir /tmp/hs1
+          # exit 0; writes checkpoint.pt + metrics.json + train.log;
+          # train.log step count >= 100
+[ ] 2.4.2 metrics.json parses as RoundMetrics; delta_ler / flops_per_syndrome
+          / n_params are not None
 [ ] 2.4.3 run_round(cfg_with_code_cwd=X) called in-process -> raises
           RunnerCallPathError (tests/test_runner_guard.py)
-[ ] 2.4.4 pytest tests/test_runner_*.py tests/test_run_quick.py \
-          tests/test_run_single_round.py -q
+[ ] 2.4.4 pytest tests/test_runner_smoke.py tests/test_runner_safety.py \
+          tests/test_runner_guard.py tests/test_runner_schema_worktree.py \
+          tests/test_run_quick.py tests/test_run_single_round.py -q
           # all green
 ```
 
@@ -192,40 +222,43 @@ sufficient for most checks; GPU-gated ones are noted.
 ```
 [ ] 2.7.1 pytest tests/test_runner_safety.py tests/test_isolation_rule.py \
           tests/test_reward_hacking.py -q
-          # all green; test_reward_hacking.py constructs a DSL that reads
-          training-set syndromes at eval time -> safety layer must raise
+          # all green; test_reward_hacking.py constructs a predecoder that
+          reads training-set syndromes at eval time -> safety layer must raise
 [ ] 2.7.2 tools.machine_state with CUDA unavailable returns `{}` (does not raise);
           pytest tests/test_machine_state.py -q
 ```
 
-**Gate:** approx. 28 checkboxes across 7 subsections; >= 95% green (at most
-one non-core flaky item may be quarantined with an owner + deadline issue)
--> proceed to Phase 3.
+**Checkbox count:** 26 total across 2.1 .. 2.7.
+**Gate:** >= 25/26 green (at most one non-core flaky item may be
+quarantined with an owner + deadline issue) -> proceed to Phase 3.
 
 ---
 
 ## 4. Phase 3 — Single Research Round (No-LLM Handshake)
 
 **Purpose:** prove one research round walks from RunnerConfig to training,
-evaluation, and L1 persistence without needing real Ideator/Coder/Analyst
-LLM calls. Isolates pure engineering defects from LLM flakiness.
+evaluation, and L1 persistence without depending on real Ideator /
+Coder / Analyst LLM calls. Isolates pure engineering defects from LLM
+flakiness.
 
-**Operator:** team. **Environment:** GPU (surface_d5 dev profile runs about
-5-15 minutes).
+**Operator:** team. **Environment:** GPU (surface_d5 dev profile runs
+about 5–15 minutes).
 
 ### 4.1 `run_quick` flat path
 
 ```
-[ ] 3.1.1 ./.venv/bin/python scripts/run_quick.py \
-          --env autoqec/envs/builtin/surface_d5_depol.yaml \
-          --run-dir /tmp/rq1 --rounds 1
-          # exit 0; wall-clock < 15 min; GPU VRAM peak < 80% of available
-[ ] 3.1.2 /tmp/rq1/history.jsonl has exactly 1 line; JSON valid;
-          RoundMetrics.model_validate passes
-[ ] 3.1.3 /tmp/rq1/round_01/ contains: config.yaml, train.log,
-          checkpoint.pt, metrics.json
-[ ] 3.1.4 metrics.json.delta_vs_baseline_holdout in [-0.02, 0.02]
-          (sanity: cannot drift far under the same random seed)
+[ ] 3.1.1 ./.venv/bin/python scripts/run_quick.py --rounds 1 --profile dev \
+          --env-yaml autoqec/envs/builtin/surface_d5_depol.yaml
+          # exit 0; wall-clock < 15 min; GPU VRAM peak < 80% of available.
+          # The script picks the run dir itself under `runs/<timestamp>/`
+          # and prints the final JSON to stdout including `run_dir`.
+[ ] 3.1.2 capture RUN_DIR from the script's stdout; RUN_DIR/history.json
+          exists; `json.loads(RUN_DIR/'history.json')` returns a list of
+          length 1; entry[0] passes RoundMetrics.model_validate
+[ ] 3.1.3 RUN_DIR/round_1/ contains: config.yaml, train.log, checkpoint.pt,
+          metrics.json
+[ ] 3.1.4 metrics.json.delta_ler in [-0.02, 0.02]
+          (sanity: under the fixed seed this cannot drift far)
 ```
 
 ### 4.2 Handshake script
@@ -233,10 +266,10 @@ LLM calls. Isolates pure engineering defects from LLM flakiness.
 ```
 [ ] 3.2.1 ./.venv/bin/python scripts/e2e_handshake.py --round-dir /tmp/hs2
           # exit 0; artifacts same as 3.1.3
-[ ] 3.2.2 hs2/metrics.json.flops_per_syndrome > 0 and matches fvcore
+[ ] 3.2.2 /tmp/hs2/metrics.json.flops_per_syndrome > 0 and matches fvcore
           (autoqec.runner.flops)
-[ ] 3.2.3 checkpoint.pt is torch.load-replayable; loaded dict has all four
-          keys: class_name, state_dict, output_mode, dsl_config
+[ ] 3.2.3 /tmp/hs2/checkpoint.pt is torch.load-replayable; loaded dict has
+          all four keys: class_name, state_dict, output_mode, dsl_config
 ```
 
 ### 4.3 No-LLM single round via CLI
@@ -244,61 +277,93 @@ LLM calls. Isolates pure engineering defects from LLM flakiness.
 ```
 [ ] 3.3.1 ./.venv/bin/python -m cli.autoqec run \
           autoqec/envs/builtin/surface_d5_depol.yaml \
-          --rounds 1 --profile dev --no-llm --run-dir /tmp/cli1
-          # exit 0; wall-clock < 15 min
-[ ] 3.3.2 /tmp/cli1/history.jsonl row carries a UUID-v4 `round_attempt_id`;
-          `reconcile_id` is None (mutual-exclusion invariant)
-[ ] 3.3.3 /tmp/cli1/log.md non-empty; contains a "Round 1" heading
-[ ] 3.3.4 If VERIFIED: pareto.json contains at least 1 entry;
-          pareto_preview.json is the same set sorted by -delta_vs_baseline_holdout.
-          If not VERIFIED: pareto.json stays empty or unchanged (no invalid row).
+          --rounds 1 --profile dev --no-llm
+          # exit 0; wall-clock < 15 min.
+          # The CLI writes under runs/<YYYYMMDD-HHMMSS>/ (not user-controlled).
+          # The final stdout line begins with AUTOQEC_RESULT_JSON= and contains
+          # a JSON blob whose `run_dir` key is the authoritative path.
+[ ] 3.3.2 parse AUTOQEC_RESULT_JSON and name the resulting path CLI_RUN_DIR.
+          CLI_RUN_DIR/history.jsonl exists (append-only jsonl written by
+          RunMemory); every line passes RoundMetrics.model_validate.
+          Note: the `run --no-llm` command also writes a separate
+          `history.json` (single JSON list) for convenience — both files are
+          expected.
+[ ] 3.3.3 CLI_RUN_DIR/log.md non-empty; contains a "Round 1" heading
+[ ] 3.3.4 CLI_RUN_DIR/candidate_pareto.json exists (no-LLM path writes to
+          this filename; live-LLM path writes pareto.json via RunMemory
+          default). Contents are a list sorted by the non-dominated filter.
+          If the round was not VERIFIED: list may be empty.
 ```
 
 ### 4.4 Worktree round
 
 ```
-[ ] 3.4.1 ./.venv/bin/python -m cli.autoqec run-round <env> <cfg.yaml> /tmp/wt1 \
-          --code-cwd .worktrees/wt1-test --branch exp/test/01-smoke \
-          --fork-from baseline --compose-mode none
+[ ] 3.4.1 ./.venv/bin/python -m cli.autoqec run-round <env.yaml> \
+          <cfg.yaml> <round_dir> \
+          --code-cwd .worktrees/wt1-test --branch exp/test/1-smoke \
+          --fork-from baseline \
+          --round-attempt-id <new-uuid-v4>
+          # single-parent rounds OMIT --compose-mode (valid choices are
+          # pure | with_edit; "none" is not a valid value).
           # exit 0; .worktrees/wt1-test/ is a git worktree
           # (visible in `git worktree list`)
-[ ] 3.4.2 `git log exp/test/01-smoke --oneline | head -1` has feat/fix/test prefix
-          (Coder commit_message was written)
-[ ] 3.4.3 metrics.json.branch == "exp/test/01-smoke"; commit_sha is a 40-hex string
-[ ] 3.4.4 round_01_pointer.json exists in the worktree's round_01/;
-          `git show exp/test/01-smoke:round_01/round_01_pointer.json` round-trips
-[ ] 3.4.5 cleanup: invoke `autoqec.orchestration.worktree.cleanup_round_worktree`
-          (programmatic; no CLI wrapper yet — see O-6) -> .worktrees/wt1-test/
-          removed; branch `exp/test/01-smoke` retained (branches-as-Pareto)
+[ ] 3.4.2 `git log exp/test/1-smoke --oneline | head -1` has feat/fix/test
+          prefix (Coder commit_message was written by the runner / subprocess)
+[ ] 3.4.3 metrics.json.branch == "exp/test/1-smoke"; commit_sha is a 40-hex string
+[ ] 3.4.4 round_1_pointer.json exists in the worktree's round_1/ directory;
+          `git show exp/test/1-smoke:round_1/round_1_pointer.json` round-trips
+[ ] 3.4.5 cleanup via Python API (no CLI wrapper exists — see prerequisite
+          in §1.6): `python -c "from autoqec.orchestration.worktree import
+          cleanup_round_worktree; cleanup_round_worktree('.worktrees/wt1-test')"`
+          -> .worktrees/wt1-test/ removed; branch `exp/test/1-smoke` retained
+          (branches-as-Pareto)
 ```
 
 ### 4.5 Post-round invariants
 
 ```
-[ ] 3.5.1 history.jsonl is append-only: pre/post wc -l shows only growth;
-          no row deletions
+[ ] 3.5.1 history.jsonl (CLI live path) is append-only: pre/post wc -l shows
+          only growth; no row deletions. history.json (no-LLM path) is
+          rewritten atomically each round — its size may not grow monotonically
+          but its length MUST strictly increase.
 [ ] 3.5.2 Runner writes only inside round_<N>/; orchestrator writes only at
-          run-root. `find /tmp/cli1 -newer /tmp/cli1/.marker` shows no
-          cross-boundary writes
+          run-root. Verified by snapshotting directory mtimes before and
+          after the round and asserting no orchestrator-owned file under
+          round_<N>/ was modified by the runner (spot-check via
+          `find $RUN_DIR -newer $RUN_DIR/.marker -not -path '*/round_*/*'`
+          returning only orchestrator-owned filenames: history.jsonl,
+          history.json, log.md, candidate_pareto.json, pareto.json,
+          fork_graph.json).
 [ ] 3.5.3 fork_graph.json (if present) has round_1.parent == "baseline"
 [ ] 3.5.4 no orphan worktrees: `git worktree list | grep -v main` line count
           == active worktree count reported by RunMemory
 ```
 
-**Gate:** Phase 3's 5 subsections, approx. 18 checkboxes, all green; at most
-1 quarantine under 3.5. Any FAIL in 3.1-3.4 -> block demo.
+**Gate:** Phase 3's 5 subsections, 18 checkboxes total, all green;
+at most 1 quarantine under 3.5. Any FAIL in 3.1–3.4 -> block demo.
 
 ---
 
 ## 5. Phase 4 — Full Research Loop (Live LLM)
 
-**Purpose:** end-to-end verification of `cli.autoqec run <env> --rounds N`
-with real LLM calls through the full Ideator -> Coder -> Runner -> Analyst
--> (Verifier) DAG, once per reference environment. This is the artifact the
-advisor will watch.
+**`DEPENDS-ON`:** `cli.autoqec run` currently raises
+`ClickException("LLM mode is not wired in this branch yet; use --no-llm")`
+unless `--no-llm` is passed. The Ideator → Coder → Analyst DAG is not
+wired into the `run` command as of commit `28a9abf`. **The entire
+Phase 4 is blocked until that wiring lands.** Phase 3 (no-LLM path)
+is the highest executable gate until then.
 
-**Operator:** team (not advisor; advisor will replay). **Environment:**
-GPU + network; backend env vars as in CLAUDE.md.
+If live wiring does not land before Day-3 demo, the plan regresses to:
+advisor-ready = Phase 1 + 2 + 3 + Phase 5 on a **no-LLM-produced**
+candidate (Phase 3.3 `candidate_pareto.json` entry), with the gap
+explicitly called out in the walkthrough.
+
+**Purpose (once prerequisite lands):** end-to-end verification of
+`cli.autoqec run <env> --rounds N` with real LLM calls through the full
+Ideator → Coder → Runner → Analyst → (Verifier) DAG.
+
+**Operator:** team (not advisor; advisor will replay).
+**Environment:** GPU + network; backend env vars per CLAUDE.md.
 
 ### 5.1 surface_d5 full loop
 
@@ -308,148 +373,228 @@ GPU + network; backend env vars as in CLAUDE.md.
           AUTOQEC_ANALYST_BACKEND=claude-cli AUTOQEC_ANALYST_MODEL=claude-haiku-4-5 \
           ./.venv/bin/python -m cli.autoqec run \
           autoqec/envs/builtin/surface_d5_depol.yaml --rounds 3 --profile dev
-          # exit 0; wall-clock < 75 min
-[ ] 4.1.2 runs/<run_id>/history.jsonl has 3 rows; each is a valid RoundMetrics;
+          # exit 0; wall-clock < 75 min (provisional — no production evidence yet;
+          # re-calibrate after first live dry-run, see Open Question O-2).
+          # Capture run_dir from AUTOQEC_RESULT_JSON on stdout.
+[ ] 4.1.2 $RUN_DIR/history.jsonl has 3 rows; each is a valid RoundMetrics;
           each round_attempt_id is unique
-[ ] 4.1.3 runs/<run_id>/pareto.json length >= 1 (baseline or a VERIFIED round);
+[ ] 4.1.3 $RUN_DIR/pareto.json length >= 1 (baseline or a VERIFIED round);
           non-domination invariant: for all a, b in pareto, neither dominates
-          the other on (delta, flops, n_params)
-[ ] 4.1.4 runs/<run_id>/log.md contains 3 human-readable narrative blocks,
-          each with hypothesis -> result -> verdict
-[ ] 4.1.5 runs/<run_id>/fork_graph.json has 4 nodes (baseline + 3 rounds);
-          at least one round's parent != baseline (evidence that Ideator
-          used fork_graph for a non-trivial decision)
+          the other on (delta_ler, flops_per_syndrome, n_params)
+[ ] 4.1.4 $RUN_DIR/log.md contains 3 narrative blocks, each containing at
+          least one of the literal substrings: "Hypothesis", "Result",
+          "Verdict" (string-match gate, not subjective readability)
+[ ] 4.1.5 $RUN_DIR/fork_graph.json has 4 nodes (baseline + 3 rounds);
+          at least one round's parent != "baseline" (evidence that Ideator
+          used fork_graph). If all 3 parents are "baseline": emit a warning
+          row to log.md under a "## Warnings" header — not a block.
 [ ] 4.1.6 `git branch --list 'exp/<run_id>/*'` has 3 entries; every branch tip
-          commit has feat/fix/test/docs/test/chore prefix
+          commit message first token is one of: feat, fix, test, docs, chore,
+          refactor, perf, ci (conventional-commits prefix check via regex
+          `^(feat|fix|test|docs|chore|refactor|perf|ci)(\(.+\))?:\s`)
 ```
 
 ### 5.2 bb72 full loop
 
 ```
 [ ] 4.2.1 same backend env as 4.1.1, env swapped to bb72_depol.yaml
-          # exit 0; wall-clock < 120 min (OSD is slower than MWPM)
-[ ] 4.2.2 - 4.2.6 mirror 4.1.2 - 4.1.6
-[ ] 4.2.7 classical backend == "osd" (grep runs/<id>/round_01/config.yaml)
+          # exit 0; wall-clock < 120 min (provisional; see O-2).
+[ ] 4.2.2 – 4.2.6 mirror 4.1.2 – 4.1.6
+[ ] 4.2.7 classical backend == "osd" in runs/<id>/round_1/config.yaml
+          (parse YAML; `env.classical_backend` key)
 ```
 
 ### 5.3 LLM dispatch / machine_state loop
 
 ```
-[ ] 4.3.1 the Ideator prompt log (runs/<id>/round_N/ideator_prompt.json)
-          contains fork_graph, machine_state, pareto_front keys, and does
-          NOT contain last_5_hypotheses
-[ ] 4.3.2 at least one round has a non-trivial fork_from (!= "baseline"),
-          showing Ideator read the fork_graph; if all 3 rounds have
-          fork_from == baseline, emit a warning to log.md (not a block)
-[ ] 4.3.3 machine_state tool is called at least once across the 3 rounds
-          (look for `tool_call: machine_state` in logs)
-[ ] 4.3.4 if compose_mode != none is triggered: compose round's
-          metrics.json.status is in {VERIFIED, SUSPICIOUS, FAILED,
-          compose_conflict} (never "unknown")
+[ ] 4.3.1 the Ideator prompt log (runs/<id>/round_N/ideator_prompt.json, if
+          the role persists its prompt; otherwise check the generated context
+          object) contains `fork_graph`, `machine_state`, `pareto_front` keys,
+          and does NOT contain `last_5_hypotheses`
+[ ] 4.3.2 at least one round has a non-trivial `fork_from` — either a
+          string other than "baseline" or a list (compose round). If all 3
+          rounds have `fork_from == "baseline"`: emit a warning to log.md
+          (not a block)
+[ ] 4.3.3 machine_state tool is recorded as called in the orchestration
+          history at least once across the 3 rounds. Exact match:
+          `grep -c '"tool_call":\s*"machine_state"' $RUN_DIR/log.md` >= 1.
+          If the tool-call log shape is different in the live wiring,
+          update this gate as part of the prerequisite landing.
+[ ] 4.3.4 if compose_mode != None is triggered by any round: that round's
+          metrics.json.status is in {"ok", "compose_conflict",
+          "killed_by_safety"} (known valid RoundMetrics.status values;
+          confirm against runner/schema.py when live wiring lands)
 [ ] 4.3.5 per-env, 3-round total token usage <= 500K input + 80K output
-          (sum the usage fields from Codex / Claude CLI output)
+          (provisional budget — no production evidence yet; re-calibrate
+          after first live dry-run, see O-2). Sum the usage fields from
+          Codex / Claude CLI output.
 ```
 
 ### 5.4 Loop-level invariants
 
 ```
 [ ] 4.4.1 interrupt + resume is idempotent: run with rounds=3, Ctrl+C during
-          round 2, re-run -> continues with round 3, does not redo finished
-          rounds; md5 of the first 2 history.jsonl rows is unchanged
-[ ] 4.4.2 reconcile trip: manually `git branch -D exp/<run_id>/01-*` -> next
-          startup writes an idempotent `branch_manually_deleted` synthetic
-          row; starting again does not rewrite it
+          round 2, re-run the same command -> continues with round 3, does
+          not redo finished rounds. Verified by diffing
+          `head -2 $RUN_DIR/history.jsonl` pre and post.
+[ ] 4.4.2 reconcile trip: manually `git branch -D exp/<run_id>/1-*` ->
+          next startup writes an idempotent `branch_manually_deleted`
+          synthetic row; starting again does not rewrite it
 [ ] 4.4.3 .worktrees/ is not tracked: `git ls-files .worktrees/` is empty
 [ ] 4.4.4 runs/ is not tracked: same
-[ ] 4.4.5 no runner boundary violation: mtime of history.jsonl + log.md
-          aligns with orchestrator process; round_<N>/* aligns with runner
-          subprocess (spot check)
+[ ] 4.4.5 **Dirty-worktree precondition** (new, §9 missing failure mode 1):
+          starting a run with uncommitted changes in the main checkout
+          emits a warning and records the working-tree SHA of the dirty
+          files into the per-round artifact manifest (see §6.6) so the
+          run is not mistaken for a clean reproduction.
+```
+
+### 5.5 Artifact manifest (new; §9 missing failure mode 2)
+
+```
+[ ] 4.5.1 each round_N/ contains an artifact_manifest.json with at least:
+          repo_sha (HEAD), branch, env_yaml_sha256, dsl_config_sha256,
+          python_version, torch_version, cuda_version (or "none"),
+          stim_version, pymatching_version, ldpc_version, full command line
+          invoked. If the runner does not yet write this, the plan writes
+          an issue `blocks-demo:artifact-manifest` and 4.5.1 is marked
+          DEPENDS-ON.
+[ ] 4.5.2 re-running from the recorded command line on the same repo_sha
+          reproduces the round within the bootstrap-CI tolerance (spot
+          check: re-run round 1, assert |new_delta_ler - old_delta_ler|
+          within 2× the 95% CI half-width).
+```
+
+### 5.6 LLM containment (new; §9 missing failure mode 3)
+
+```
+[ ] 4.6.1 after a live round completes, verify the experiment branch
+          introduced no changes outside the worktree's allowed scope:
+          `git diff baseline..exp/<run_id>/N-* -- 'runs/' 'tests/'
+          'autoqec/envs/builtin/' 'autoqec/eval/'` returns empty.
+          Any diff under those paths = containment breach = block demo.
+[ ] 4.6.2 `git diff baseline..exp/<run_id>/N-* -- 'docs/contracts/'` is empty
+          (contracts freeze).
 ```
 
 **Gate:**
-- 4.1 AND 4.2 must pass (advisor expects to see both). Any FAIL -> block demo.
-- 4.3 tolerates at most 1 warning soft-fail.
-- 4.4 tolerates at most 2 quarantines (each with follow-up issue).
+- If the prerequisite in §1.6 has not landed: all of Phase 4 is
+  blocked; this is NOT a failure (see §1.5), but demo must call out
+  the reduced scope.
+- Else: 4.1 AND 4.2 both green (both envs must pass — this overrides
+  the earlier draft's "at least one env" language, per Codex M4).
+  4.3 tolerates at most 1 warning soft-fail. 4.4 + 4.5 + 4.6 tolerate
+  at most 2 quarantines.
 
 ---
 
 ## 6. Phase 5 — Verification & Diagnostic Skill Layer
 
 **Purpose:** turn every Δ_LER number into something independently
-verifiable; demonstrate that reward-hacking attempts are actively detected;
-demonstrate that runs can be human-read and diagnosed. This is the
-answer to "how do you prove this is not cheating?"
+verifiable; demonstrate reward-hacking attempts are actively detected;
+demonstrate runs can be human-read and diagnosed. This is the answer to
+"how do you prove this is not cheating?"
 
 **Operator:** Xie Jingu primary, team cross-checks. **Environment:** CPU
 sufficient (independent eval does not train).
 
-### 6.1 `/verify-decoder` positive case
+### 6.1 `autoqec verify` positive case
+
+**`DEPENDS-ON`:** `independent_verify` must set
+`VerifyReport.paired_eval_bundle_id` (the schema field exists but is
+never written). VERIFIED reports must be wired to update the run's
+`pareto.json`. Both are unmerged as of commit `28a9abf`.
 
 ```
-[ ] 5.1.1 pick a candidate (Analyst verdict == candidate) from Phase 4;
+[ ] 5.1.1 pick a candidate (Analyst verdict == candidate) from Phase 4 or
+          Phase 3's no-LLM path;
           ./.venv/bin/python -m cli.autoqec verify \
-          runs/<run_id>/round_02 --env autoqec/envs/builtin/surface_d5_depol.yaml \
+          runs/<run_id>/round_2 --env autoqec/envs/builtin/surface_d5_depol.yaml \
           --n-seeds 50
           # exit 0; writes verification_report.md AND verification_report.json
           # inside the round directory
-[ ] 5.1.2 verification_report.md carries verdict in {VERIFIED, SUSPICIOUS,
-          FAILED}; delta_ler_holdout with bootstrap 95% CI [lo, hi];
-          paired_eval_bundle_id is a non-empty UUID
-[ ] 5.1.3 VerifyReport.model_validate parses verification_report.json
-[ ] 5.1.4 if verdict == VERIFIED: this round appears in pareto.json;
-          if SUSPICIOUS/FAILED: it does not
+[ ] 5.1.2 verification_report.json parses as VerifyReport; verdict in
+          {VERIFIED, SUSPICIOUS, FAILED}; delta_ler_holdout carries a
+          bootstrap 95% CI [lo, hi]; paired_eval_bundle_id is a non-empty
+          UUID (DEPENDS-ON field to be wired)
+[ ] 5.1.3 if verdict == VERIFIED: the round appears in the run's
+          pareto.json (DEPENDS-ON verify↔pareto integration to land)
+          if SUSPICIOUS/FAILED: the round does NOT appear in pareto.json
 ```
 
-### 6.2 `/verify-decoder` reward-hacking traps
+### 6.2 `autoqec verify` reward-hacking traps
 
-Three deliberately cheating checkpoints. Verifier must reject each.
+**`DEPENDS-ON`:** the trap fixtures
+`tests/fixtures/reward_hacking/trap_{A,B,C}.pt` do not currently exist.
+Existing `tests/test_reward_hacking.py` builds synthetic memorizer
+checkpoints in a tmp dir. Until the explicit fixtures land, 5.2 falls
+back to verifying the existing synthetic tests behave as expected.
 
 ```
 [ ] 5.2.1 Trap-A "training-syndrome leak": predecoder embeds a lookup
-          over training seeds' syndromes -> verdict != VERIFIED;
-          verification_report.md contains "holdout mismatch" or "seed leak"
+          over training seeds' syndromes -> verify verdict != VERIFIED;
+          verification_report.md contains literal substrings
+          "holdout" AND ("mismatch" OR "leak" OR "isolation")
 [ ] 5.2.2 Trap-B "paired batch mismatch": predecoder is evaluated on an
           easier batch than the plain-classical baseline -> verdict !=
-          VERIFIED; paired_eval_bundle_id must be identical across the two
-          evaluations
-[ ] 5.2.3 Trap-C "overfit tiny sample": train on 100 shots, checkpoint
-          memorizes -> independent eval on 200K holdout -> verdict ==
-          FAILED OR 95% CI of delta_vs_baseline_holdout crosses 0
-[ ] 5.2.4 trap fixtures live at tests/fixtures/reward_hacking/trap_{A,B,C}.pt;
-          pytest tests/test_reward_hacking.py -q -> all green
+          VERIFIED; paired_eval_bundle_id values of the two compared
+          evaluations are identical (byte-equal string comparison)
+[ ] 5.2.3 Trap-C "overfit tiny sample": train on 100 shots, predecoder
+          memorizes -> independent eval on >= 200K holdout shots ->
+          verdict == FAILED OR the 95% CI of delta_ler_holdout crosses 0
+[ ] 5.2.4 trap fixtures live at tests/fixtures/reward_hacking/trap_{A,B,C}.pt
+          AND pytest tests/test_reward_hacking.py -q -> all green.
+          Until fixtures land: this checkbox is DEPENDS-ON; existing
+          test_reward_hacking.py must still pass as the baseline for
+          5.2.1–5.2.3 behavior.
 [ ] 5.2.5 `independent_eval.py` imports no symbol from autoqec.runner.*
-          (spec §10 CI guard); cross-check via grep
+          (spec §10 CI guard); cross-check:
+          `grep -E "^(from|import)\s+autoqec\.runner" \
+          autoqec/eval/independent_eval.py` returns empty
 ```
 
-### 6.3 `/review-log`
+### 6.3 `autoqec review-log`
+
+**`DEPENDS-ON`:** the current `review-log` subcommand prints a JSON stats
+blob to stdout and does not write a `review.md`. Either the command is
+extended to also write `review.md`, or the plan adapts to the JSON
+contract below.
 
 ```
-[ ] 5.3.1 run /review-log against Phase-4 produced runs/<run_id>/log.md
-          -> produces runs/<run_id>/review.md
-[ ] 5.3.2 review.md has four sections (strict names): narrative coherence,
-          stuck hypotheses, overfitting signals, next-action recommendation
-[ ] 5.3.3 on a synthetic stuck run (three consecutive Δ_LER approx 0 rounds
-          injected), review.md must call out the pattern under "stuck
-          hypotheses"
-[ ] 5.3.4 review.md length >= 300 and <= 2000 words (not padding, not
-          an LLM sprawl)
+[ ] 5.3.1 ./.venv/bin/python -m cli.autoqec review-log $RUN_DIR
+          # exit 0; prints a JSON blob to stdout
+[ ] 5.3.2 the JSON has exactly these keys: n_rounds, n_pareto,
+          n_killed_by_safety, mean_wallclock_s, top_hypotheses.
+          n_rounds matches `wc -l $RUN_DIR/history.jsonl`.
+[ ] 5.3.3 on a synthetic stuck run (three consecutive delta_ler in
+          [-0.002, 0.002] rounds injected into history.jsonl), a future
+          `review.md`-writing version of the skill must call out the
+          pattern. DEPENDS-ON review-log emitting a written report;
+          until then, the stats JSON alone is the gate.
 ```
 
-### 6.4 `/diagnose-failure`
+### 6.4 `autoqec diagnose`
+
+**`DEPENDS-ON`:** the current `diagnose` subcommand prints a JSON blob
+(path, has_config_yaml, has_metrics_json, has_train_log, optional
+metrics snapshot). It does not output a `diagnosis.md`. Either the
+command is extended, or the plan adapts.
 
 ```
-[ ] 5.4.1 inject three failure modes:
-          (a) oversized hidden_dim -> OOM
-          (b) LR=10.0 -> NaN loss
-          (c) env yaml with p=0 -> degenerate eval
-          for each, run /diagnose-failure --run-dir <path> --round N
-          -> produces diagnosis.md
-[ ] 5.4.2 diagnosis.md.root_cause contains (fuzzy match):
-          (a) "OOM" or "VRAM" or "memory"
-          (b) "NaN" or "learning rate" or "divergence"
-          (c) "degenerate" or "p=0" or "no errors"
-[ ] 5.4.3 diagnosis.md.recommended_fix is non-empty; the skill does NOT
-          autonomously apply a fix (per spec)
+[ ] 5.4.1 inject three failure modes into separate run dirs:
+          (a) oversized hidden_dim -> train.log ends with OOM
+          (b) LR=10.0 -> train.log contains NaN
+          (c) env yaml with p=0 -> metrics.json.delta_ler == 0.0 exactly
+          for each, run ./.venv/bin/python -m cli.autoqec diagnose $RUN_DIR
+          -> exits 0; prints JSON blob.
+[ ] 5.4.2 the JSON's metrics snapshot agrees with the injected failure:
+          (a) metrics.json absent OR status == "killed_by_safety"
+          (b) metrics.json has nan in train.log, status == "killed_by_safety"
+          (c) metrics.json.delta_ler == 0.0
+[ ] 5.4.3 DEPENDS-ON enhancement: once `diagnose` writes diagnosis.md,
+          add a `root_cause` field with fuzzy-match gates (OOM / NaN /
+          degenerate) and a non-empty `recommended_fix`. Skill must not
+          autonomously apply the fix (per spec §7.3).
 ```
 
 ### 6.5 Statistical correctness
@@ -457,21 +602,55 @@ Three deliberately cheating checkpoints. Verifier must reject each.
 ```
 [ ] 5.5.1 bootstrap CI unit test: known LER=0.01, N=200K, 1000 resamples
           -> 95% CI width < 0.002 (consistent with analytic
-          2 * 1.96 * sqrt(p*(1-p)/N)); in tests/test_independent_eval.py
-[ ] 5.5.2 holdout-seed isolation: training_seeds.isdisjoint(holdout_seeds)
-          asserted in code
+          2 * 1.96 * sqrt(p*(1-p)/N)); asserted in
+          tests/test_independent_eval.py
+[ ] 5.5.2 holdout-seed isolation: `training_seeds.isdisjoint(holdout_seeds)`
+          asserted in code (env schema enforces this via the seed_policy
+          model)
 [ ] 5.5.3 paired eval: under a given paired_eval_bundle_id, the syndrome
           tensors used for plain_classical and predecoder+classical are
-          byte-hash equal
-[ ] 5.5.4 ablation sanity: a random-weights predecoder must have
-          Δ_LER 95% CI crossing 0 (no systematic positive bias in the
-          evaluation protocol); in tests/test_independent_eval.py
+          byte-hash equal (DEPENDS-ON bundle_id being written)
+[ ] 5.5.4 ablation sanity: a random-weights predecoder has delta_ler
+          95% CI crossing 0 (no systematic positive bias in the evaluation
+          protocol); asserted in tests/test_independent_eval.py
+```
+
+### 6.6 Pareto write atomicity (new; §9 missing failure mode 4)
+
+```
+[ ] 5.6.1 pareto.json is written via a tmp-file + rename (atomic on POSIX).
+          Verified by grep of `os.replace` or `Path(...).replace` in
+          `autoqec/orchestration/memory.py` around the pareto writer.
+[ ] 5.6.2 pytest test that kills the writer mid-update (e.g. via
+          monkeypatched `tmp.write` raising) leaves either the old
+          pareto.json intact OR a detectable-tmp file, never a truncated
+          JSON. If no such test exists: open issue
+          `blocks-demo:pareto-atomicity`; this is a required gate.
+[ ] 5.6.3 concurrent-writer guard: documentation in memory.py must
+          explicitly state whether `RunMemory` is single-writer or uses
+          an advisory lock. If single-writer, a startup check fails fast
+          on a stale lock / running peer.
+```
+
+### 6.7 Advisor replay mode (new; §9 missing failure mode 5)
+
+```
+[ ] 5.7.1 advisor can replay a packaged run without network / LLM:
+          `./.venv/bin/python -m cli.autoqec verify <round_dir> --env <yaml>
+          --n-seeds 50` runs to completion with `AUTOQEC_*_BACKEND=offline`
+          (or the env vars simply unset). No outbound HTTP.
+[ ] 5.7.2 package format: the run_dir tarball (`runs/<run_id>.tar.gz`)
+          plus the repo SHA in artifact_manifest.json is sufficient to
+          replay. Verified by un-tarring to a fresh dir and re-running 5.7.1.
 ```
 
 **Gate:**
-- 5.1, 5.2, 5.5 must all pass (research integrity is non-negotiable).
-- 5.3 and 5.4 must each produce at least one live output (visual check OK).
-- **Any Trap in 5.2 that gets verdict == VERIFIED blocks the demo** and
+- 5.1, 5.2, 5.5, 5.6, 5.7 must pass (research integrity is
+  non-negotiable); 5.2's DEPENDS-ON paths fall back to the existing
+  synthetic tests.
+- 5.3 and 5.4 must each produce at least one live output (JSON blob
+  until DEPENDS-ON enhancements land).
+- Any trap in 5.2 that gets verdict == VERIFIED blocks the demo and
   `independent_eval.py` must be fixed before re-running.
 
 ---
@@ -479,32 +658,35 @@ Three deliberately cheating checkpoints. Verifier must reject each.
 ## 7. Test Data
 
 ```
-demos/demo-1-surface-d5/expected_output/baseline_benchmark.json  # anchor LER=0.01394
-tests/fixtures/reward_hacking/trap_{A,B,C}.pt                    # Phase 5 traps
-autoqec/example_db/gnn_*.yaml, neural_bp_*.yaml                  # Tier-1 seeds
-autoqec/envs/builtin/{surface_d5_depol,bb72_depol}.yaml          # reference envs
-holdout seeds: [10, 20, 30]  (fixed; disjoint from training seeds [0..9])
+demos/demo-1-surface-d5/expected_output/baseline_benchmark.json   # LER=0.01394 anchor
+tests/fixtures/reward_hacking/trap_{A,B,C}.pt                     # DEPENDS-ON fixtures
+autoqec/example_db/gnn_{small,medium,gated}.yaml,
+autoqec/example_db/neural_bp_{min,attn,per_check}.yaml,
+autoqec/example_db/handshake_stub.yaml                            # Tier-1 seeds
+autoqec/envs/builtin/{surface_d5_depol,bb72_depol}.yaml           # reference envs
+holdout seeds: per env_yaml.noise.seed_policy.holdout (disjoint from training)
 ```
 
 ---
 
-## 8. Open Questions (must close before test plan execution)
+## 8. Open Questions (close before test plan execution)
 
 ```
 [ ] O-1 CI runner: CPU only, or self-hosted GPU? Decides whether Phase 3/4
         can run in CI. Default assumption: local GPU + CI CPU only.
-[ ] O-2 Phase 4 token budget cap (500K input / 80K output) — does this
-        match the actual billed usage of AUTOQEC_* backends? A one-shot
-        calibration run is needed.
-[ ] O-3 Owner of the three Phase-5.2 trap fixtures — proposed: Xie Jingu.
-        Deadline: 12 hours before Day-3 demo.
+[ ] O-2 Phase 4 wall-clock budgets (75 min surface_d5 / 120 min bb72) and
+        token budget (500K input / 80K output per env) are placeholders
+        with no production evidence. Owner of the live-LLM DAG wiring
+        (§1.6) should re-calibrate after first end-to-end dry-run.
+[ ] O-3 Phase-5.2 trap fixture construction and Phase 5 owner
+        assignments — deferred per current project consensus; to be
+        picked up once fixtures are scheduled.
 [ ] O-4 Advisor demo day: live run (re-run Phase 4) or replay (recorded
         Phase 4)? Affects the Phase 1 wall-clock gate for the advisor.
-[ ] O-5 `/diagnose-failure` injected-failure fixtures: are the three cases
-        (OOM / NaN / p=0) already canned, or do we need to build them?
-[ ] O-6 `autoqec cleanup-worktree` CLI wrapper does not yet exist; either
-        add a thin wrapper over `cleanup_round_worktree` before demo, or
-        adjust 3.4.5 to call the Python API directly.
+[ ] O-5 `diagnose` injected-failure fixtures (OOM / NaN / p=0): build now
+        or defer to post-Day-3 regression suite?
+[ ] O-6 `autoqec cleanup-worktree` CLI wrapper or keep Python-API-only?
+        Affects 3.4.5.
 ```
 
 ---
@@ -513,34 +695,42 @@ holdout seeds: [10, 20, 30]  (fixed; disjoint from training seeds [0..9])
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Day-3 scope too large (per status §4.5) | High | Phase 4 yellow | Prioritize Phase 1+2+3 and a single-env Phase 4 |
-| Reward-hack trap itself is buggy (rejects legitimate checkpoints) | Medium | Phase 5 all fails | Run each trap against the baseline first; confirm verdict == VERIFIED for the clean case |
+| Live-LLM DAG wiring (§1.6 prereq) does not land before Day-3 demo | High | Phase 4 blocked | Advisor-ready narrative falls back to Phase 1+2+3 + Phase 5 on a Phase-3 candidate; gap is called out in the walkthrough, not hidden |
+| Day-3 scope too large (per status §4.5) | High | Phase 4 yellow | Prioritize Phase 1+2+3 and single-env Phase 4 when live wiring lands |
+| Reward-hack trap itself is buggy (rejects legitimate checkpoints) | Medium | Phase 5 all fails | Run each trap against the baseline checkpoint first; confirm verdict == VERIFIED for the clean case |
 | LLM backend flaky (Codex CLI drops) | Medium | Phase 4 stuck | Fall back to claude-cli; plan documents both backend combinations as verified |
-| `pareto.json` concurrent overwrite | Low | Data loss | Phase 2.5 covers it; Phase 4 adds mtime invariant (4.4.5) |
-| `cli/autoqec.py::run` relative `round_dir` bug (status §4.5) unfixed | Medium | Verifier can't load checkpoints | Phase 3.4 must pass; merge Lin's one-line fix before Phase 1 |
+| Artifact manifest not written (§5.5) | Medium | Reproduction impossible | Open `blocks-demo:artifact-manifest`; manifest writer is a prerequisite |
+| LLM containment not enforced (§5.6) | Medium | Silent contract drift | §4.6 git-diff check is the enforcement; runs that breach get rolled back |
+| Pareto concurrent overwrite / crash-truncate | Low | Data loss | §6.6 atomicity check + single-writer assertion |
+| `cli/autoqec.py::run` writes runs under `runs/<timestamp>/` with no user control | Medium | Tests that hard-code a path fail silently | Spec now reads `AUTOQEC_RESULT_JSON.run_dir` from stdout instead of setting `--run-dir` |
 
 ---
 
 ## 10. Success Criteria Summary
 
+Aligned with §2–§6 gates exactly (previous draft's "at least one env
+must pass" language is REMOVED — both envs must pass once Phase 4
+is unblocked).
+
 | Gate | Minimum pass | Blocks demo? |
 |---|---|---|
 | Phase 1 | 10/10 green | Yes |
-| Phase 2 | >= 95% green (at most 1 quarantine) | Yes |
-| Phase 3 | 3.1-3.4 all green; at most 1 quarantine in 3.5 | Yes |
-| Phase 4 | 4.1 AND 4.2 all green; 4.3 at most 1 warning; 4.4 at most 2 quarantines | Yes (at least one env must pass) |
-| Phase 5 | 5.1 + 5.2 + 5.5 all green; 5.3 + 5.4 each produce one live output | Yes |
+| Phase 2 | >= 25/26 green (at most 1 quarantine) | Yes |
+| Phase 3 | 3.1–3.4 all green; at most 1 quarantine in 3.5 | Yes |
+| Phase 4 | If live wiring landed: 4.1 AND 4.2 both green; 4.3 at most 1 warning; 4.4+4.5+4.6 at most 2 quarantines. If not landed: blocked (not failed) — narrative shifts to Phase 3 candidate | Conditionally |
+| Phase 5 | 5.1 + 5.2 + 5.5 + 5.6 + 5.7 must pass (5.2 DEPENDS-ON falls back to synthetic tests); 5.3 + 5.4 each produce one live output | Yes |
 
-**Overall demo-ready verdict:** all five phase gates met simultaneously ->
-ship to advisor; otherwise block and enumerate open items in a GitHub issue.
+**Overall demo-ready verdict:** all five phase gates met
+(with Phase 4's conditional rule) -> ship to advisor; otherwise block and
+enumerate open items in a GitHub issue.
 
 ---
 
-## References
+## 11. References
 
 - `docs/superpowers/specs/2026-04-20-autoqec-design.md` — authoritative
-  design (v2.3); source for spec §10 architecture, reward-hacking
-  defenses, and Pareto-as-non-dominated-set.
+  design (v2.3); source for §10 architecture, reward-hacking defenses,
+  Pareto-as-non-dominated-set.
 - `docs/contracts/interfaces.md` — pydantic schemas exercised by
   Phase 2.1 and Phase 5.1.
 - `docs/contracts/round_dir_layout.md` — who writes what inside
@@ -549,6 +739,10 @@ ship to advisor; otherwise block and enumerate open items in a GitHub issue.
   regression suite that complements this acceptance plan.
 - `docs/status/2026-04-22-project-status.md` — Day-2 status snapshot;
   source for Risk list.
-- GitHub issue QuAIR/0420-FPGA-Decoder#3 — structural inspiration
+- GitHub issue `QuAIR/0420-FPGA-Decoder#3` — structural inspiration
   (phased acceptance checklist). This plan tightens the quantification
   that the FPGA plan left soft.
+- Codex cross-model review (2026-04-23, GPT-5.4 via `codex exec`) —
+  source of the v2 revision: factual corrections (H1–H6), schema
+  alignment (M1–M6), and the 5 missing failure modes now woven into
+  §4.4.5 / §4.5 / §4.6 / §6.6 / §6.7.
