@@ -4,6 +4,7 @@ from importlib import resources
 import json
 import os
 import random
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -33,6 +34,12 @@ def main() -> None:
 
 
 RESULT_PREFIX = "AUTOQEC_RESULT_JSON="
+_OOM_RE = re.compile(r"(out of memory|(?<![a-z])oom(?![a-z])|(?<![a-z])vram(?![a-z]))", re.IGNORECASE)
+_NAN_RE = re.compile(r"(?<![a-z])nan(?![a-z])", re.IGNORECASE)
+_COMPILE_RE = re.compile(
+    r"(compile_error|validation failed|must be >=|must be <=|valueerror|validationerror)",
+    re.IGNORECASE,
+)
 
 
 def _read_text_if_exists(path: Path) -> str:
@@ -50,22 +57,31 @@ def _first_matching_line(candidates: list[str], predicate) -> str | None:
     return None
 
 
+def _round_sort_key(path: Path) -> tuple[int, int | str]:
+    suffix = path.name.removeprefix("round_")
+    if suffix.isdigit():
+        return (0, int(suffix))
+    return (1, path.name)
+
+
 def _diagnose_failure_signature(metrics: dict | None, train_log_text: str, config_text: str) -> tuple[str, list[str]]:
     status_reason = ""
+    status = ""
     if metrics is not None:
         status_reason = str(metrics.get("status_reason") or "")
+        status = str(metrics.get("status") or "").lower()
     candidates = [status_reason, train_log_text, config_text]
 
     oom_signal = _first_matching_line(
         candidates,
-        lambda line: "out of memory" in line or "oom" in line or "vram" in line,
+        lambda line: bool(_OOM_RE.search(line)),
     )
     if oom_signal is not None:
         return "oom", [oom_signal]
 
     nan_signal = _first_matching_line(
         candidates,
-        lambda line: "nan" in line,
+        lambda line: bool(_NAN_RE.search(line)),
     )
     if nan_signal is not None:
         return "nan_loss", [nan_signal]
@@ -77,14 +93,16 @@ def _diagnose_failure_signature(metrics: dict | None, train_log_text: str, confi
     if degenerate_signal is not None:
         return "degenerate_p_zero", [degenerate_signal]
 
+    if status == "compile_error":
+        compile_signal = _first_matching_line(
+            candidates,
+            lambda line: bool(_COMPILE_RE.search(line)),
+        )
+        return "compile_error", [compile_signal or status_reason or status]
+
     compile_signal = _first_matching_line(
         candidates,
-        lambda line: (
-            "compile_error" in line
-            or "validation failed" in line
-            or "must be >=" in line
-            or "pydantic" in line
-        ),
+        lambda line: bool(_COMPILE_RE.search(line)),
     )
     if compile_signal is not None:
         return "compile_error", [compile_signal]
@@ -583,7 +601,7 @@ def diagnose(run_dir: str) -> None:
     if (rd / "metrics.json").exists() or (rd / "train.log").exists():
         target = rd
     else:
-        round_dirs = sorted(rd.glob("round_*"))
+        round_dirs = sorted(rd.glob("round_*"), key=_round_sort_key)
         if not round_dirs:
             click.echo("No round dirs found and no metrics in given path")
             return
