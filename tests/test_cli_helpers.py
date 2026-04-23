@@ -392,6 +392,106 @@ def test_verify_command_runs_with_offline_backend_env(monkeypatch, tmp_path) -> 
     assert (round_dir / "verification_report.json").exists()
 
 
+def test_package_run_command_emits_result_prefix(tmp_path) -> None:
+    run_dir = tmp_path / "runs" / "demo-run"
+    round_dir = run_dir / "round_1"
+    round_dir.mkdir(parents=True)
+    (round_dir / "config.yaml").write_text("type: gnn\n", encoding="utf-8")
+    (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
+    (round_dir / "metrics.json").write_text(json.dumps({"status": "ok"}), encoding="utf-8")
+    (round_dir / "train.log").write_text("0\t0.1\n", encoding="utf-8")
+    (round_dir / "artifact_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "repo": {"commit_sha": "abc123", "branch": "topic", "dirty": False},
+                "environment": {"env_yaml_path": "autoqec/envs/builtin/surface_d5_depol.yaml", "env_yaml_sha256": "deadbeef"},
+                "round": {
+                    "run_id": "demo-run",
+                    "round_dir": "round_1",
+                    "round": 1,
+                    "dsl_config_sha256": "cafebabe",
+                    "command_line": ["python", "-m", "cli.autoqec", "run", "--no-llm"],
+                },
+                "artifacts": {
+                    "config_yaml": "config.yaml",
+                    "checkpoint": "checkpoint.pt",
+                    "metrics": "metrics.json",
+                    "train_log": "train.log",
+                },
+                "packages": {
+                    "python": "3.12.3",
+                    "torch": "2.0",
+                    "cuda": "none",
+                    "stim": "1.0",
+                    "pymatching": "2.0",
+                    "ldpc": "1.0",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli.main, ["package-run", str(run_dir)], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    payload_line = next(line for line in result.output.splitlines() if line.startswith(cli.RESULT_PREFIX))
+    payload = json.loads(payload_line[len(cli.RESULT_PREFIX) :])
+    assert payload["run_dir"] == str(run_dir.resolve())
+    assert payload["package_path"].endswith("demo-run.tar.gz")
+    assert payload["rounds"] == ["round_1"]
+    assert Path(payload["package_path"]).exists()
+
+
+def test_package_run_command_refuses_to_overwrite_existing_tarball(tmp_path) -> None:
+    run_dir = tmp_path / "runs" / "demo-run"
+    round_dir = run_dir / "round_1"
+    round_dir.mkdir(parents=True)
+    (round_dir / "config.yaml").write_text("type: gnn\n", encoding="utf-8")
+    (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
+    (round_dir / "metrics.json").write_text(json.dumps({"status": "ok"}), encoding="utf-8")
+    (round_dir / "train.log").write_text("0\t0.1\n", encoding="utf-8")
+    (round_dir / "artifact_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "repo": {"commit_sha": "abc123", "branch": "topic", "dirty": False},
+                "environment": {"env_yaml_path": "autoqec/envs/builtin/surface_d5_depol.yaml", "env_yaml_sha256": "deadbeef"},
+                "round": {
+                    "run_id": "demo-run",
+                    "round_dir": "round_1",
+                    "round": 1,
+                    "dsl_config_sha256": "cafebabe",
+                    "command_line": ["python", "-m", "cli.autoqec", "run", "--no-llm"],
+                },
+                "artifacts": {
+                    "config_yaml": "config.yaml",
+                    "checkpoint": "checkpoint.pt",
+                    "metrics": "metrics.json",
+                    "train_log": "train.log",
+                },
+                "packages": {
+                    "python": "3.12.3",
+                    "torch": "2.0",
+                    "cuda": "none",
+                    "stim": "1.0",
+                    "pymatching": "2.0",
+                    "ldpc": "1.0",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir.parent / "demo-run.tar.gz").write_text("already here", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli.main, ["package-run", str(run_dir)])
+
+    assert result.exit_code != 0
+    assert "already exists" in result.output
+
+
 def test_review_log_handles_missing_history(tmp_path) -> None:
     runner = CliRunner()
     result = runner.invoke(cli.review_log, [str(tmp_path)], catch_exceptions=False)

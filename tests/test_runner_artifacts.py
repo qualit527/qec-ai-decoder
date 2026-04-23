@@ -68,6 +68,8 @@ def _toy_cfg(round_dir: Path) -> RunnerConfig:
         training_profile="dev",
         seed=0,
         round_dir=str(round_dir),
+        env_yaml_path="autoqec/envs/builtin/surface_d5_depol.yaml",
+        invocation_argv=["python", "-m", "cli.autoqec", "run", "toy.yaml", "--no-llm"],
     )
 
 
@@ -123,12 +125,14 @@ def test_run_round_success_writes_consumable_artifacts(monkeypatch, tmp_path: Pa
     checkpoint_path = round_dir / "checkpoint.pt"
     train_log_path = round_dir / "train.log"
     config_path = round_dir / "config.yaml"
+    manifest_path = round_dir / "artifact_manifest.json"
 
     assert metrics.status == "ok"
     assert config_path.exists()
     assert train_log_path.exists()
     assert checkpoint_path.exists()
     assert metrics_path.exists()
+    assert manifest_path.exists()
 
     parsed = RoundMetrics.model_validate_json(metrics_path.read_text(encoding="utf-8"))
     assert parsed.status == "ok"
@@ -141,6 +145,30 @@ def test_run_round_success_writes_consumable_artifacts(monkeypatch, tmp_path: Pa
     assert train_log_path.read_text(encoding="utf-8").strip()
     checkpoint = torch.load(checkpoint_path)
     assert checkpoint["dsl_config"] == cfg.predecoder_config
+
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == 1
+    assert manifest["repo"]["commit_sha"]
+    assert "branch" in manifest["repo"]
+    assert "dirty" in manifest["repo"]
+    assert manifest["environment"]["env_yaml_path"] == "autoqec/envs/builtin/surface_d5_depol.yaml"
+    assert manifest["environment"]["env_yaml_sha256"]
+    assert manifest["round"]["round_dir"] == "round_success"
+    assert manifest["round"]["round"] is None
+    assert manifest["round"]["command_line"] == ["python", "-m", "cli.autoqec", "run", "toy.yaml", "--no-llm"]
+    assert manifest["round"]["dsl_config_sha256"]
+    assert manifest["artifacts"] == {
+        "config_yaml": "config.yaml",
+        "checkpoint": "checkpoint.pt",
+        "metrics": "metrics.json",
+        "train_log": "train.log",
+    }
+    assert manifest["packages"]["python"]
+    assert "torch" in manifest["packages"]
+    assert "cuda" in manifest["packages"]
+    assert "stim" in manifest["packages"]
+    assert "pymatching" in manifest["packages"]
+    assert "ldpc" in manifest["packages"]
 
 
 def test_run_round_compile_error_emits_metrics_without_claiming_missing_artifacts(
@@ -171,6 +199,7 @@ def test_run_round_compile_error_emits_metrics_without_claiming_missing_artifact
     assert parsed.status == "compile_error"
     assert parsed.checkpoint_path is None
     assert parsed.training_log_path is None
+    assert not (round_dir / "artifact_manifest.json").exists()
 
 
 def test_run_round_safety_kill_emits_metrics_without_claiming_missing_artifacts(
@@ -212,3 +241,4 @@ def test_run_round_safety_kill_emits_metrics_without_claiming_missing_artifacts(
     assert parsed.status == "killed_by_safety"
     assert parsed.checkpoint_path is None
     assert parsed.training_log_path is None
+    assert not (round_dir / "artifact_manifest.json").exists()

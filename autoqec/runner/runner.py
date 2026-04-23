@@ -15,6 +15,7 @@ from autoqec.decoders.backend_adapter import decode_with_predecoder
 from autoqec.decoders.baselines.pymatching_wrap import PymatchingBaseline
 from autoqec.decoders.dsl_compiler import compile_predecoder
 from autoqec.envs.schema import EnvSpec
+from autoqec.runner.artifact_manifest import write_artifact_manifest
 from autoqec.runner.data import load_code_artifacts, sample_syndromes
 from autoqec.runner.flops import estimate_flops
 from autoqec.runner.safety import RunnerSafety, estimate_vram_gb, nan_rate
@@ -64,6 +65,23 @@ def _write_metrics(round_dir: Path, metrics: RoundMetrics) -> RoundMetrics:
         encoding="utf-8",
     )
     return metrics
+
+
+def _finalize_success(
+    round_dir: Path,
+    metrics: RoundMetrics,
+    *,
+    config: RunnerConfig,
+) -> RoundMetrics:
+    written = _write_metrics(round_dir, metrics)
+    write_artifact_manifest(
+        round_dir,
+        config=config,
+        checkpoint_path=Path(written.checkpoint_path or round_dir / "checkpoint.pt"),
+        metrics_path=round_dir / "metrics.json",
+        train_log_path=Path(written.training_log_path or round_dir / "train.log"),
+    )
+    return written
 
 
 def run_round(
@@ -264,4 +282,4 @@ def run_round(
         checkpoint_path=str(checkpoint_path),
         training_log_path=str(train_log),
     )
-    return _write_metrics(round_dir, metrics)
+    return _finalize_success(round_dir, metrics, config=config)
