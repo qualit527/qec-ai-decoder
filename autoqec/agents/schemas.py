@@ -6,9 +6,9 @@ output would slip through silently.
 """
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class IdeatorResponse(BaseModel):
@@ -20,6 +20,20 @@ class IdeatorResponse(BaseModel):
     rationale: str
     dsl_hint: Optional[dict] = None
 
+    # §15 additions — fork_from defaults to "baseline" so legacy responses validate.
+    fork_from: Union[str, list[str]] = "baseline"
+    compose_mode: Optional[Literal["pure", "with_edit"]] = None
+
+    @model_validator(mode="after")
+    def _compose_requires_mode(self) -> "IdeatorResponse":
+        # Mirrors the RunnerConfig invariant: list fork_from means compose round,
+        # which requires an explicit compose_mode (pure vs with_edit).
+        if isinstance(self.fork_from, list) and self.compose_mode is None:
+            raise ValueError(
+                "compose_mode is required when fork_from is a list"
+            )
+        return self
+
 
 class CoderResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -27,6 +41,9 @@ class CoderResponse(BaseModel):
     tier: Literal["1", "2"]
     dsl_config: dict
     rationale: str
+
+    # §15 addition — Coder sets this on the worktree path; Optional so legacy works.
+    commit_message: Optional[str] = None
 
 
 class AnalystResponse(BaseModel):

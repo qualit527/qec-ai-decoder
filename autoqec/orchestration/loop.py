@@ -1,14 +1,17 @@
 """Research-loop driver skeleton.
 
 In inline (Claude Code chat) mode the orchestrator is the main session and
-Python just hands it prompts via `run_round_plan`. In a future background
-mode (Day-2/3) the same return dict drives a subprocess dispatcher.
+Python just hands it prompts via `run_round_plan`. A second and third
+prompt for the Coder and Analyst are assembled lazily by
+`build_coder_prompt` and `build_analyst_prompt` after the Ideator
+response has arrived.
 
 This file intentionally avoids any LLM call itself — it only produces the
 prompt strings + bookkeeping paths. The caller injects the model.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from autoqec.agents.dispatch import build_prompt
@@ -23,6 +26,7 @@ def run_round_plan(
     machine_state: dict,
     kb_excerpt: str,
     dsl_schema_md: str,
+    fork_from: str | list[str] = "baseline",
 ) -> dict:
     """Return everything needed to drive one round of the research loop.
 
@@ -30,6 +34,9 @@ def run_round_plan(
     (inline or via subprocess). The Coder/Analyst prompts are assembled
     lazily after their upstream step completes, so only the Ideator prompt
     is materialised up front here.
+
+    `fork_from` names the parent branch the Coder will fork its worktree
+    from (§15.4). Passed through verbatim to the worktree-creation step.
     """
     run_dir = Path(run_dir)
     mem = RunMemory(run_dir)
@@ -39,6 +46,7 @@ def run_round_plan(
         env_spec=env_spec.model_dump(),
         kb_excerpt=kb_excerpt,
         machine_state=machine_state,
+        run_id=run_dir.name,
     )
 
     return {
@@ -46,4 +54,52 @@ def run_round_plan(
         "round_dir": str(round_dir),
         "ideator_prompt": build_prompt("ideator", ideator_ctx),
         "dsl_schema_md": dsl_schema_md,  # forwarded to the Coder when its turn arrives
+        "fork_from": fork_from,  # passed forward to worktree creation
     }
+
+
+def build_coder_prompt(
+    hypothesis: dict,
+    mem: RunMemory,
+    dsl_schema_md: str,
+    best_so_far: list[dict] | None = None,
+    worktree_dir: str | None = None,
+) -> str:
+    """Build the Coder prompt after the Ideator returns a hypothesis.
+
+    `best_so_far` defaults to the current Pareto (top 3). Callers can
+    override when they want a tighter "dominant configs only" slice.
+
+    `worktree_dir`, when supplied, is threaded into the Coder ctx so the
+    subagent knows where to make edits + commit (§15.4).
+    """
+    if best_so_far is None:
+        pareto = json.loads(mem.pareto_path.read_text(encoding="utf-8") or "[]")
+        best_so_far = pareto[:3]
+    ctx = mem.l3_for_coder(
+        hypothesis=hypothesis,
+        schema_md=dsl_schema_md,
+        best_so_far=best_so_far,
+    )
+    if worktree_dir:
+        ctx["worktree_dir"] = worktree_dir
+    return build_prompt("coder", ctx)
+
+
+def build_analyst_prompt(
+    mem: RunMemory,
+    round_dir: Path | str,
+    prev_summary: str,
+) -> str:
+    """Build the Analyst prompt once the Runner has written metrics.json.
+
+    Reads the current Pareto from disk so the Analyst can classify the
+    round against it without the caller threading state through.
+    """
+    pareto = json.loads(mem.pareto_path.read_text(encoding="utf-8") or "[]")
+    ctx = mem.l3_for_analyst(
+        round_dir=round_dir,
+        prev_summary=prev_summary,
+        pareto=pareto,
+    )
+    return build_prompt("analyst", ctx)

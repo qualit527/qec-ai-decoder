@@ -155,3 +155,110 @@ eval_wallclock_s)` from `history.jsonl`.
 - No automatic cleanup. Old `runs/` directories persist until a human
   removes them; `.gitignore` already excludes the directory so this is
   safe.
+
+---
+
+## §15 Additions
+
+Added 2026-04-22 for the worktree experiment model. Authoritative
+source: `docs/superpowers/specs/2026-04-20-autoqec-design.md` §15.5
+(pointer file) and §15.7 (pareto / pareto_preview split).
+
+### `round_N_pointer.json` (committed inside the worktree)
+
+Written by the worktree-side Runner after training finishes, then
+committed to the experiment branch `exp/<run_id>/<NN>-<slug>`. This is
+the single on-branch file linking the committed code state to the
+external shared `runs/<run_id>/round_<N>/` artifact directory.
+
+Provenance fields are **all REQUIRED**; consumers reject pointer files
+missing any. `round_attempt_id` is persisted here so §15.10 startup
+reconciliation can recover it if the process crashes between
+pointer-commit and `history.jsonl` append.
+
+```json
+{
+  "run_id": "<YYYYMMDD-HHMMSS>",
+  "round_idx": <int>,
+  "round_attempt_id": "<UUID>",
+  "branch": "exp/<run_id>/<NN>-<slug>",
+  "commit_sha": "<full SHA>",
+  "fork_from": "baseline" | "<branch>" | [<branches>],
+  "fork_from_canonical": "<sorted|joined>",
+  "fork_from_ordered": <list or null>,
+  "provenance": {
+    "env_yaml_sha256":         "<sha256>",
+    "dsl_config_sha256":       "<sha256>",
+    "requirements_fingerprint": "<short>",
+    "repo_root_resolved":      "<absolute path>"
+  },
+  "metrics_summary": {
+    "delta_vs_parent":    <float>,
+    "flops_per_syndrome": <int>,
+    "n_params":           <int>,
+    "status":             "ok" | "killed_by_safety" | ...
+  },
+  "artifact_paths": {
+    "checkpoint": "<absolute>",
+    "metrics":    "<absolute>",
+    "train_log":  "<absolute>"
+  }
+}
+```
+
+`artifact_paths.*` are **absolute** so the pointer survives relocation
+of the orchestrator's cwd. `provenance.repo_root_resolved` enables
+relative-path reconstruction if the run is moved to a new machine.
+`requirements_fingerprint` is a short string derived from the frozen
+dependency set (e.g. `pip freeze | sha256 | head`); post-MVP will
+upgrade to a full lockfile digest.
+
+`round_attempt_id` and `reconcile_id` are mutually exclusive per §15.2:
+a row is either a real attempt or a reconciliation synthetic, never
+both. The pointer file only ever carries `round_attempt_id` — synthetic
+rows are produced by §15.10 startup reconciliation and never have a
+pointer file.
+
+Worktree scope reminder (from §15.5): `runs/<id>/round_N/checkpoint.pt`,
+`metrics.json`, and `train.log` stay **outside the worktree** on a
+shared path; every branch references them by absolute path through this
+pointer file.
+
+### `pareto.json` — complete non-dominated archive (NOT capped)
+
+Replaces the previous "capped to 5 entries" behaviour. `pareto.json`
+stores the **full non-dominated set** of VERIFIED branches. Admission
+requires a committed round (verdict=VERIFIED), so `commit_sha` and
+`branch` are always non-null; compose-conflict rows never appear here.
+
+Row schema:
+
+```json
+{"round_attempt_id":           "<UUID>",
+ "commit_sha":                  "<SHA>",
+ "branch":                      "exp/.../<NN>-<slug>",
+ "delta_vs_baseline_holdout":   <float>,
+ "paired_eval_bundle_id":       "<bundle-id>",
+ "flops_per_syndrome":          <int>,
+ "n_params":                    <int>,
+ "verdict":                     "VERIFIED",
+ "fork_from":                   "baseline" | "<branch>" | [<branches>],
+ "fork_from_canonical":         "<sorted|joined>",
+ "compose_mode":                "pure" | "with_edit" | null}
+```
+
+See `docs/superpowers/specs/2026-04-20-autoqec-design.md` §15.2 for the
+`round_recorder.py` update from top-5 sort to non-dominated filter.
+
+### `pareto_preview.json` — derived top-5 (for L2 Ideator context)
+
+Regenerated after every `pareto.json` mutation; sorted by
+`-delta_vs_baseline_holdout` and truncated to 5. Consumers that read
+only the preview MUST NOT claim to report the full archive.
+
+### `.worktrees/` (run-scoped, shared across rounds)
+
+`.gitignore` excludes `.worktrees/`. Worktree directory naming:
+`.worktrees/exp-<run_id>-<NN>-<slug>/`. Branch naming:
+`exp/<run_id>/<NN>-<slug>`; orphan recovery by §15.10 reconciliation
+renames to `quarantine/<run_id>/<remainder>`.

@@ -56,27 +56,38 @@ def test_run_memory_update_pareto_roundtrips(tmp_path: Path) -> None:
     assert snap["pareto"] == pareto
 
 
-def test_l3_for_ideator_contains_required_keys(tmp_path: Path) -> None:
+def test_l3_for_ideator_returns_fork_graph(tmp_path: Path) -> None:
+    """The Ideator context exposes fork_graph per §15.4, not last_5_hypotheses."""
     from autoqec.orchestration.memory import RunMemory
 
     mem = RunMemory(tmp_path / "run4")
-    mem.append_round({"round": 1, "hypothesis": "h1", "status": "ok"})
-    mem.append_round({"round": 2, "hypothesis": "h2", "status": "killed_by_safety"})
+    mem.append_round(
+        {
+            "round": 1,
+            "status": "ok",
+            "delta_ler": 4e-4,
+            "flops_per_syndrome": 180_000,
+            "n_params": 42_000,
+            "branch": "exp/t/01-a",
+            "commit_sha": "sha1",
+            "round_attempt_id": "u1",
+            "fork_from": "baseline",
+            "hypothesis": "test",
+        }
+    )
 
     ctx = mem.l3_for_ideator(
-        env_spec={"name": "surface_d5_depol"},
-        kb_excerpt="building block catalogue ...",
-        machine_state={"gpu": {"vram_free_gb": 20.0}},
+        env_spec={"name": "surface_d5"},
+        kb_excerpt="(excerpt)",
+        machine_state={"gpu": {}},
+        run_id="t",
     )
-    assert set(ctx.keys()) >= {
-        "env_spec",
-        "pareto_front",
-        "last_5_hypotheses",
-        "knowledge_excerpts",
-        "machine_state_hint",
-    }
-    # last_5_hypotheses must carry status so Ideator can avoid re-proposing killed ones
-    assert ctx["last_5_hypotheses"][-1]["status"] == "killed_by_safety"
+    assert "fork_graph" in ctx
+    assert "nodes" in ctx["fork_graph"]
+    assert any(n.get("branch") == "exp/t/01-a" for n in ctx["fork_graph"]["nodes"])
+    assert "baseline" in {n.get("branch") for n in ctx["fork_graph"]["nodes"]}
+    # last_5_hypotheses is gone.
+    assert "last_5_hypotheses" not in ctx
 
 
 def test_l3_for_coder_includes_tier2_validator_rules(tmp_path: Path) -> None:
