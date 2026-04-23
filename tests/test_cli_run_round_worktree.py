@@ -60,11 +60,17 @@ def test_run_round_internal_flag_skips_subprocess_dispatch(tmp_path):
     round_dir = str(tmp_path / "round_1")
 
     fake_metrics = RoundMetrics(status="ok", ler_plain_classical=1e-3, ler_predecoder=5e-4, delta_ler=5e-4)
+    captured = {}
 
     # Pre-seed a lightweight stub for autoqec.runner.runner so the in-process
     # import in run_round_cmd succeeds even without torch installed.
     fake_runner_mod = types.ModuleType("autoqec.runner.runner")
-    fake_runner_mod.run_round = lambda *_a, **_kw: fake_metrics
+
+    def _fake_run_round(cfg, _env):
+        captured["cfg"] = cfg
+        return fake_metrics
+
+    fake_runner_mod.run_round = _fake_run_round
 
     def _boom(*_a, **_kw):
         raise AssertionError(
@@ -77,7 +83,7 @@ def test_run_round_internal_flag_skips_subprocess_dispatch(tmp_path):
         with patch(
             "autoqec.orchestration.subprocess_runner.run_round_in_subprocess",
             side_effect=_boom,
-        ):
+        ), patch("cli.autoqec.subprocess.check_output", return_value="abc123\n"):
             cli_runner = CliRunner()
             result = cli_runner.invoke(
                 run_round_cmd,
@@ -102,6 +108,15 @@ def test_run_round_internal_flag_skips_subprocess_dispatch(tmp_path):
             sys.modules.pop("autoqec.runner.runner", None)
 
     assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert captured["cfg"].code_cwd is None
+    assert payload["branch"] == "exp/foo/01-bar"
+    assert payload["commit_sha"] == "abc123"
+    assert payload["round_attempt_id"] == "test-uuid"
+    saved = json.loads((Path(round_dir) / "metrics.json").read_text(encoding="utf-8"))
+    assert saved["branch"] == "exp/foo/01-bar"
+    assert saved["commit_sha"] == "abc123"
+    assert saved["round_attempt_id"] == "test-uuid"
 
 
 def test_fork_from_malformed_json_is_bad_parameter(tmp_path):

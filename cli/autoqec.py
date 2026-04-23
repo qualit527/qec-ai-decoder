@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import random
+import subprocess
 import time
 from pathlib import Path
 
@@ -15,6 +16,42 @@ from autoqec.runner.schema import RunnerConfig
 @click.group()
 def main() -> None:
     """AutoQEC CLI."""
+
+
+def _git_head_commit(cwd: str) -> str:
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=cwd,
+        text=True,
+    ).strip()
+
+
+def _enrich_local_worktree_metrics(
+    metrics,
+    *,
+    round_dir: str,
+    code_cwd: str,
+    branch: str,
+    fork_from: str | list[str] | None,
+    compose_mode: str | None,
+    round_attempt_id: str | None,
+):
+    enriched = metrics.model_copy(
+        update={
+            "branch": branch,
+            "commit_sha": _git_head_commit(code_cwd),
+            "fork_from": fork_from,
+            "compose_mode": compose_mode,
+            "round_attempt_id": round_attempt_id or metrics.round_attempt_id,
+        }
+    )
+    metrics_path = Path(round_dir) / "metrics.json"
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics_path.write_text(
+        enriched.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    return enriched
 
 
 @main.command(name="run-round")
@@ -118,7 +155,20 @@ def run_round_cmd(
     else:
         from autoqec.runner.runner import run_round
 
-        metrics = run_round(cfg, env)
+        local_cfg = cfg
+        if _internal_execute_locally and code_cwd is not None:
+            local_cfg = cfg.model_copy(update={"code_cwd": None})
+        metrics = run_round(local_cfg, env)
+        if _internal_execute_locally and code_cwd is not None and branch is not None:
+            metrics = _enrich_local_worktree_metrics(
+                metrics,
+                round_dir=round_dir,
+                code_cwd=code_cwd,
+                branch=branch,
+                fork_from=parsed_fork_from,
+                compose_mode=compose_mode,
+                round_attempt_id=round_attempt_id,
+            )
     click.echo(metrics.model_dump_json(indent=2))
 
 
@@ -132,7 +182,7 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
 
     env = load_env_yaml(env_yaml)
     run_id = time.strftime("%Y%m%d-%H%M%S")
-    run_dir = Path("runs") / run_id
+    run_dir = (Path("runs") / run_id).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
     templates = sorted(Path("autoqec/example_db").glob("*.yaml"))
     dev_safe_templates = {"gnn_small", "gnn_gated", "neural_bp_min"}
@@ -156,10 +206,10 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
         )
         metrics = run_round(cfg, env)
         history.append(metrics.model_dump())
-        with (run_dir / "history.jsonl").open("a") as f:
+        with (run_dir / "history.jsonl").open("a", encoding="utf-8") as f:
             f.write(metrics.model_dump_json() + "\n")
         click.echo(f"Round {round_idx}: {metrics.status} Δ={metrics.delta_ler}")
-    (run_dir / "history.json").write_text(json.dumps(history, indent=2))
+    (run_dir / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
     click.echo(json.dumps({"run_dir": str(run_dir), "rounds": rounds}, indent=2))
 
 
