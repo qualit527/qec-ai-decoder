@@ -36,6 +36,7 @@ datasets/
 # IDE
 .idea/
 .vscode/
+.worktrees/
 *.swp
 
 # OS
