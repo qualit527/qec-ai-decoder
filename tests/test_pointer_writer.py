@@ -1,4 +1,5 @@
 import json
+import types
 
 import pytest
 
@@ -70,3 +71,21 @@ def test_pointer_requires_id(tmp_path):
     m = RoundMetrics(status="ok", round_attempt_id="")
     with pytest.raises(ValueError, match="round_attempt_id or reconcile_id"):
         write_round_pointer(cfg=cfg, metrics=m, round_idx=4)
+
+
+def test_pointer_rejects_both_ids(tmp_path):
+    """§15.2 mutual-exclusion: round_attempt_id and reconcile_id cannot both be set."""
+    cfg = _cfg(tmp_path, rid="uuid-xor")
+    # RoundMetrics._provenance_integrity blocks both-set at pydantic time,
+    # so use a loose SimpleNamespace to smuggle the invalid combination
+    # directly into the pointer writer and prove it raises.
+    m = types.SimpleNamespace(
+        status="ok",
+        status_reason=None,
+        branch=None,
+        commit_sha=None,
+        round_attempt_id="uuid-xor",
+        reconcile_id="reconcile-xor",
+    )
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        write_round_pointer(cfg=cfg, metrics=m, round_idx=5)

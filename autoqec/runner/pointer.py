@@ -24,6 +24,11 @@ def write_round_pointer(
             "pointer must carry either round_attempt_id or reconcile_id "
             "(spec §15.2 mutual-exclusion)"
         )
+    if round_attempt_id and reconcile_id:
+        raise ValueError(
+            "round_attempt_id and reconcile_id are mutually exclusive "
+            "(spec §15.2 mutual-exclusion)"
+        )
     pointer: dict[str, Any] = {
         "round_attempt_id": round_attempt_id or None,
         "reconcile_id": reconcile_id,
