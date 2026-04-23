@@ -157,6 +157,66 @@ def _seed_leakage_check(
     return True
 
 
+def _load_ckpt_metadata(ckpt: Path) -> dict:
+    """Return ckpt policy metadata without instantiating the module.
+
+    Reads only the fields the verifier uses for fair-baseline policy checks
+    (`train_seeds_claimed`, `trap_kind`, etc.). Tolerates missing / corrupt
+    files by returning an empty dict — those cases are handled downstream
+    by the regular predecoder-load path.
+    """
+    if not ckpt.exists():
+        return {}
+    try:
+        blob = torch.load(ckpt, map_location="cpu", weights_only=True)
+    except Exception:
+        try:
+            blob = torch.load(ckpt, map_location="cpu", weights_only=False)
+        except Exception:
+            return {}
+    if not isinstance(blob, dict):
+        return {}
+    return {
+        k: blob[k]
+        for k in (
+            "train_seeds_claimed",
+            "paired_eval_bundle_id",
+            "recorded_syndrome_sha256",
+            "trap_kind",
+        )
+        if k in blob
+    }
+
+
+def _claimed_seeds_leakage_check(
+    claimed: list[int] | None,
+    holdout_range: tuple[int, int],
+    holdout_seeds: list[int],
+) -> tuple[bool, str]:
+    """Fail when a ckpt's declared training seeds overlap the evaluation holdout.
+
+    Catches the trap-A pattern: a cheating predecoder trained on seeds inside
+    the declared holdout range and wrote that fact into the ckpt. The verifier
+    refuses to admit any such checkpoint regardless of the observed LER,
+    because the paired-eval invariant is already broken.
+    """
+    if not claimed:
+        return True, ""
+    holdout_set = set(holdout_seeds)
+    for s in claimed:
+        if s in holdout_set:
+            return False, (
+                f"checkpoint train_seeds_claimed overlaps declared holdout_seeds "
+                f"(seed {s})"
+            )
+        if holdout_range[0] <= s <= holdout_range[1]:
+            return False, (
+                f"checkpoint train_seeds_claimed {s} falls inside "
+                f"env.noise.seed_policy.holdout range {holdout_range}"
+            )
+    return True, ""
+
+
 def _load_predecoder(ckpt: Path, n_var: int, n_check: int):
     """Load a predecoder from Runner checkpoint format.
 
@@ -201,6 +261,17 @@ def _shuffle_model_params(model: torch.nn.Module) -> None:
             param.data = flat[torch.randperm(flat.numel())].view(param.data.shape)
 
 
+def _syndrome_sha256(syndrome: torch.Tensor, target: torch.Tensor) -> str:
+    """Hex sha256 of the paired (syndrome, target) batch bytes."""
+    digest = hashlib.sha256()
+    for tensor in (syndrome, target):
+        array = tensor.detach().cpu().contiguous().numpy()
+        digest.update(str(array.dtype).encode("ascii"))
+        digest.update(np.asarray(array.shape, dtype=np.int64).tobytes())
+        digest.update(array.tobytes())
+    return digest.hexdigest()
+
+
 def _paired_eval_bundle_id(
     syndrome: torch.Tensor,
     target: torch.Tensor,
@@ -209,14 +280,37 @@ def _paired_eval_bundle_id(
 ) -> str:
     """Fingerprint the exact paired eval batch as a deterministic UUID."""
     digest = hashlib.sha256()
-    for tensor in (syndrome, target):
-        array = tensor.detach().cpu().contiguous().numpy()
-        digest.update(str(array.dtype).encode("ascii"))
-        digest.update(np.asarray(array.shape, dtype=np.int64).tobytes())
-        digest.update(array.tobytes())
+    digest.update(_syndrome_sha256(syndrome, target).encode("ascii"))
     digest.update(np.asarray(holdout_seeds, dtype=np.int64).tobytes())
     digest.update(np.asarray([n_shots], dtype=np.int64).tobytes())
     return str(uuid.uuid5(uuid.NAMESPACE_URL, digest.hexdigest()))
+
+
+def _paired_batch_mismatch_check(
+    claimed_bundle_id: str | None,
+    claimed_sha256: str | None,
+    actual_bundle_id: str,
+    actual_sha256: str,
+) -> tuple[bool, str]:
+    """Fail when a ckpt pins a paired-eval fingerprint that diverges from reality.
+
+    Catches the trap-B pattern: a cheater wrote `paired_eval_bundle_id` or
+    `recorded_syndrome_sha256` into the ckpt that does not match the bytes
+    the verifier actually just evaluated. A legit predecoder never embeds
+    evaluation fingerprints at training time, so the presence of either
+    field plus a mismatch is a sufficient cheat signal.
+    """
+    if claimed_bundle_id and claimed_bundle_id != actual_bundle_id:
+        return False, (
+            f"checkpoint paired_eval_bundle_id ({claimed_bundle_id!r}) does "
+            f"not match the freshly-computed paired-batch id ({actual_bundle_id!r})"
+        )
+    if claimed_sha256 and claimed_sha256 != actual_sha256:
+        return False, (
+            f"checkpoint recorded_syndrome_sha256 ({claimed_sha256!r}) does "
+            f"not match the freshly-computed paired-batch sha256 ({actual_sha256!r})"
+        )
+    return True, ""
 
 
 def _decode_holdout(
@@ -225,12 +319,15 @@ def _decode_holdout(
     artifacts: _CodeArtifacts,
     holdout_seeds: list[int],
     n_shots: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, str, str]:
     """Run plain baseline, predecoder, and ablation on the same holdout shots.
 
-    Returns (plain_errors, pred_errors, shuffled_errors, paired_eval_bundle_id).
+    Returns (plain_errors, pred_errors, shuffled_errors, paired_eval_bundle_id,
+    syndrome_sha256). Both fingerprints are exported so the caller can cross-
+    check any fingerprint the ckpt itself declared.
     """
     syndrome, target = _sample_holdout(env_spec, artifacts, holdout_seeds, n_shots)
+    syndrome_sha256 = _syndrome_sha256(syndrome, target)
     paired_eval_bundle_id = _paired_eval_bundle_id(
         syndrome,
         target,
@@ -258,7 +355,13 @@ def _decode_holdout(
     if model is None:
         pred_errors = plain_errors.copy()
         shuffled_errors = plain_errors.copy()
-        return plain_errors, pred_errors, shuffled_errors, paired_eval_bundle_id
+        return (
+            plain_errors,
+            pred_errors,
+            shuffled_errors,
+            paired_eval_bundle_id,
+            syndrome_sha256,
+        )
 
     # Predecoder path
     model.eval()
@@ -294,7 +397,13 @@ def _decode_holdout(
     )
     shuffled_errors = (ablation_labels[:, :n_obs] != target_np).any(axis=1).astype(np.int32)
 
-    return plain_errors, pred_errors, shuffled_errors, paired_eval_bundle_id
+    return (
+        plain_errors,
+        pred_errors,
+        shuffled_errors,
+        paired_eval_bundle_id,
+        syndrome_sha256,
+    )
 
 
 def independent_verify(
@@ -308,14 +417,36 @@ def independent_verify(
     if not _seed_leakage_check(sp.train, sp.val, sp.holdout, holdout_seeds):
         raise ValueError("holdout seeds overlaps train/val range or falls outside holdout policy")
 
+    meta = _load_ckpt_metadata(checkpoint)
+    ok, msg = _claimed_seeds_leakage_check(
+        meta.get("train_seeds_claimed"),
+        sp.holdout,
+        holdout_seeds,
+    )
+    if not ok:
+        raise ValueError(f"train_seeds_claimed leak: {msg}")
+
     n_shots = n_shots or env_spec.eval_protocol.min_shots_verify
 
     artifacts = _load_code_artifacts(env_spec)
     model = _load_predecoder(checkpoint, artifacts.n_var, artifacts.n_check)
 
-    plain_errors, pred_errors, shuffled_errors, paired_eval_bundle_id = _decode_holdout(
-        model, env_spec, artifacts, holdout_seeds, n_shots,
+    (
+        plain_errors,
+        pred_errors,
+        shuffled_errors,
+        paired_eval_bundle_id,
+        syndrome_sha256,
+    ) = _decode_holdout(model, env_spec, artifacts, holdout_seeds, n_shots)
+
+    ok, msg = _paired_batch_mismatch_check(
+        meta.get("paired_eval_bundle_id"),
+        meta.get("recorded_syndrome_sha256"),
+        paired_eval_bundle_id,
+        syndrome_sha256,
     )
+    if not ok:
+        raise ValueError(f"paired_batch_mismatch: {msg}")
 
     ler_plain, plo, phi = bootstrap_ci_mean(plain_errors, n_bootstrap, 0.95, seed=0)
     ler_pred, pred_lo, pred_hi = bootstrap_ci_mean(pred_errors, n_bootstrap, 0.95, seed=1)
