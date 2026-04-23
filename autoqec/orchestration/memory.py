@@ -17,6 +17,7 @@ payloads through `autoqec.agents.dispatch.build_prompt`.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 
@@ -90,11 +91,19 @@ class RunMemory:
             f.write(md + "\n")
 
     def update_pareto(self, pareto: list[dict]) -> None:
-        """Replace the pareto.json file with the given front."""
-        self.pareto_path.write_text(
+        """Replace the pareto.json file atomically (§5.5 — no truncation on kill).
+
+        Write to a sibling tmp file then ``os.replace`` onto the target: on
+        POSIX and Windows this is an atomic directory-entry swap, so a
+        process killed between the tmp write and the rename leaves the old
+        pareto.json intact for the next reconcile cycle to pick up.
+        """
+        tmp_path = self.pareto_path.with_suffix(self.pareto_path.suffix + ".tmp")
+        tmp_path.write_text(
             json.dumps(pareto, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+        os.replace(tmp_path, self.pareto_path)
 
     # ─── L2 summary (rebuilt each round from L1) ─────────────────────
 
