@@ -6,6 +6,7 @@
 AutoQEC is an LLM-agent-driven auto-research harness for discovering **neural predecoders** for quantum error-correcting codes. Given an environment triple `(code_spec, noise_model, constraints)`, the system runs 10–20 rounds of *hypothesis → DSL config → training → evaluation → analysis* and emits verified predecoder checkpoints on the accuracy–latency–parameters Pareto front.
 
 - **Spec**: [`docs/superpowers/specs/2026-04-20-autoqec-design.md`](docs/superpowers/specs/2026-04-20-autoqec-design.md) (v2.2)
+- **API documentation**: [`docs/api-documentation.md`](docs/api-documentation.md)
 - **Master plan**: [`docs/superpowers/plans/2026-04-21-autoqec-master.md`](docs/superpowers/plans/2026-04-21-autoqec-master.md)
 - **Per-owner plans**: [`docs/superpowers/plans/`](docs/superpowers/plans/)
 - **Knowledge base**: `knowledge/` — 81-paper index + 3 synthesis documents (roadmap, strategic assessment, autoresearch patterns)
