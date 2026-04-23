@@ -60,11 +60,17 @@ def test_run_round_internal_flag_skips_subprocess_dispatch(tmp_path):
     round_dir = str(tmp_path / "round_1")
 
     fake_metrics = RoundMetrics(status="ok", ler_plain_classical=1e-3, ler_predecoder=5e-4, delta_ler=5e-4)
+    captured = {}
 
     # Pre-seed a lightweight stub for autoqec.runner.runner so the in-process
     # import in run_round_cmd succeeds even without torch installed.
     fake_runner_mod = types.ModuleType("autoqec.runner.runner")
-    fake_runner_mod.run_round = lambda *_a, **_kw: fake_metrics
+
+    def _fake_run_round(cfg, _env):
+        captured["cfg"] = cfg
+        return fake_metrics
+
+    fake_runner_mod.run_round = _fake_run_round
 
     def _boom(*_a, **_kw):
         raise AssertionError(
@@ -77,7 +83,7 @@ def test_run_round_internal_flag_skips_subprocess_dispatch(tmp_path):
         with patch(
             "autoqec.orchestration.subprocess_runner.run_round_in_subprocess",
             side_effect=_boom,
-        ):
+        ), patch("cli.autoqec.subprocess.check_output", return_value="abc123\n"):
             cli_runner = CliRunner()
             result = cli_runner.invoke(
                 run_round_cmd,
@@ -102,6 +108,79 @@ def test_run_round_internal_flag_skips_subprocess_dispatch(tmp_path):
             sys.modules.pop("autoqec.runner.runner", None)
 
     assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert captured["cfg"].code_cwd is None
+    assert payload["branch"] == "exp/foo/01-bar"
+    assert payload["commit_sha"] == "abc123"
+    assert payload["round_attempt_id"] == "test-uuid"
+    saved = json.loads((Path(round_dir) / "metrics.json").read_text(encoding="utf-8"))
+    assert saved["branch"] == "exp/foo/01-bar"
+    assert saved["commit_sha"] == "abc123"
+    assert saved["round_attempt_id"] == "test-uuid"
+
+
+def test_internal_flag_writes_failure_metrics_when_git_head_lookup_fails(tmp_path):
+    """A git HEAD lookup failure must still leave behind train_error metrics."""
+    import sys
+    import types
+
+    from cli.autoqec import run_round_cmd
+    from autoqec.runner.schema import RoundMetrics
+
+    env_yaml = str(Path("autoqec/envs/builtin/surface_d5_depol.yaml").absolute())
+    cfg_yaml_path = tmp_path / "cfg.yaml"
+    cfg_yaml_path.write_text("type: gnn\noutput_mode: soft_priors\n")
+    round_dir = str(tmp_path / "round_1")
+
+    fake_metrics = RoundMetrics(
+        status="ok",
+        ler_plain_classical=1e-3,
+        ler_predecoder=5e-4,
+        delta_ler=5e-4,
+    )
+    fake_runner_mod = types.ModuleType("autoqec.runner.runner")
+    fake_runner_mod.run_round = lambda *_a, **_kw: fake_metrics
+    original = sys.modules.get("autoqec.runner.runner")
+    sys.modules["autoqec.runner.runner"] = fake_runner_mod
+
+    try:
+        with patch(
+            "cli.autoqec.subprocess.check_output",
+            side_effect=subprocess.CalledProcessError(
+                128,
+                ["git", "rev-parse", "HEAD"],
+            ),
+        ):
+            cli_runner = CliRunner()
+            result = cli_runner.invoke(
+                run_round_cmd,
+                [
+                    env_yaml,
+                    str(cfg_yaml_path),
+                    round_dir,
+                    "--code-cwd",
+                    str(tmp_path),
+                    "--branch",
+                    "exp/foo/01-bar",
+                    "--round-attempt-id",
+                    "test-uuid",
+                    "--_internal-execute-locally",
+                ],
+                catch_exceptions=True,
+            )
+    finally:
+        if original is not None:
+            sys.modules["autoqec.runner.runner"] = original
+        else:
+            sys.modules.pop("autoqec.runner.runner", None)
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, subprocess.CalledProcessError)
+    saved = json.loads((Path(round_dir) / "metrics.json").read_text(encoding="utf-8"))
+    assert saved["status"] == "train_error"
+    assert saved["round_attempt_id"] == "test-uuid"
+    assert saved["branch"] is None
+    assert "git rev-parse HEAD failed" in saved["status_reason"]
 
 
 def test_internal_flag_strips_code_cwd_before_in_process_runner(tmp_path):
@@ -156,23 +235,24 @@ def test_internal_flag_strips_code_cwd_before_in_process_runner(tmp_path):
     original = sys.modules.get("autoqec.runner.runner")
     sys.modules["autoqec.runner.runner"] = fake_runner_mod
     try:
-        cli_runner = CliRunner()
-        result = cli_runner.invoke(
-            run_round_cmd,
-            [
-                env_yaml,
-                str(cfg_yaml_path),
-                round_dir,
-                "--code-cwd",
-                str(tmp_path),
-                "--branch",
-                "exp/foo/01-bar",
-                "--round-attempt-id",
-                "test-uuid",
-                "--_internal-execute-locally",
-            ],
-            catch_exceptions=False,
-        )
+        with patch("cli.autoqec.subprocess.check_output", return_value="deadbeef\n"):
+            cli_runner = CliRunner()
+            result = cli_runner.invoke(
+                run_round_cmd,
+                [
+                    env_yaml,
+                    str(cfg_yaml_path),
+                    round_dir,
+                    "--code-cwd",
+                    str(tmp_path),
+                    "--branch",
+                    "exp/foo/01-bar",
+                    "--round-attempt-id",
+                    "test-uuid",
+                    "--_internal-execute-locally",
+                ],
+                catch_exceptions=False,
+            )
     finally:
         if original is not None:
             sys.modules["autoqec.runner.runner"] = original

@@ -78,14 +78,10 @@ The names it does add are frozen here:
 
 ### `metrics.json` — exactly `RoundMetrics` (§2.2)
 
-`checkpoint_path` and `training_log_path` inherit the absoluteness of the
-`RunnerConfig.round_dir` the caller passes in. `scripts/e2e_handshake.py`
-and `scripts/run_single_round.py` pass absolute paths (via
-`Path(...).resolve()`), so their rounds record absolute paths in
-`metrics.json`. **[TODO-fill-in, Lin]** `cli/autoqec.py::run` currently
-composes `run_dir = Path("runs") / run_id` (cwd-relative) and forwards
-that to `RunnerConfig.round_dir` — tighten with `.resolve()` before
-passing, so every writer produces absolute paths regardless of cwd.
+`run_round` resolves `RunnerConfig.round_dir` before it writes artifacts,
+so `checkpoint_path` and `training_log_path` are absolute in every
+emitted `metrics.json`. Downstream readers should treat those fields as
+the canonical artifact locations instead of reconstructing paths by hand.
 
 No extra keys beyond `RoundMetrics`.
 
@@ -137,17 +133,17 @@ eval_wallclock_s)` from `history.jsonl`.
 - `_gpu_snapshot` returns `{}` on any CUDA/driver failure, not just
   missing torch. Covered in
   `test_machine_state.py::test_gpu_snapshot_swallows_driver_errors_from_is_available`.
+- Runner-written text files (`config.yaml`, `train.log`, `metrics.json`)
+  are written with explicit `encoding="utf-8"`.
+- Failure-path rounds still emit `metrics.json`, and absent artifacts stay
+  `null` in `RoundMetrics` instead of claiming files that were never
+  produced.
 
 **[TODO-fill-in] aspirational, not enforced yet:**
 
 - `round_<N>/` exists **before** any `history.jsonl` entry with
   `round == N` is written. (Needs a cross-component integration test in
   Day-3 after the orchestrator → Runner loop is wired.)
-- Runner-written text files (`config.yaml`, `train.log`, `metrics.json`)
-  use `encoding="utf-8"` — current Runner code relies on locale default
-  (see `autoqec/runner/runner.py:61, 163, 230`). **[TODO-fill-in, Lin]**
-  add explicit `encoding="utf-8"`.
-
 ## Non-goals
 
 - No per-run database. `runs/` is append-only disk; post-processing can

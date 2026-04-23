@@ -58,6 +58,14 @@ def _failure_rate(env_spec: EnvSpec, predictions: np.ndarray, targets: np.ndarra
     return float((predictions != targets).any(axis=1).mean())
 
 
+def _write_metrics(round_dir: Path, metrics: RoundMetrics) -> RoundMetrics:
+    (round_dir / "metrics.json").write_text(
+        metrics.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    return metrics
+
+
 def run_round(
     config: RunnerConfig,
     env_spec: EnvSpec,
@@ -70,9 +78,9 @@ def run_round(
         )
     safety = safety or RunnerSafety()
     _set_seed(config.seed)
-    round_dir = Path(config.round_dir)
+    round_dir = Path(config.round_dir).resolve()
     round_dir.mkdir(parents=True, exist_ok=True)
-    with (round_dir / "config.yaml").open("w") as f:
+    with (round_dir / "config.yaml").open("w", encoding="utf-8") as f:
         yaml.safe_dump(config.predecoder_config, f, sort_keys=False)
     train_log = round_dir / "train.log"
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -85,7 +93,10 @@ def run_round(
             n_check=artifacts.n_check,
         )
     except Exception as exc:
-        return RoundMetrics(status="compile_error", status_reason=str(exc))
+        return _write_metrics(
+            round_dir,
+            RoundMetrics(status="compile_error", status_reason=str(exc)),
+        )
 
     n_params = int(sum(parameter.numel() for parameter in model.parameters()))
     profile = _profile_params(env_spec, config.training_profile)
@@ -99,10 +110,13 @@ def run_round(
         vram_est = estimate_vram_gb(model, batch_size=64, hidden=hidden_hint)
         free_gb = torch.cuda.mem_get_info()[0] / 1e9
         if vram_est > free_gb * 0.9:
-            return RoundMetrics(
-                status="killed_by_safety",
-                status_reason=f"VRAM estimate {vram_est:.2f} > free {free_gb:.2f}",
-                n_params=n_params,
+            return _write_metrics(
+                round_dir,
+                RoundMetrics(
+                    status="killed_by_safety",
+                    status_reason=f"VRAM estimate {vram_est:.2f} > free {free_gb:.2f}",
+                    n_params=n_params,
+                ),
             )
 
     model = model.to(device)
@@ -136,11 +150,14 @@ def run_round(
     for _ in range(epochs):
         for start in range(0, train_syndrome.shape[0], batch_size):
             if time.time() - train_start > safety.WALL_CLOCK_HARD_CUTOFF_S:
-                return RoundMetrics(
-                    status="killed_by_safety",
-                    status_reason="wall_clock_cutoff during training",
-                    n_params=n_params,
-                    train_wallclock_s=time.time() - train_start,
+                return _write_metrics(
+                    round_dir,
+                    RoundMetrics(
+                        status="killed_by_safety",
+                        status_reason="wall_clock_cutoff during training",
+                        n_params=n_params,
+                        train_wallclock_s=time.time() - train_start,
+                    ),
                 )
             batch_syndrome = train_syndrome[start : start + batch_size]
             if artifacts.code_type == "stim_circuit":
@@ -160,11 +177,14 @@ def run_round(
             if not torch.isfinite(loss):
                 losses.append(float("nan"))
                 if nan_rate(losses) > safety.MAX_NAN_RATE:
-                    return RoundMetrics(
-                        status="killed_by_safety",
-                        status_reason=f"NaN rate {nan_rate(losses):.3f}",
-                        n_params=n_params,
-                        train_wallclock_s=time.time() - train_start,
+                    return _write_metrics(
+                        round_dir,
+                        RoundMetrics(
+                            status="killed_by_safety",
+                            status_reason=f"NaN rate {nan_rate(losses):.3f}",
+                            n_params=n_params,
+                            train_wallclock_s=time.time() - train_start,
+                        ),
                     )
                 continue
 
@@ -174,7 +194,10 @@ def run_round(
             losses.append(float(loss.detach().cpu()))
 
     train_wallclock = time.time() - train_start
-    train_log.write_text("\n".join(f"{idx}\t{loss:.6g}" for idx, loss in enumerate(losses)))
+    train_log.write_text(
+        "\n".join(f"{idx}\t{loss:.6g}" for idx, loss in enumerate(losses)),
+        encoding="utf-8",
+    )
 
     eval_start = time.time()
     val_syndrome, val_target = sample_syndromes(
@@ -241,5 +264,4 @@ def run_round(
         checkpoint_path=str(checkpoint_path),
         training_log_path=str(train_log),
     )
-    (round_dir / "metrics.json").write_text(metrics.model_dump_json(indent=2))
-    return metrics
+    return _write_metrics(round_dir, metrics)
