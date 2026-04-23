@@ -289,8 +289,12 @@ def _materialize_diagnose_fixture(tmp_path: Path, fixture_name: str) -> Path:
     src = Path(__file__).parent / "fixtures" / "diagnose" / fixture_name
     dst = tmp_path / fixture_name
     dst.mkdir()
-    for name in ("config.yaml", "metrics.json", "train.log"):
-        (dst / name).write_text((src / name).read_text(encoding="utf-8"), encoding="utf-8")
+    for src_name, dst_name in (
+        ("config.yaml", "config.yaml"),
+        ("metrics.json", "metrics.json"),
+        ("train_log.txt", "train.log"),
+    ):
+        (dst / dst_name).write_text((src / src_name).read_text(encoding="utf-8"), encoding="utf-8")
     return dst
 
 
