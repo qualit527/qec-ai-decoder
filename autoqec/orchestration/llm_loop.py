@@ -75,40 +75,48 @@ def run_llm_loop(
         )
         metrics = run_round(cfg, env)
 
-        # --- Verifier (auto-verify; see P0.5 SKILL parity) ---
+        # --- Analyst + Verifier (SKILL parity §9) ---
+        # On runner failure: skip both Analyst and Verifier; record_round
+        # synthesises a fallback summary from status / status_reason.
+        # On runner success: Analyst first, then Verifier ONLY if Analyst
+        # verdict is "candidate" (compose_conflict is also skipped via the
+        # status == "ok" check).
         verify_verdict: str | None = None
         verify_report: dict[str, Any] | None = None
-        if metrics.status == "ok":
-            try:
-                sp = env.noise.seed_policy
-                holdout = list(range(sp.holdout[0], sp.holdout[1] + 1))[:50]
-                report = independent_verify(
-                    checkpoint=round_dir / "checkpoint.pt",
-                    env_spec=env,
-                    holdout_seeds=holdout,
-                )
-                (round_dir / "verification_report.json").write_text(
-                    report.model_dump_json(indent=2), encoding="utf-8",
-                )
-                verify_verdict = report.verdict
-                verify_report = report.model_dump()
-            except Exception as exc:
-                # Never fail a whole round because the verifier crashed.
-                (round_dir / "verification_error.txt").write_text(str(exc))
-                verify_verdict = "FAILED"
+        analyst_resp: dict[str, Any] | None = None
 
-        # --- Analyst ---
-        analyst_prompt = build_analyst_prompt(
-            mem=mem, round_dir=round_dir, prev_summary="",
-        )
-        analyst_resp = invoke_subagent("analyst", analyst_prompt)
+        if metrics.status == "ok":
+            analyst_prompt = build_analyst_prompt(
+                mem=mem, round_dir=round_dir, prev_summary="",
+            )
+            analyst_resp = invoke_subagent("analyst", analyst_prompt)
+
+            if analyst_resp.get("verdict") == "candidate":
+                try:
+                    sp = env.noise.seed_policy
+                    holdout = list(range(sp.holdout[0], sp.holdout[1] + 1))[:50]
+                    report = independent_verify(
+                        checkpoint=round_dir / "checkpoint.pt",
+                        env_spec=env,
+                        holdout_seeds=holdout,
+                    )
+                    (round_dir / "verification_report.json").write_text(
+                        report.model_dump_json(indent=2), encoding="utf-8",
+                    )
+                    verify_verdict = report.verdict
+                    verify_report = report.model_dump()
+                except Exception as exc:
+                    # Never fail a whole round because the verifier crashed.
+                    (round_dir / "verification_error.txt").write_text(str(exc))
+                    verify_verdict = "FAILED"
 
         # --- Record ---
         record = metrics.model_dump()
         record["round"] = round_idx
         record["hypothesis"] = ideator_resp.get("hypothesis")
-        record["verdict"] = analyst_resp.get("verdict")
-        record["summary_1line"] = analyst_resp.get("summary_1line")
+        if analyst_resp is not None:
+            record["verdict"] = analyst_resp.get("verdict")
+            record["summary_1line"] = analyst_resp.get("summary_1line")
         record_round(
             mem,
             round_metrics=record,
