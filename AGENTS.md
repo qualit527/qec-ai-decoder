@@ -6,6 +6,14 @@ repository. For project overview, goals, and demos, see `README.md`.
 ## Build & Test
 
 ```bash
+pip install -e '.[dev]'                     # install with dev deps
+python -m pytest tests/ -m "not integration" -v   # unit tests (CI uses this)
+python -m pytest tests/ -m "integration" -v --run-integration  # integration tests (manual entry)
+python -m pytest tests/test_bootstrap.py -v        # single test file
+python -m pytest tests/test_bootstrap.py::test_bootstrap_ci_basic -v  # single test
+ruff check autoqec cli tests scripts              # lint (CI uses this)
+ruff check --fix autoqec cli tests scripts        # lint with auto-fix
+python -m cli.autoqec run autoqec/envs/builtin/surface_d5_depol.yaml --rounds 1 --profile dev --no-llm  # smoke test
 make install          # install project + dev dependencies into .venv
 make lint             # ruff check autoqec cli tests scripts
 make test             # default non-integration pytest run
@@ -18,12 +26,21 @@ pytest tests/test_runner_smoke.py -v -m integration --run-integration
 ## Make Targets
 
 ```bash
-make run              # run cli.autoqec with env/profile defaults
-make run-nollm        # run cli.autoqec without LLM-backed subagents
-make demo-2           # run demos/demo-2-bb72/run.sh
-make run-all-claude   # force Claude-backed ideator/coder
-make run-cheap        # swap ideator model to a cheaper default
+make install        # pip install -e '.[dev]'
+make test           # pytest tests/ -m "not integration" -v
+make test-integration # pytest tests/ -m "integration" -v --run-integration
+make coverage       # pytest with coverage for autoqec + cli
+make lint           # ruff check autoqec cli tests scripts
+make run            # run cli.autoqec with env/profile defaults
+make run-nollm      # N-round random-template smoke loop (no LLM needed)
+make demo-2         # run bb72 qLDPC demo
+make run-all-claude # force Claude-backed ideator/coder
+make run-cheap      # swap ideator model to a cheaper default
 ```
+
+Integration execution guidance lives in `docs/test-plan.md`. The default
+repo gate stays `make lint` + `make test`; use `make test-integration`
+only when you explicitly want the end-to-end layer.
 
 Key environment knobs:
 
