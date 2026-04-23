@@ -261,9 +261,17 @@ def refresh_fork_graph(mem: RunMemory) -> None:
 
     Called after every ``record_round`` (and from the no-LLM path in
     ``cli/autoqec.py``) so the on-disk graph always matches the two files
-    the Ideator ultimately reads. Never raises — graph assembly is
-    best-effort, and a transient I/O error should not block the much more
-    important history/pareto writes that already succeeded.
+    the Ideator ultimately reads.
+
+    Error policy: swallow only transient I/O and corrupt-JSON failures
+    (e.g. a locked history file on Windows, a half-written pareto.json
+    the startup reconciler hasn't repaired yet). These failures should
+    not block the much more important history/pareto writes that already
+    succeeded. Every other exception — ``TypeError``, ``KeyError``,
+    ``ValueError``, pydantic ``ValidationError``, etc. — indicates a
+    programming bug in ``build_fork_graph`` or upstream schema drift and
+    is re-raised so the round actually fails loudly instead of silently
+    emitting a stale graph (codex review on fix/p0-verifier-fork-graph).
     """
     try:
         history = [
@@ -275,5 +283,5 @@ def refresh_fork_graph(mem: RunMemory) -> None:
         mem.update_fork_graph(
             build_fork_graph(history=history, pareto=pareto, run_id=mem.run_dir.name)
         )
-    except Exception:  # noqa: BLE001 — see docstring
+    except (OSError, json.JSONDecodeError):
         log.exception("record_round: failed to refresh fork_graph.json")

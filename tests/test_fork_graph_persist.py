@@ -89,3 +89,45 @@ def test_record_round_fork_graph_tracks_fork_lineage(tmp_path: Path) -> None:
     parents = {n.get("branch"): n.get("parent") for n in graph["nodes"] if n.get("branch")}
     assert parents["exp/run/01-a"] == "baseline"
     assert parents["exp/run/02-b"] == "exp/run/01-a"
+
+
+def test_refresh_fork_graph_propagates_programming_errors(tmp_path: Path) -> None:
+    """Codex review follow-up: narrow ``except`` must not mask code bugs.
+
+    Before the narrowing, any exception inside ``build_fork_graph`` (a
+    schema drift, a missing key, a type error) was logged and swallowed,
+    so ``record_round`` reported success while leaving ``fork_graph.json``
+    stale or missing. This test monkeypatches ``build_fork_graph`` to
+    raise ``TypeError`` and asserts the error now surfaces to the caller
+    instead of being silently eaten by the log.
+    """
+    from autoqec.orchestration import round_recorder as rr
+
+    mem = RunMemory(tmp_path)
+    # Seed history.jsonl so refresh_fork_graph reaches build_fork_graph
+    # (an empty RunMemory has no history file and bails out in the read
+    # step, which is a legitimate OSError path).
+    mem.append_round(_round_metrics(round_idx=1, branch="exp/run/01-a", fork_from="baseline"))
+
+    def _boom(**_kwargs: object) -> None:
+        raise TypeError("simulated programming bug in build_fork_graph")
+
+    with mock.patch.object(rr, "build_fork_graph", side_effect=_boom):
+        with pytest.raises(TypeError, match="simulated programming bug"):
+            rr.refresh_fork_graph(mem)
+
+
+def test_refresh_fork_graph_swallows_transient_io_errors(tmp_path: Path) -> None:
+    """Counterpart to the propagation test: I/O hiccups must still be
+    swallowed so the far more important history + pareto writes survive.
+    """
+    from autoqec.orchestration import round_recorder as rr
+
+    mem = RunMemory(tmp_path)
+    # Pre-seed history so _atomic_write_json is reached.
+    mem.append_round(_round_metrics(round_idx=1, branch="exp/run/01-a", fork_from="baseline"))
+
+    with mock.patch.object(
+        mem, "update_fork_graph", side_effect=OSError("disk full / file locked")
+    ):
+        rr.refresh_fork_graph(mem)  # must not raise

@@ -160,12 +160,21 @@ def test_run_command_emits_result_prefix(monkeypatch, tmp_path) -> None:
             self.run_dir = Path(run_dir)
             self.pareto_path = self.run_dir / pareto_filename
             self.pareto_path.write_text("[]", encoding="utf-8")
+            # refresh_fork_graph reads history_path and calls update_fork_graph.
+            # history.jsonl is absent here, which refresh_fork_graph tolerates
+            # via its OSError swallow path — still declare the attr so
+            # AttributeError (a programming error, not a tolerated I/O error)
+            # does not bubble up.
+            self.history_path = self.run_dir / "history.jsonl"
 
         def append_round(self, record):
             pass
 
         def update_pareto(self, pareto):
             self.pareto_path.write_text(json.dumps(pareto), encoding="utf-8")
+
+        def update_fork_graph(self, graph):
+            pass
 
     monkeypatch.setattr(cli, "RunMemory", MemoryStub)
     monkeypatch.setattr(
