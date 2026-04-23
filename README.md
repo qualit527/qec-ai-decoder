@@ -32,6 +32,14 @@ syndrome + code DEM
 
 The classical backend guarantees structural validity; the predecoder contributes `Δ_LER = LER(plain_classical) − LER(predecoder + classical)` — a single clean number per round.
 
+Per-round isolation and the Pareto-as-branches model are specified in
+[`spec §15`](docs/superpowers/specs/2026-04-20-autoqec-design.md#15-worktree-based-experiment-model).
+Each round runs on its own `exp/<run_id>/<NN>-<slug>` git branch inside a
+`.worktrees/` checkout, Pareto members are the complete non-dominated
+set of VERIFIED branches, and compose rounds test `git merge parent-A
+parent-B` as a first-class scientific probe. Startup reconciliation
+(§15.10) keeps `history.jsonl` and the live branch set in sync.
+
 ## Team & ownership
 
 | Owner | Model binding | Primary responsibility | Plan file |
@@ -44,7 +52,7 @@ Phase-0 contract file (once created): `docs/contracts/interfaces.md` — edits r
 
 ## Planned deliverables
 
-### 5 Features (core capabilities of the harness)
+### 6 Features (core capabilities of the harness)
 
 | # | Feature | Owner | Status |
 |---|---|---|---|
@@ -53,6 +61,7 @@ Phase-0 contract file (once created): `docs/contracts/interfaces.md` — edits r
 | **F3** | Independent verification module with 3 fair-baseline guards (seed isolation, bootstrap CI, ablation sanity) | Xie Jingu | planned |
 | **F4** | Multi-agent orchestration (Ideator / Coder / Analyst) with tool whitelisting + 3-layer memory + `machine_state` tool | Chen Jiahan | planned |
 | **F5** | Pareto-front maintenance across (Δ_LER, FLOPs, n_params) with verify-admitted candidates | Xie Jingu | planned |
+| **F6** | Worktree-based experiment model (branches-as-Pareto; compose rounds; startup reconciliation) | Full team | **implemented** |
 
 ### 5 Demos (each produces a reproducible artifact)
 

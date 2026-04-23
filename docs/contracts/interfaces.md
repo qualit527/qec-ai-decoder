@@ -176,3 +176,68 @@ the full LLM loop from plain Python. That path is not implemented on
 `main`; the `/autoqec-run` skill is the live LLM-driven surface until a
 subprocess router replaces the Claude-chat orchestrator.
 
+---
+
+## §15 Worktree additions (contract-change)
+
+Added 2026-04-22. All fields are Optional on the legacy path; validators
+make them required on the worktree path. Authoritative source:
+`docs/superpowers/specs/2026-04-20-autoqec-design.md` §15.7.
+
+### `RunnerConfig`
+
+- `code_cwd: Optional[str]` — absolute path to worktree checkout; `None` = legacy in-process path.
+- `branch: Optional[str]` — `exp/<run_id>/<NN>-<slug>`; **required when `code_cwd` is set**.
+- `fork_from: Optional[Union[str, list[str]]]` — list ⇒ compose round.
+- `fork_from_canonical: Optional[str]` — sorted, `|`-joined; dedup key for compose.
+- `fork_from_ordered: Optional[list[str]]` — merge-sequence order (drives `git merge` base); compose only.
+- `compose_mode: Optional[Literal["pure", "with_edit"]]` — **required when `fork_from` is a list**.
+
+Validators: `code_cwd` set ⇒ `branch` required; list-form `fork_from` ⇒
+`compose_mode` required.
+
+> **Note:** `round_attempt_id`, `commit_sha`, and `paired_eval_bundle_id` live
+> on `RoundMetrics` / `VerifyReport` (the *output* surfaces), not on
+> `RunnerConfig` (the *input* surface). The Runner CLI accepts
+> `--round-attempt-id` as a flag and writes it into the emitted
+> `metrics.json`; it is not an input schema field on `RunnerConfig`.
+> See `autoqec/runner/schema.py` for the authoritative shape.
+
+### `RoundMetrics`
+
+- `round_attempt_id: Optional[str]` — **required on worktree path**.
+- `reconcile_id: Optional[str]` — UUID from §15.10 startup reconciliation; set **only** for reconciliation-synthetic rows. Mutually exclusive with `round_attempt_id`.
+- `branch: Optional[str]`, `commit_sha: Optional[str]` — paired; `commit_sha` required when `branch` set, **except** when `status == "branch_manually_deleted"` (§15.10 follow-up rows reference a branch that no longer exists in git, so the commit_sha is legitimately unavailable).
+- `fork_from: Optional[Union[str, list[str]]]`, `fork_from_canonical: Optional[str]`, `fork_from_ordered: Optional[list[str]]`.
+- `compose_mode: Optional[Literal["pure", "with_edit"]]`.
+- `delta_vs_parent: Optional[float]`, `parent_ler: Optional[float]` — training-regime Δ; search-guidance only.
+- `train_seed: Optional[int]` — seed actually used; for Pareto disambiguation.
+- `status_reason: Optional[str]` — short explanation for non-ok / orphaned / branch-manually-deleted statuses.
+- `conflicting_files: Optional[list[str]]` — set iff `status == "compose_conflict"`.
+- `status` Literal gains: `"compose_conflict"`, `"orphaned_branch"`, `"branch_manually_deleted"` (the last two are set by §15.10 startup reconciliation).
+
+> **Note:** `paired_eval_bundle_id` lives on `VerifyReport` (holdout-eval
+> surface), not on `RoundMetrics` (training-side surface). Pareto admission
+> reads it from the paired `verify_report.json`.
+
+Validators: worktree-path rows (`branch` set, `fork_from` set, or
+`status == "compose_conflict"`) need exactly one of `round_attempt_id`
+or `reconcile_id`; `branch` set ⇒ `commit_sha` required;
+`compose_conflict` rows MUST have `branch == None` and
+`commit_sha == None`.
+
+### `VerifyReport`
+
+- `branch: Optional[str]`, `commit_sha: Optional[str]` — paired.
+- `delta_vs_baseline_holdout: Optional[float]` — paired-bundle canonical delta (§15.6.4).
+- `paired_eval_bundle_id: Optional[str]` — required for compose rounds and any Pareto candidate.
+
+### `IdeatorResponse`
+
+- `fork_from: Union[Literal["baseline"], str, list[str]] = "baseline"` — default unblocks legacy responses.
+- `compose_mode: Optional[Literal["pure", "with_edit"]]` — required when `fork_from` is a list.
+
+### `CoderResponse`
+
+- `commit_message: Optional[str]` — filled by Coder on the worktree path; absent tolerated on legacy responses.
+

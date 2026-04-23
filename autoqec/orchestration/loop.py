@@ -26,6 +26,7 @@ def run_round_plan(
     machine_state: dict,
     kb_excerpt: str,
     dsl_schema_md: str,
+    fork_from: str | list[str] = "baseline",
 ) -> dict:
     """Return everything needed to drive one round of the research loop.
 
@@ -33,6 +34,9 @@ def run_round_plan(
     (inline or via subprocess). The Coder/Analyst prompts are assembled
     lazily after their upstream step completes, so only the Ideator prompt
     is materialised up front here.
+
+    `fork_from` names the parent branch the Coder will fork its worktree
+    from (§15.4). Passed through verbatim to the worktree-creation step.
     """
     run_dir = Path(run_dir)
     mem = RunMemory(run_dir)
@@ -42,6 +46,7 @@ def run_round_plan(
         env_spec=env_spec.model_dump(),
         kb_excerpt=kb_excerpt,
         machine_state=machine_state,
+        run_id=run_dir.name,
     )
 
     return {
@@ -49,6 +54,7 @@ def run_round_plan(
         "round_dir": str(round_dir),
         "ideator_prompt": build_prompt("ideator", ideator_ctx),
         "dsl_schema_md": dsl_schema_md,  # forwarded to the Coder when its turn arrives
+        "fork_from": fork_from,  # passed forward to worktree creation
     }
 
 
@@ -57,11 +63,15 @@ def build_coder_prompt(
     mem: RunMemory,
     dsl_schema_md: str,
     best_so_far: list[dict] | None = None,
+    worktree_dir: str | None = None,
 ) -> str:
     """Build the Coder prompt after the Ideator returns a hypothesis.
 
     `best_so_far` defaults to the current Pareto (top 3). Callers can
     override when they want a tighter "dominant configs only" slice.
+
+    `worktree_dir`, when supplied, is threaded into the Coder ctx so the
+    subagent knows where to make edits + commit (§15.4).
     """
     if best_so_far is None:
         pareto = json.loads(mem.pareto_path.read_text(encoding="utf-8") or "[]")
@@ -71,6 +81,8 @@ def build_coder_prompt(
         schema_md=dsl_schema_md,
         best_so_far=best_so_far,
     )
+    if worktree_dir:
+        ctx["worktree_dir"] = worktree_dir
     return build_prompt("coder", ctx)
 
 
