@@ -1,0 +1,10 @@
+[
+  {
+    "round": 1,
+    "delta_ler": 0.0,
+    "flops_per_syndrome": 18159120,
+    "n_params": 34497,
+    "checkpoint_path": "/home/tx/.config/superpowers/worktrees/qec-ai-decoder/demo-surface-d5-36/runs/20260423-210508/round_1/checkpoint.pt",
+    "verified": false
+  }
+]
