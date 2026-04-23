@@ -7,7 +7,8 @@ Add a minimal code coverage report to the existing GitHub Actions CI pipeline so
 The first version should:
 
 - keep the existing CI structure intact
-- reuse the current `make test` entry point
+- keep local `make test` focused on fast non-integration runs
+- add an explicit coverage entry point for CI and opt-in local use
 - print a coverage percentage and per-file summary in CI logs
 
 It should not add external services, dashboards, or enforce a minimum threshold yet.
@@ -17,8 +18,9 @@ It should not add external services, dashboards, or enforce a minimum threshold 
 ### In scope
 
 - add `pytest-cov` to the development dependencies
-- update the `make test` command to emit coverage output
-- keep `.github/workflows/ci.yml` unchanged except insofar as it already runs `make test`
+- add a `make coverage` command that enables coverage explicitly
+- update `.github/workflows/ci.yml` to call the coverage-aware target
+- move shared pytest defaults and coverage settings into `pyproject.toml`
 - report coverage for the main Python code under `autoqec` and `cli`
 
 ### Out of scope
@@ -33,30 +35,34 @@ It should not add external services, dashboards, or enforce a minimum threshold 
 
 The repository already has a stable CI path:
 
-- local and CI both rely on `make test`
-- CI already creates `.venv`, installs `.[dev]`, and runs `make test`
-- `make test` currently runs `pytest tests/ -m "not integration" -v`
+- local development already relies on `make test`
+- CI already creates `.venv` and installs `.[dev]`
+- the repository already uses `pyproject.toml` for pytest markers and Python path setup
 
-This means the lowest-risk approach is to extend `make test` instead of adding a second coverage-specific CI command.
+The main trade-off is local ergonomics versus command reuse. Always attaching coverage to `make test` keeps one command everywhere, but it makes the default local test path slower and noisier.
 
 ## Proposed Approach
 
-Use `pytest-cov` and extend the existing test command to print a terminal coverage summary.
+Use `pytest-cov`, keep `make test` as the fast default command, and add an explicit `make coverage` target for CI and opt-in local runs.
 
 Recommended command shape:
 
 ```bash
-pytest tests/ -m "not integration" -v \
-  --cov=autoqec \
-  --cov=cli \
-  --cov-report=term-missing:skip-covered
+make test
+make coverage
 ```
+
+Supporting configuration:
+
+- `pyproject.toml` owns the default pytest selection (`tests`, `-m "not integration"`, `-v`)
+- `pyproject.toml` owns coverage source and reporting behavior
+- `make coverage` only turns coverage collection on
 
 ## Why This Approach
 
-- smallest possible change to the current workflow
-- local development and CI continue to use the same command
-- no extra CI step is required
+- local development keeps a fast, lower-noise default command
+- CI still uses a single Make target
+- pytest and coverage defaults live in configuration instead of being duplicated on the command line
 - developers can immediately see total coverage and the least-covered files in the CI logs
 
 ## Reporting Behavior
@@ -67,7 +73,7 @@ The coverage report should:
 - show file-level uncovered lines for files that are not fully covered
 - avoid clutter from files that are already fully covered
 
-Using `term-missing:skip-covered` is preferred for the first version because it keeps the report readable while still highlighting gaps.
+Using `show_missing = true` and `skip_covered = true` in coverage config keeps the report readable while still highlighting gaps.
 
 ## Target Files
 
@@ -84,14 +90,12 @@ Coverage should not target:
 
 ## CI Behavior
 
-No new workflow step is needed.
-
 The existing workflow:
 
 1. installs dev dependencies
-2. runs `make test`
+2. runs `make coverage`
 
-After this change, the same step will automatically print coverage information into the GitHub Actions log.
+After this change, CI prints coverage information into the GitHub Actions log, while local developers can still run `make test` without coverage overhead.
 
 ## Failure Model
 
@@ -105,7 +109,7 @@ This is important because the team does not yet have an agreed baseline or targe
 
 ### Why not use `coverage.py` directly
 
-`coverage.py` would work, but it would require either a second command or more custom scripting. `pytest-cov` is simpler because it integrates directly with the existing pytest entry point.
+`coverage.py` would work, but it would require either a second command or more custom scripting. `pytest-cov` is simpler because it integrates with pytest while still allowing a dedicated `make coverage` entry point.
 
 ### Why not add a threshold now
 
@@ -119,7 +123,8 @@ Artifacts are useful later, but the first requirement is simply “show coverage
 
 After this change:
 
-- local `make test` will show coverage
+- local `make test` will stay focused on fast non-integration runs
+- local `make coverage` will show coverage on demand
 - GitHub Actions logs will show coverage
 - the team can discuss future thresholds using real numbers
 

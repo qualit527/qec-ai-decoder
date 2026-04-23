@@ -78,7 +78,7 @@ Day 3 的最低交付物：
 第一轮先发给 Agent 的 prompt：
 
 ```text
-请基于 docs/specs/2026-04-20-autoqec-design.md 和当前仓库，聚焦 independent_eval 和 bb72/qLDPC 这条线，先不要动 Runner 和 orchestration。
+请基于 docs/superpowers/specs/2026-04-20-autoqec-design.md 和当前仓库，聚焦 independent_eval 和 bb72/qLDPC 这条线，先不要动 Runner 和 orchestration。
 
 输出要求：
 1. independent_eval.py 需要读取哪些输入文件和字段

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from importlib import resources
 import json
+import os
 import random
 import subprocess
 import time
@@ -10,12 +12,37 @@ import click
 import yaml
 
 from autoqec.envs.schema import EnvSpec, load_env_yaml
-from autoqec.runner.schema import RunnerConfig
+from autoqec.orchestration.memory import RunMemory
+from autoqec.orchestration.subprocess_runner import (
+    AUTOQEC_CHILD_BRANCH,
+    AUTOQEC_CHILD_CODE_CWD,
+    AUTOQEC_CHILD_COMPOSE_MODE,
+    AUTOQEC_CHILD_CONFIG_YAML,
+    AUTOQEC_CHILD_ENV_YAML,
+    AUTOQEC_CHILD_FORK_FROM,
+    AUTOQEC_CHILD_PROFILE,
+    AUTOQEC_CHILD_ROUND_ATTEMPT_ID,
+    AUTOQEC_CHILD_ROUND_DIR,
+)
+from autoqec.runner.schema import RoundMetrics, RunnerConfig
 
 
 @click.group()
 def main() -> None:
     """AutoQEC CLI."""
+
+
+RESULT_PREFIX = "AUTOQEC_RESULT_JSON="
+
+
+def _write_round_metrics(round_dir: str, metrics: RoundMetrics) -> RoundMetrics:
+    metrics_path = Path(round_dir).resolve() / "metrics.json"
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics_path.write_text(
+        metrics.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    return metrics
 
 
 def _git_head_commit(cwd: str) -> str:
@@ -27,7 +54,7 @@ def _git_head_commit(cwd: str) -> str:
 
 
 def _enrich_local_worktree_metrics(
-    metrics,
+    metrics: RoundMetrics,
     *,
     round_dir: str,
     code_cwd: str,
@@ -35,23 +62,214 @@ def _enrich_local_worktree_metrics(
     fork_from: str | list[str] | None,
     compose_mode: str | None,
     round_attempt_id: str | None,
-):
-    enriched = metrics.model_copy(
-        update={
-            "branch": branch,
-            "commit_sha": _git_head_commit(code_cwd),
-            "fork_from": fork_from,
-            "compose_mode": compose_mode,
-            "round_attempt_id": round_attempt_id or metrics.round_attempt_id,
-        }
+) -> RoundMetrics:
+    updates = {
+        "fork_from": fork_from,
+        "compose_mode": compose_mode,
+        "round_attempt_id": round_attempt_id or metrics.round_attempt_id,
+    }
+    if metrics.status == "compose_conflict":
+        return _write_round_metrics(
+            round_dir,
+            metrics.model_copy(update=updates),
+        )
+
+    try:
+        commit_sha = _git_head_commit(code_cwd)
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        failure_metrics = metrics.model_copy(
+            update={
+                "status": "train_error",
+                "status_reason": f"git rev-parse HEAD failed for branch {branch!r}: {exc}",
+                "branch": None,
+                "commit_sha": None,
+                **updates,
+            }
+        )
+        _write_round_metrics(round_dir, failure_metrics)
+        raise
+
+    return _write_round_metrics(
+        round_dir,
+        metrics.model_copy(
+            update={
+                "branch": branch,
+                "commit_sha": commit_sha,
+                **updates,
+            }
+        ),
     )
-    metrics_path = Path(round_dir) / "metrics.json"
-    metrics_path.parent.mkdir(parents=True, exist_ok=True)
-    metrics_path.write_text(
-        enriched.model_dump_json(indent=2),
-        encoding="utf-8",
-    )
-    return enriched
+
+
+def load_example_templates() -> list[tuple[str, dict]]:
+    template_root = resources.files("autoqec").joinpath("example_db")
+    try:
+        template_files = sorted(
+            [entry for entry in template_root.iterdir() if entry.name.endswith(".yaml")],
+            key=lambda entry: entry.name,
+        )
+    except FileNotFoundError as exc:
+        raise click.ClickException(
+            "Example templates are not available in this install. "
+            "Reinstall from a source checkout or include autoqec example_db package data."
+        ) from exc
+
+    templates = [
+        (Path(entry.name).stem, yaml.safe_load(entry.read_text(encoding="utf-8")))
+        for entry in template_files
+    ]
+    if not templates:
+        raise click.ClickException(
+            "No example templates were found under autoqec/example_db. "
+            "This install is missing packaged demo templates."
+        )
+    return templates
+
+
+def _candidate_pareto(records: list[dict]) -> list[dict]:
+    candidates = []
+    for idx, record in enumerate(records, start=1):
+        if record.get("status") != "ok":
+            continue
+        if any(record.get(key) is None for key in ("delta_ler", "flops_per_syndrome", "n_params")):
+            continue
+        candidates.append(
+            {
+                "round": int(record.get("round", idx)),
+                "delta_ler": float(record["delta_ler"]),
+                "flops_per_syndrome": int(record["flops_per_syndrome"]),
+                "n_params": int(record["n_params"]),
+                "checkpoint_path": record.get("checkpoint_path"),
+                "verified": False,
+            }
+        )
+
+    front: list[dict] = []
+    for cand in candidates:
+        dominated = False
+        for other in candidates:
+            if other is cand:
+                continue
+            no_worse = (
+                other["delta_ler"] >= cand["delta_ler"]
+                and other["flops_per_syndrome"] <= cand["flops_per_syndrome"]
+                and other["n_params"] <= cand["n_params"]
+            )
+            strictly_better = (
+                other["delta_ler"] > cand["delta_ler"]
+                or other["flops_per_syndrome"] < cand["flops_per_syndrome"]
+                or other["n_params"] < cand["n_params"]
+            )
+            if no_worse and strictly_better:
+                dominated = True
+                break
+        if not dominated:
+            front.append(cand)
+
+    front.sort(key=lambda item: (-item["delta_ler"], item["flops_per_syndrome"], item["n_params"], item["round"]))
+
+    unique_front: list[dict] = []
+    seen = set()
+    for item in front:
+        key = (item["delta_ler"], item["flops_per_syndrome"], item["n_params"])
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_front.append(item)
+    return unique_front
+
+
+def _parse_fork_from_option(fork_from: str | None) -> str | list[str] | None:
+    parsed_fork_from: str | list[str] | None = None
+    if fork_from is not None:
+        if fork_from.strip().startswith("["):
+            try:
+                parsed = json.loads(fork_from)
+            except json.JSONDecodeError as e:
+                raise click.BadParameter(
+                    f"--fork-from looks like JSON but failed to parse: {e}"
+                ) from e
+            if not isinstance(parsed, list) or not all(
+                isinstance(x, str) for x in parsed
+            ):
+                raise click.BadParameter(
+                    "--fork-from JSON must be a list of strings"
+                )
+            parsed_fork_from = parsed
+        else:
+            parsed_fork_from = fork_from
+    return parsed_fork_from
+
+
+def _run_round_impl(
+    env_yaml: str,
+    config_yaml: str,
+    round_dir: str,
+    profile: str,
+    code_cwd: str | None,
+    branch: str | None,
+    fork_from: str | None,
+    compose_mode: str | None,
+    round_attempt_id: str | None,
+    _internal_execute_locally: bool,
+) -> None:
+    env = load_env_yaml(env_yaml)
+    with open(config_yaml, encoding="utf-8") as f:
+        cfg_dict = yaml.safe_load(f)
+
+    parsed_fork_from = _parse_fork_from_option(fork_from)
+
+    # Worktree-path runs go through subprocess_runner; in-process runs use the legacy Runner.
+    # ``_internal_execute_locally`` is set by the child hop (run-round-internal)
+    # so the child can skip the subprocess dispatcher.
+    if code_cwd is not None and not _internal_execute_locally:
+        cfg = RunnerConfig(
+            env_name=env.name,
+            predecoder_config=cfg_dict,
+            training_profile=profile,
+            seed=0,
+            round_dir=round_dir,
+            code_cwd=code_cwd,
+            branch=branch,
+            fork_from=parsed_fork_from,
+            compose_mode=compose_mode,
+        )
+        from autoqec.orchestration.subprocess_runner import run_round_in_subprocess
+
+        metrics = run_round_in_subprocess(cfg, env, round_attempt_id=round_attempt_id)
+    else:
+        # Child hop (or plain in-process invocation): strip code_cwd so the
+        # in-process Runner's §15.8 guard does not fire. Parent subprocess_runner
+        # already pinned cwd + PYTHONPATH before spawning us; branch /
+        # fork_from / compose_mode / round_attempt_id still flow through so
+        # the metrics row carries full provenance.
+        cfg = RunnerConfig(
+            env_name=env.name,
+            predecoder_config=cfg_dict,
+            training_profile=profile,
+            seed=0,
+            round_dir=round_dir,
+            code_cwd=None,
+            branch=branch,
+            fork_from=parsed_fork_from,
+            compose_mode=compose_mode,
+        )
+        from autoqec.runner.runner import run_round
+
+        metrics = run_round(cfg, env)
+        if round_attempt_id is not None and metrics.round_attempt_id is None:
+            metrics = metrics.model_copy(update={"round_attempt_id": round_attempt_id})
+        if _internal_execute_locally and code_cwd is not None and branch is not None:
+            metrics = _enrich_local_worktree_metrics(
+                metrics,
+                round_dir=round_dir,
+                code_cwd=code_cwd,
+                branch=branch,
+                fork_from=parsed_fork_from,
+                compose_mode=compose_mode,
+                round_attempt_id=round_attempt_id,
+            )
+    click.echo(metrics.model_dump_json(indent=2))
 
 
 @main.command(name="run-round")
@@ -109,67 +327,45 @@ def run_round_cmd(
     round_attempt_id: str | None,
     _internal_execute_locally: bool,
 ) -> None:
-    env = load_env_yaml(env_yaml)
-    with open(config_yaml) as f:
-        cfg_dict = yaml.safe_load(f)
-
-    # Parse fork_from: JSON list -> list[str]; bare string -> str.
-    parsed_fork_from: str | list[str] | None = None
-    if fork_from is not None:
-        if fork_from.strip().startswith("["):
-            try:
-                parsed = json.loads(fork_from)
-            except json.JSONDecodeError as e:
-                raise click.BadParameter(
-                    f"--fork-from looks like JSON but failed to parse: {e}"
-                ) from e
-            if not isinstance(parsed, list) or not all(
-                isinstance(x, str) for x in parsed
-            ):
-                raise click.BadParameter(
-                    "--fork-from JSON must be a list of strings"
-                )
-            parsed_fork_from = parsed
-        else:
-            parsed_fork_from = fork_from
-
-    cfg = RunnerConfig(
-        env_name=env.name,
-        predecoder_config=cfg_dict,
-        training_profile=profile,
-        seed=0,
+    _run_round_impl(
+        env_yaml=env_yaml,
+        config_yaml=config_yaml,
         round_dir=round_dir,
+        profile=profile,
         code_cwd=code_cwd,
         branch=branch,
-        fork_from=parsed_fork_from,
+        fork_from=fork_from,
         compose_mode=compose_mode,
+        round_attempt_id=round_attempt_id,
+        _internal_execute_locally=_internal_execute_locally,
     )
 
-    # Worktree-path runs go through subprocess_runner; in-process runs use the legacy Runner.
-    # --_internal-execute-locally is the recursion guard: when subprocess_runner spawns us,
-    # it sets this flag so this branch collapses back to the in-process Runner.
-    if code_cwd is not None and not _internal_execute_locally:
-        from autoqec.orchestration.subprocess_runner import run_round_in_subprocess
 
-        metrics = run_round_in_subprocess(cfg, env, round_attempt_id=round_attempt_id)
-    else:
-        from autoqec.runner.runner import run_round
+@main.command(name="run-round-internal", hidden=True)
+def run_round_internal_cmd() -> None:
+    """Internal subprocess entrypoint using env vars instead of dynamic argv."""
+    env_yaml = os.environ[AUTOQEC_CHILD_ENV_YAML]
+    config_yaml = os.environ[AUTOQEC_CHILD_CONFIG_YAML]
+    round_dir = os.environ[AUTOQEC_CHILD_ROUND_DIR]
+    profile = os.environ[AUTOQEC_CHILD_PROFILE]
+    code_cwd = os.environ[AUTOQEC_CHILD_CODE_CWD]
+    branch = os.environ[AUTOQEC_CHILD_BRANCH]
+    fork_from = os.environ.get(AUTOQEC_CHILD_FORK_FROM)
+    compose_mode = os.environ.get(AUTOQEC_CHILD_COMPOSE_MODE)
+    round_attempt_id = os.environ.get(AUTOQEC_CHILD_ROUND_ATTEMPT_ID)
 
-        local_cfg = cfg
-        if _internal_execute_locally and code_cwd is not None:
-            local_cfg = cfg.model_copy(update={"code_cwd": None})
-        metrics = run_round(local_cfg, env)
-        if _internal_execute_locally and code_cwd is not None and branch is not None:
-            metrics = _enrich_local_worktree_metrics(
-                metrics,
-                round_dir=round_dir,
-                code_cwd=code_cwd,
-                branch=branch,
-                fork_from=parsed_fork_from,
-                compose_mode=compose_mode,
-                round_attempt_id=round_attempt_id,
-            )
-    click.echo(metrics.model_dump_json(indent=2))
+    _run_round_impl(
+        env_yaml=env_yaml,
+        config_yaml=config_yaml,
+        round_dir=round_dir,
+        profile=profile,
+        code_cwd=code_cwd,
+        branch=branch,
+        fork_from=fork_from,
+        compose_mode=compose_mode,
+        round_attempt_id=round_attempt_id,
+        _internal_execute_locally=True,
+    )
 
 
 @main.command()
@@ -184,17 +380,22 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
     run_id = time.strftime("%Y%m%d-%H%M%S")
     run_dir = (Path("runs") / run_id).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
-    templates = sorted(Path("autoqec/example_db").glob("*.yaml"))
+    mem = RunMemory(run_dir, pareto_filename="candidate_pareto.json")
+    templates = load_example_templates()
     dev_safe_templates = {"gnn_small", "gnn_gated", "neural_bp_min"}
-    history = []
+    history: list[dict] = []
     for round_idx in range(1, rounds + 1):
         round_dir = run_dir / f"round_{round_idx}"
         if no_llm:
             candidates = templates
             if profile == "dev":
-                candidates = [path for path in templates if path.stem in dev_safe_templates]
-            template = random.choice(candidates)
-            cfg_dict = yaml.safe_load(template.read_text())
+                candidates = [item for item in templates if item[0] in dev_safe_templates]
+            if not candidates:
+                raise click.ClickException(
+                    f"No bundled templates are available for profile={profile!r}. "
+                    "This install is missing the expected demo template assets."
+                )
+            _, cfg_dict = random.choice(candidates)
         else:
             raise click.ClickException("LLM mode is not wired in this branch yet; use --no-llm")
         cfg = RunnerConfig(
@@ -205,12 +406,27 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
             round_dir=str(round_dir),
         )
         metrics = run_round(cfg, env)
-        history.append(metrics.model_dump())
-        with (run_dir / "history.jsonl").open("a", encoding="utf-8") as f:
-            f.write(metrics.model_dump_json() + "\n")
+        record = metrics.model_dump()
+        record["round"] = round_idx
+        history.append(record)
+        mem.append_round(record)
+        mem.update_pareto(_candidate_pareto(history))
         click.echo(f"Round {round_idx}: {metrics.status} Δ={metrics.delta_ler}")
-    (run_dir / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
-    click.echo(json.dumps({"run_dir": str(run_dir), "rounds": rounds}, indent=2))
+    (run_dir / "history.json").write_text(
+        json.dumps(history, indent=2),
+        encoding="utf-8",
+    )
+    click.echo(
+        f"{RESULT_PREFIX}"
+        + json.dumps(
+            {
+                "run_dir": str(run_dir),
+                "rounds": rounds,
+                "candidate_pareto_path": str(run_dir / "candidate_pareto.json"),
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 @main.command()
@@ -323,6 +539,5 @@ def diagnose(run_dir: str) -> None:
             out["metrics"] = json.loads(p.read_text())
     click.echo(json.dumps(out, indent=2))
 
-
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

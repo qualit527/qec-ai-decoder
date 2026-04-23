@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Coordinate 3 owners (Chen Jiahan / Xie Jingu / Lin Tengxiang) to ship the AutoQEC MVP per `docs/specs/2026-04-20-autoqec-design.md` v2.2 within ~3 days by freezing interfaces early and running scaffolds in parallel.
+**Goal:** Coordinate 3 owners (Chen Jiahan / Xie Jingu / Lin Tengxiang) to ship the AutoQEC MVP per `docs/superpowers/specs/2026-04-20-autoqec-design.md` v2.2 within ~3 days by freezing interfaces early and running scaffolds in parallel.
 
 **Architecture:** 3 owners work in parallel after a Phase-0 contract freeze. Each owns one QEC-core workstream + one delivery-facing workstream (see spec §12.1). A single Python package `autoqec/` is shared; each owner owns a disjoint subtree so merges don't collide.
 
@@ -13,12 +13,12 @@
 ## 0. Reading order
 
 Read in this order before starting work:
-1. `docs/specs/2026-04-20-autoqec-design.md` (the spec — source of truth)
+1. `docs/superpowers/specs/2026-04-20-autoqec-design.md` (the spec — source of truth)
 2. **This file** — master coordination
 3. Your own plan:
-   - Chen Jiahan → `docs/plans/2026-04-21-autoqec-person-a-chen.md`
-   - Xie Jingu → `docs/plans/2026-04-21-autoqec-person-b-xie.md`
-   - Lin Tengxiang → `docs/plans/2026-04-21-autoqec-person-c-lin.md`
+   - Chen Jiahan → `docs/superpowers/plans/2026-04-21-autoqec-person-a-chen.md`
+   - Xie Jingu → `docs/superpowers/plans/2026-04-21-autoqec-person-b-xie.md`
+   - Lin Tengxiang → `docs/superpowers/plans/2026-04-21-autoqec-person-c-lin.md`
 4. Companion knowledge: `knowledge/DECODER_ROADMAP.md` (DSL building blocks), `knowledge/STRATEGIC_ASSESSMENT.md` (novelty/venue), `knowledge/AUTORESEARCH_PATTERNS.md` (what to port from AIDE / open-coscientist).
 
 ---
@@ -478,7 +478,7 @@ git commit -m "chore: scaffold autoqec package + CLI stubs"
 
 ## 10. Execution handoff
 
-**Plan saved to `docs/plans/2026-04-21-autoqec-master.md`. Two execution options:**
+**Plan saved to `docs/superpowers/plans/2026-04-21-autoqec-master.md`. Two execution options:**
 
 **1. Subagent-Driven (recommended)** — I dispatch a fresh subagent per Phase (Phase 0 first; then 3 subagents in parallel for Phase 1; then integration).
 

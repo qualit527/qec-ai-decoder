@@ -8,6 +8,7 @@ from autoqec.runner.schema import RunnerConfig
 @pytest.mark.integration
 def test_runner_end_to_end(tmp_path) -> None:
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    round_dir = tmp_path / "round_0"
     cfg = RunnerConfig(
         env_name=env.name,
         predecoder_config={
@@ -33,7 +34,12 @@ def test_runner_end_to_end(tmp_path) -> None:
         },
         training_profile="dev",
         seed=0,
-        round_dir=str(tmp_path / "round_0"),
+        round_dir=str(round_dir),
     )
     metrics = run_round(cfg, env)
     assert metrics.status == "ok"
+    assert round_dir.joinpath("metrics.json").exists()
+    assert round_dir.joinpath("checkpoint.pt").exists()
+    assert round_dir.joinpath("train.log").exists()
+    assert metrics.checkpoint_path is not None
+    assert metrics.training_log_path is not None
