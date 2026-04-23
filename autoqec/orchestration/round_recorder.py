@@ -133,10 +133,13 @@ def _non_dominated_merge(front: list[dict], candidate: dict) -> list[dict]:
     """Admit `candidate` to `front` using Pareto dominance.
 
     - Reject `candidate` if any existing member dominates it.
+    - Reject `candidate` if it is already present in the archive.
     - Drop any existing member dominated by `candidate`.
     - Otherwise append `candidate`.
     """
     for existing in front:
+        if existing == candidate:
+            return front  # exact duplicate; reject
         if _dominates(existing, candidate):
             return front  # candidate is dominated; reject
     pruned = [p for p in front if not _dominates(candidate, p)]
@@ -176,6 +179,40 @@ def _write_preview(run_dir: Path, front: list[dict]) -> None:
     )
 
 
+def admit_verified_round_to_pareto(
+    mem: RunMemory,
+    round_metrics: Mapping[str, Any],
+    verify_report: Mapping[str, Any],
+) -> bool:
+    """Admit one VERIFIED report into pareto.json without touching history/log."""
+    if verify_report.get("verdict") != "VERIFIED":
+        return False
+
+    if verify_report.get("delta_vs_baseline_holdout") is None:
+        log.warning(
+            "record_round: VERIFIED round %s has no delta_vs_baseline_holdout — skipping Pareto admission",
+            round_metrics.get("round"),
+        )
+        return False
+
+    front = json.loads(mem.pareto_path.read_text(encoding="utf-8") or "[]")
+    candidate = _pareto_row(round_metrics, verify_report)
+    if not _has_all_pareto_axes(candidate):
+        missing = [k for k in _PARETO_AXES if candidate.get(k) is None]
+        log.warning(
+            "record_round: VERIFIED round %s missing Pareto axes %s — skipping admission",
+            round_metrics.get("round"),
+            missing,
+        )
+        return False
+    merged_front = _non_dominated_merge(front, candidate)
+    if merged_front == front:
+        return False
+    mem.update_pareto(merged_front)
+    _write_preview(mem.run_dir, merged_front)
+    return True
+
+
 def record_round(
     mem: RunMemory,
     round_metrics: dict,
@@ -213,23 +250,7 @@ def record_round(
             round_metrics.get("round"),
         )
         return
-    if verify_report.get("delta_vs_baseline_holdout") is None:
-        log.warning(
-            "record_round: VERIFIED round %s has no delta_vs_baseline_holdout — skipping Pareto admission",
-            round_metrics.get("round"),
-        )
-        return
 
-    front = json.loads(mem.pareto_path.read_text(encoding="utf-8") or "[]")
-    candidate = _pareto_row(round_metrics, verify_report)
-    if not _has_all_pareto_axes(candidate):
-        missing = [k for k in _PARETO_AXES if candidate.get(k) is None]
-        log.warning(
-            "record_round: VERIFIED round %s missing Pareto axes %s — skipping admission",
-            round_metrics.get("round"),
-            missing,
-        )
-        return
-    front = _non_dominated_merge(front, candidate)
-    mem.update_pareto(front)
-    _write_preview(mem.run_dir, front)
+    verify_payload = dict(verify_report)
+    verify_payload.setdefault("verdict", verify_verdict)
+    admit_verified_round_to_pareto(mem, round_metrics, verify_payload)
