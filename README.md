@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/branding/autoqec-ai-logo.png" alt="AutoQEC AI logo" width="720">
+</p>
+
 # QEC AI-Enhanced Decoder — **AutoQEC**
 
 [![CI](https://github.com/qualit527/qec-ai-decoder/actions/workflows/ci.yml/badge.svg)](https://github.com/qualit527/qec-ai-decoder/actions/workflows/ci.yml)
