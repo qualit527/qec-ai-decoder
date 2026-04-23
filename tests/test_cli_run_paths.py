@@ -102,6 +102,10 @@ def test_run_cli_works_from_foreign_cwd_and_writes_candidate_pareto(tmp_path: Pa
     env["PYTHONPATH"] = (
         f"{repo_root}{os.pathsep}{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(repo_root)
     )
+    # Force UTF-8 on the child process's stdio so locales like Windows-zh-CN
+    # (CP936/GBK default) do not emit bytes the parent's utf-8 pipe can't decode.
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
 
     completed = subprocess.run(
         [
@@ -121,6 +125,7 @@ def test_run_cli_works_from_foreign_cwd_and_writes_candidate_pareto(tmp_path: Pa
         text=True,
         check=True,
         encoding="utf-8",
+        errors="replace",
         env=env,
     )
 
