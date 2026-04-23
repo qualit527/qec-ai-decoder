@@ -35,6 +35,49 @@ def main() -> None:
 RESULT_PREFIX = "AUTOQEC_RESULT_JSON="
 
 
+def _read_text_if_exists(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def _first_matching_line(candidates: list[str], predicate) -> str | None:
+    for text in candidates:
+        for raw_line in text.splitlines():
+            line = " ".join(raw_line.strip().split())
+            if line and predicate(line.lower()):
+                return line
+    return None
+
+
+def _diagnose_failure_signature(metrics: dict | None, train_log_text: str, config_text: str) -> tuple[str, list[str]]:
+    status_reason = ""
+    if metrics is not None:
+        status_reason = str(metrics.get("status_reason") or "")
+    candidates = [status_reason, train_log_text, config_text]
+
+    oom_signal = _first_matching_line(
+        candidates,
+        lambda line: "out of memory" in line or "oom" in line or "vram" in line,
+    )
+    if oom_signal is not None:
+        return "oom", [oom_signal]
+
+    nan_signal = _first_matching_line(
+        candidates,
+        lambda line: "nan" in line,
+    )
+    if nan_signal is not None:
+        return "nan_loss", [nan_signal]
+
+    degenerate_signal = _first_matching_line(
+        candidates,
+        lambda line: "p = 0" in line or "p=0" in line or "degenerate" in line,
+    )
+    if degenerate_signal is not None:
+        return "degenerate_p_zero", [degenerate_signal]
+
+    return "unknown", []
 def _write_round_metrics(round_dir: str, metrics: RoundMetrics) -> RoundMetrics:
     metrics_path = Path(round_dir).resolve() / "metrics.json"
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
@@ -543,6 +586,8 @@ def review_log(run_dir: str) -> None:
     rd = Path(run_dir)
     hist_path = rd / "history.jsonl"
     pareto_path = rd / "pareto.json"
+    if not pareto_path.exists():
+        pareto_path = rd / "candidate_pareto.json"
     if not hist_path.exists():
         click.echo("No history.jsonl")
         return
@@ -573,12 +618,25 @@ def diagnose(run_dir: str) -> None:
             click.echo("No round dirs found and no metrics in given path")
             return
         target = round_dirs[-1]
-    out: dict = {"path": str(target)}
+    metrics_path = target / "metrics.json"
+    train_log_path = target / "train.log"
+    config_path = target / "config.yaml"
+    metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else None
+    train_log_text = _read_text_if_exists(train_log_path)
+    config_text = _read_text_if_exists(config_path)
+    root_cause, signals = _diagnose_failure_signature(metrics, train_log_text, config_text)
+
+    out: dict = {
+        "path": str(target),
+        "root_cause": root_cause,
+        "signals": signals,
+        "read_only": True,
+    }
     for fn in ("config.yaml", "metrics.json", "train.log"):
         p = target / fn
         out[f"has_{fn}"] = p.exists()
         if fn == "metrics.json" and p.exists():
-            out["metrics"] = json.loads(p.read_text())
+            out["metrics"] = metrics
     click.echo(json.dumps(out, indent=2))
 
 if __name__ == "__main__":  # pragma: no cover

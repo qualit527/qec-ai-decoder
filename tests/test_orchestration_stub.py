@@ -180,6 +180,19 @@ def test_parse_response_enforces_ideator_schema() -> None:
         parse_response("ideator", missing_field)
 
 
+def test_parse_response_names_missing_required_rationale() -> None:
+    from autoqec.agents.dispatch import parse_response
+
+    missing_rationale = (
+        "```json\n"
+        '{"hypothesis": "h", "expected_delta_ler": 1e-4, "expected_cost_s": 10}\n'
+        "```"
+    )
+
+    with pytest.raises(ValueError, match=r"rationale"):
+        parse_response("ideator", missing_rationale)
+
+
 def test_parse_response_enforces_coder_tier_value() -> None:
     from autoqec.agents.dispatch import parse_response
 
