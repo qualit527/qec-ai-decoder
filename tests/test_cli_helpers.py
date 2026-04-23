@@ -198,6 +198,24 @@ def test_candidate_pareto_skips_ok_rows_with_missing_metrics() -> None:
     assert [row["round"] for row in front] == [2]
 
 
+def test_load_round_metrics_for_verify_returns_none_when_missing(tmp_path) -> None:
+    assert cli._load_round_metrics_for_verify(tmp_path / "round_9") is None
+
+
+def test_load_round_metrics_for_verify_infers_round_from_directory_name(tmp_path) -> None:
+    round_dir = tmp_path / "round_7"
+    round_dir.mkdir()
+    (round_dir / "metrics.json").write_text(
+        json.dumps({"status": "ok"}),
+        encoding="utf-8",
+    )
+
+    metrics = cli._load_round_metrics_for_verify(round_dir)
+
+    assert metrics["status"] == "ok"
+    assert metrics["round"] == 7
+
+
 def test_verify_command_writes_report_artifacts(monkeypatch, tmp_path) -> None:
     round_dir = tmp_path / "round_1"
     round_dir.mkdir()
@@ -235,7 +253,9 @@ def test_verify_command_writes_report_artifacts(monkeypatch, tmp_path) -> None:
     assert captured["ckpt"] == round_dir / "checkpoint.pt"
     assert captured["holdout_seeds"] == [9000, 9001, 9002]
     assert json.loads((round_dir / "verification_report.json").read_text())["verdict"] == "VERIFIED"
-    assert "Verification Report" in (round_dir / "verification_report.md").read_text()
+    report_md = (round_dir / "verification_report.md").read_text()
+    assert "Verification Report" in report_md
+    assert "Paired eval bundle ID" not in report_md
 
 
 def test_verify_command_admits_verified_round_into_pareto(monkeypatch, tmp_path) -> None:
@@ -283,6 +303,9 @@ def test_verify_command_admits_verified_round_into_pareto(monkeypatch, tmp_path)
     assert pareto[0]["round"] == 1
     assert pareto[0]["delta_vs_baseline_holdout"] == 0.02
     assert pareto[0]["paired_eval_bundle_id"] == "33333333-3333-5333-8333-333333333333"
+    assert "Paired eval bundle ID: 33333333-3333-5333-8333-333333333333" in (
+        round_dir / "verification_report.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_verify_command_skips_pareto_for_non_verified_report(monkeypatch, tmp_path) -> None:
