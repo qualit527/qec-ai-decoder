@@ -133,10 +133,13 @@ def _non_dominated_merge(front: list[dict], candidate: dict) -> list[dict]:
     """Admit `candidate` to `front` using Pareto dominance.
 
     - Reject `candidate` if any existing member dominates it.
+    - Reject `candidate` if it is already present in the archive.
     - Drop any existing member dominated by `candidate`.
     - Otherwise append `candidate`.
     """
     for existing in front:
+        if existing == candidate:
+            return front  # exact duplicate; reject
         if _dominates(existing, candidate):
             return front  # candidate is dominated; reject
     pruned = [p for p in front if not _dominates(candidate, p)]
@@ -202,9 +205,11 @@ def admit_verified_round_to_pareto(
             missing,
         )
         return False
-    front = _non_dominated_merge(front, candidate)
-    mem.update_pareto(front)
-    _write_preview(mem.run_dir, front)
+    merged_front = _non_dominated_merge(front, candidate)
+    if merged_front == front:
+        return False
+    mem.update_pareto(merged_front)
+    _write_preview(mem.run_dir, merged_front)
     return True
 
 

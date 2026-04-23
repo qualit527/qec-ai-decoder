@@ -296,8 +296,14 @@ def test_verify_command_admits_verified_round_into_pareto(monkeypatch, tmp_path)
         [str(round_dir), "--env", "autoqec/envs/builtin/surface_d5_depol.yaml", "--n-seeds", "2"],
         catch_exceptions=False,
     )
+    rerun = runner.invoke(
+        cli.verify,
+        [str(round_dir), "--env", "autoqec/envs/builtin/surface_d5_depol.yaml", "--n-seeds", "2"],
+        catch_exceptions=False,
+    )
 
     assert result.exit_code == 0
+    assert rerun.exit_code == 0
     pareto = json.loads((run_dir / "pareto.json").read_text(encoding="utf-8"))
     assert len(pareto) == 1
     assert pareto[0]["round"] == 1
