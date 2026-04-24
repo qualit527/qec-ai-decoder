@@ -80,6 +80,12 @@ def test_profile_params_and_failure_rate_cover_both_modes() -> None:
         "n_shots_val": 256,
         "epochs_cap": 3,
     }
+    perf_env = load_env_yaml("autoqec/envs/builtin/bb72_perf.yaml")
+    assert runner._profile_params(perf_env, "benchmark") == {
+        "n_shots_train": 8192,
+        "n_shots_val": 4096,
+        "epochs_cap": 6,
+    }
 
     preds = np.array([[0, 1], [1, 1]])
     targets = np.array([[0, 1], [0, 1]])

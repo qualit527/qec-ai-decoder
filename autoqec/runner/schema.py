@@ -9,7 +9,7 @@ class RunnerConfig(BaseModel):
     # === existing fields ===
     env_name: str
     predecoder_config: dict
-    training_profile: Literal["dev", "prod"] = "dev"
+    training_profile: Literal["dev", "prod", "benchmark"] = "dev"
     seed: int = 0
     round_dir: str
     env_yaml_path: Optional[str] = None

@@ -60,7 +60,7 @@ class TrainingConfig(BaseModel):
     batch_size: int = Field(ge=1)
     epochs: int = Field(ge=1)
     loss: LossName
-    profile: Literal["dev", "prod"]
+    profile: Literal["dev", "prod", "benchmark"]
 
 
 class PredecoderDSL(BaseModel):
@@ -86,4 +86,3 @@ class PredecoderDSL(BaseModel):
             if self.gnn is not None:
                 raise ValueError("gnn block is not allowed when type='neural_bp'")
         return self
-

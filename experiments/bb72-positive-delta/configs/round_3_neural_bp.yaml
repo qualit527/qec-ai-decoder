@@ -12,4 +12,4 @@ training:
   batch_size: 64
   epochs: 6
   loss: bce
-  profile: prod
+  profile: benchmark

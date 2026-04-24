@@ -38,6 +38,18 @@ def _profile_params(env_spec: EnvSpec, profile: str) -> dict[str, int]:
             "n_shots_val": min(env_spec.eval_protocol.min_shots_val, 64),
             "epochs_cap": 1,
         }
+    if profile == "prod":
+        return {
+            "n_shots_train": min(env_spec.eval_protocol.min_shots_train, 2048),
+            "n_shots_val": min(env_spec.eval_protocol.min_shots_val, 256),
+            "epochs_cap": 3,
+        }
+    if profile == "benchmark":
+        return {
+            "n_shots_train": env_spec.eval_protocol.min_shots_train,
+            "n_shots_val": env_spec.eval_protocol.min_shots_val,
+            "epochs_cap": 6,
+        }
     return {
         "n_shots_train": min(env_spec.eval_protocol.min_shots_train, 2048),
         "n_shots_val": min(env_spec.eval_protocol.min_shots_val, 256),
