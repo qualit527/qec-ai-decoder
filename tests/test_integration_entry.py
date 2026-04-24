@@ -28,3 +28,14 @@ def test_integration_entry_is_documented_for_contributors_and_agents() -> None:
     agents = Path("AGENTS.md").read_text(encoding="utf-8")
     assert "docs/test-plan.md" in agents
     assert "make test-integration" in agents
+
+
+def test_slow_test_opt_in_is_documented_for_contributors_and_agents() -> None:
+    plan = Path("docs/test-plan.md").read_text(encoding="utf-8")
+    assert "--run-slow" in plan
+
+    claude = Path("CLAUDE.md").read_text(encoding="utf-8")
+    assert "--run-slow" in claude
+
+    agents = Path("AGENTS.md").read_text(encoding="utf-8")
+    assert "--run-slow" in agents
