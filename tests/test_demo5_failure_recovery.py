@@ -13,7 +13,7 @@ import pytest
 
 DEMO_DIR = Path("demos/demo-5-failure-recovery")
 HAS_BASH = shutil.which("bash") is not None
-TEST_PYTHON = "/home/jinguxie/qec-ai-decoder/.venv/bin/python"
+TEST_PYTHON = sys.executable
 
 
 def _load_generate_module():
