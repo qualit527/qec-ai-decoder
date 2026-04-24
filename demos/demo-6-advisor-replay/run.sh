@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PYTHON_BIN="${PYTHON_BIN:-python}"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if [[ -x "./.venv/bin/python" ]]; then
+    PYTHON_BIN="./.venv/bin/python"
+  elif [[ -n "${VIRTUAL_ENV:-}" && -x "$VIRTUAL_ENV/bin/python" ]]; then
+    PYTHON_BIN="$VIRTUAL_ENV/bin/python"
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  else
+    echo "Could not find a Python interpreter. Set PYTHON_BIN=/path/to/python." >&2
+    exit 127
+  fi
+fi
 ENV_YAML=${ENV_YAML:-autoqec/envs/builtin/surface_d5_depol.yaml}
 PROFILE=${PROFILE:-dev}
 ROUNDS=${ROUNDS:-1}

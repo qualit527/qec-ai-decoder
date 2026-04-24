@@ -582,7 +582,10 @@ def test_demo6_readme_documents_no_network_and_existing_demo_packaging() -> None
 def test_demo6_run_script_uses_portable_python_and_paths() -> None:
     script = Path("demos/demo-6-advisor-replay/run.sh").read_text(encoding="utf-8")
 
-    assert 'PYTHON_BIN="${PYTHON_BIN:-python}"' in script
+    assert 'if [[ -z "${PYTHON_BIN:-}" ]]; then' in script
+    assert 'elif command -v python >/dev/null 2>&1; then' in script
+    assert 'elif command -v python3 >/dev/null 2>&1; then' in script
+    assert 'PYTHON_BIN="./.venv/bin/python"' in script
     assert "/home/jinguxie" not in script
     assert "/tmp/autoqec" not in script
     assert "os.pathsep.join" in script

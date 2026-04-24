@@ -318,6 +318,10 @@ def test_subprocess_runner_writes_artifact_manifest(tmp_path):
     subprocess.check_call(
         ["git", "-C", str(tmp_path), "checkout", "-q", "-b", "exp/test/09-manifest"]
     )
+    worktree_run_sha = subprocess.check_output(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        text=True,
+    ).strip()
 
     child_stdout = json.dumps({
         "status": "ok",
@@ -361,6 +365,8 @@ def test_subprocess_runner_writes_artifact_manifest(tmp_path):
     assert manifest_path.exists()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema_version"] == 1
+    assert manifest["repo"]["branch"] == "exp/test/09-manifest"
+    assert manifest["repo"]["commit_sha"] == worktree_run_sha
     assert manifest["environment"]["env_yaml_sha256"]
     assert manifest["round"]["dsl_config_sha256"]
     assert manifest["round"]["command_line"] == [

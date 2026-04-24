@@ -55,6 +55,12 @@ def _round_number(round_dir: Path) -> int | None:
     return int(suffix) if suffix.isdigit() else None
 
 
+def _repo_root_for_manifest(config: RunnerConfig) -> Path:
+    candidate = Path(config.code_cwd).expanduser().resolve() if config.code_cwd else Path(__file__).resolve().parents[2]
+    top_level = _git_output(candidate, "rev-parse", "--show-toplevel")
+    return Path(top_level) if top_level else candidate
+
+
 def build_artifact_manifest(
     round_dir: Path,
     *,
@@ -63,7 +69,7 @@ def build_artifact_manifest(
     metrics_path: Path,
     train_log_path: Path,
 ) -> dict[str, object]:
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = _repo_root_for_manifest(config)
     env_path = Path(config.env_yaml_path).expanduser().resolve() if config.env_yaml_path is not None else None
 
     return {
