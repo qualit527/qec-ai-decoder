@@ -20,6 +20,28 @@ def _load_benchmark_module():
     return module
 
 
+def test_parse_args_returns_explicit_paths(tmp_path: Path) -> None:
+    module = _load_benchmark_module()
+    env_yaml = tmp_path / "env.yaml"
+    config_dir = tmp_path / "configs"
+    output_root = tmp_path / "runs"
+
+    args = module._parse_args(
+        [
+            "--env-yaml",
+            str(env_yaml),
+            "--config-dir",
+            str(config_dir),
+            "--output-root",
+            str(output_root),
+        ]
+    )
+
+    assert args.env_yaml == env_yaml
+    assert args.config_dir == config_dir
+    assert args.output_root == output_root
+
+
 def test_run_benchmark_writes_positive_summary_and_report(
     monkeypatch, tmp_path: Path
 ) -> None:

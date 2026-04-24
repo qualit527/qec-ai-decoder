@@ -175,12 +175,16 @@ def run_benchmark(env_yaml: Path, config_dir: Path, output_root: Path) -> Path:
     return run_dir
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run BB72 positive-delta benchmark")
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-yaml", type=Path, default=DEFAULT_ENV_YAML)
     parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
 
     run_dir = run_benchmark(
         env_yaml=args.env_yaml,
