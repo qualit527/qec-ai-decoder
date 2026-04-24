@@ -69,7 +69,7 @@ Runner + DSL + CLI surface, no-LLM single-round paths, worktree-round execution,
 - [ ] 2.2.1 MWPM single-shot latency < 50 ms (median of 100 runs)
 - [ ] 2.2.3 `pytest tests/test_backend_adapter.py tests/test_pymatching_baseline.py tests/test_bposd_baseline.py -q` all green
 - [ ] 2.2.4 `scripts/benchmark_surface_baseline.py` emits LER within [0.01344, 0.01444] and absolute diff vs `baseline_benchmark.json` < 5 × 10⁻⁴
-- [ ] 2.3.1 `scripts/e2e_handshake.py` produces `checkpoint.pt` + `metrics.json` + `train.log` with ≥ 100 training steps
+- [ ] 2.3.1 `scripts/e2e_handshake.py --min-steps 100` produces `checkpoint.pt` + `metrics.json` + `train.log` with ≥ 100 `wc -l` training-step lines
 - [ ] 2.3.2 `run_round(cfg_with_code_cwd=X)` in-process call raises `RunnerCallPathError`
 - [ ] 2.4.3 `test_reward_hacking.py` synthetic memorizer predecoder trips `autoqec/runner/safety.py`
 
@@ -97,7 +97,7 @@ Runner + DSL + CLI surface, no-LLM single-round paths, worktree-round execution,
 
 ### Success criteria
 - [ ] Correctness — bb72 3-round completion (once live LLM DAG lands)
-- [ ] Performance — `install -e '.[dev]'` wall-clock < 180 s; MWPM < 50 ms
+- [ ] Performance — cold-install benchmark for `pip install -e '.[dev]'` recorded against the 180 s gate; MWPM < 50 ms
 - [ ] Safety — `autoqec/runner/safety.py` triggers `RunnerCallPathError` or `killed_by_safety` on NaN loss / wall-clock budget / training-set leak at eval time
 
 ### Open questions

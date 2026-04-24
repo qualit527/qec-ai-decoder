@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import tarfile
@@ -564,6 +565,17 @@ def test_advisor_replay_main_prints_json(monkeypatch, capsys) -> None:
         "round_name": "round_7",
         "float_tol": 0.001,
     }
+
+
+def test_advisor_replay_module_entrypoint_uses_main(monkeypatch) -> None:
+    from autoqec.tools import advisor_replay
+
+    monkeypatch.setattr(sys, "argv", ["advisor_replay.py"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        runpy.run_path(str(Path(advisor_replay.__file__)), run_name="__main__")
+
+    assert excinfo.value.code == 2
 
 
 def test_demo6_readme_documents_no_network_and_existing_demo_packaging() -> None:
