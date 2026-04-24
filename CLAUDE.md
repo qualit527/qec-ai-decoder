@@ -9,11 +9,15 @@ For the authoritative design, see `docs/superpowers/specs/2026-04-20-autoqec-des
 ```bash
 ./.venv/bin/pip install -e '.[dev]'      # install in editable mode
 ./.venv/bin/pytest tests/ -m "not integration" -v    # unit tests (CPU)
+./.venv/bin/pytest tests/ -m "not integration" -v --run-slow  # include slow subprocess-heavy tests
 ./.venv/bin/pytest tests/ -m integration --run-integration --model-path ...  # GPU tests
 ./.venv/bin/pytest tests/test_round_recorder.py -v   # one file
 ./.venv/bin/pytest tests/ -k "pareto"                # by substring
 ./.venv/bin/ruff check autoqec cli tests scripts     # lint
 ```
+
+Tests marked `@pytest.mark.slow` are skipped unless `--run-slow` is passed,
+even if you explicitly invoke `pytest -m "not integration"`.
 
 Python ≥ 3.12, pydantic v2, torch ≥ 2.11, stim ≥ 1.15, pymatching ≥ 2.3, ldpc ≥ 2.4.
 

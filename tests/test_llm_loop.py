@@ -1,8 +1,9 @@
-from unittest.mock import patch, MagicMock
+import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from autoqec.orchestration.llm_loop import run_llm_loop
+from autoqec.orchestration.llm_loop import _env_yaml_path, run_llm_loop
 
 
 def _stub_ideator(round_idx):
@@ -34,6 +35,16 @@ def _stub_analyst(round_idx):
     }
 
 
+def test_env_yaml_path_falls_back_to_builtin_path():
+    from autoqec.envs.schema import load_env_yaml
+    import pathlib
+
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    env = load_env_yaml(repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml")
+
+    assert _env_yaml_path(env) == str(repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml")
+
+
 def test_run_llm_loop_happy_path(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     from autoqec.envs.schema import load_env_yaml
@@ -63,15 +74,31 @@ def test_run_llm_loop_happy_path(tmp_path, monkeypatch):
             "analyst": _stub_analyst,
         }[role](idx)
 
+    captured_configs = []
+
+    def fake_run_round(cfg, env):
+        captured_configs.append(cfg)
+        return stub_metrics
+
     with patch("autoqec.orchestration.llm_loop.invoke_subagent", side_effect=fake_invoke), \
-         patch("autoqec.orchestration.llm_loop.run_round", return_value=stub_metrics), \
+         patch("autoqec.orchestration.llm_loop.run_round", side_effect=fake_run_round), \
          patch("autoqec.orchestration.llm_loop.independent_verify", return_value=stub_report):
-        run_dir = run_llm_loop(env=env, rounds=2, profile="dev")
+        run_dir = run_llm_loop(
+            env=env,
+            rounds=2,
+            profile="dev",
+            env_yaml_path=repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml",
+            invocation_argv=["python", "-m", "cli.autoqec", "run", "autoqec/envs/builtin/surface_d5_depol.yaml"],
+        )
 
     assert (run_dir / "history.jsonl").exists()
     hist = (run_dir / "history.jsonl").read_text().strip().splitlines()
     assert len(hist) == 2
     assert len(responses["ideator"]) == 2
+    assert captured_configs[0].env_yaml_path == str(repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml")
+    assert captured_configs[0].invocation_argv == [
+        "python", "-m", "cli.autoqec", "run", "autoqec/envs/builtin/surface_d5_depol.yaml",
+    ]
 
     # Trace file captures the chat-level narrative (C route).
     trace = (run_dir / "orchestrator_trace.md")
@@ -106,3 +133,62 @@ def test_run_llm_loop_rejects_compose_rounds_until_p11(tmp_path, monkeypatch):
     with patch("autoqec.orchestration.llm_loop.invoke_subagent", side_effect=fake_invoke):
         with pytest.raises(NotImplementedError, match="compose"):
             run_llm_loop(env=env, rounds=1, profile="dev")
+
+
+def test_run_llm_loop_resume_skips_legacy_completed_round_without_metrics_attempt_id(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    from autoqec.envs.schema import load_env_yaml
+    import pathlib
+
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    env = load_env_yaml(repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml")
+    run_dir = tmp_path / "runs" / "resume-existing"
+    round_1_dir = run_dir / "round_1"
+    round_1_dir.mkdir(parents=True)
+    (run_dir / "history.jsonl").write_text(
+        json.dumps({"round": 1, "round_attempt_id": "legacy-attempt-1"}) + "\n",
+        encoding="utf-8",
+    )
+    (round_1_dir / "metrics.json").write_text(
+        json.dumps({"status": "ok", "delta_ler": 0.001}),
+        encoding="utf-8",
+    )
+
+    stub_metrics = MagicMock(
+        status="compile_error",
+        model_dump=MagicMock(return_value={"status": "compile_error", "status_reason": "stub"}),
+    )
+    executed_rounds = []
+
+    def fake_invoke(role, prompt, timeout=300.0):
+        assert role in {"ideator", "coder"}
+        return {
+            "ideator": _stub_ideator,
+            "coder": _stub_coder,
+        }[role](2)
+
+    def fake_run_round(cfg, env):
+        executed_rounds.append(cfg.seed)
+        return stub_metrics
+
+    with patch("autoqec.orchestration.llm_loop.invoke_subagent", side_effect=fake_invoke), \
+         patch("autoqec.orchestration.llm_loop.run_round", side_effect=fake_run_round):
+        run_llm_loop(
+            env=env,
+            rounds=2,
+            profile="dev",
+            run_dir=run_dir,
+            env_yaml_path=repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml",
+            invocation_argv=["python", "-m", "cli.autoqec", "run", "autoqec/envs/builtin/surface_d5_depol.yaml"],
+        )
+
+    assert executed_rounds == [2]
+    history_rows = [
+        json.loads(line)
+        for line in (run_dir / "history.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [row["round"] for row in history_rows] == [1, 2]

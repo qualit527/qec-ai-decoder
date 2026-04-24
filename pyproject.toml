@@ -43,6 +43,7 @@ autoqec = ["example_db/*.yaml", "envs/builtin/*.yaml"]
 addopts = '-m "not integration" -v'
 markers = [
   "integration: marks tests that exercise the end-to-end runner",
+  "slow: marks wall-clock-heavy tests that require explicit opt-in",
 ]
 pythonpath = ["."]
 testpaths = ["tests"]

@@ -1,10 +1,8 @@
-# demos/demo-5-failure-recovery/bad_config.yaml
-# Intentionally malformed: hidden_dim is negative (pydantic rejects).
 type: gnn
 output_mode: soft_priors
 gnn:
-  layers: 3
-  hidden_dim: -1           # <-- invalid: must be >= 4
+  layers: 2
+  hidden_dim: 16
   message_fn: mlp
   aggregation: sum
   normalization: layer

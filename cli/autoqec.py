@@ -4,7 +4,9 @@ from importlib import resources
 import json
 import os
 import random
+import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -35,6 +37,34 @@ def main() -> None:
 
 
 RESULT_PREFIX = "AUTOQEC_RESULT_JSON="
+_OOM_RE = re.compile(r"(out of memory|(?<![a-z])oom(?![a-z])|(?<![a-z])vram(?![a-z]))", re.IGNORECASE)
+_NAN_RE = re.compile(r"(?<![a-z])nan(?![a-z])", re.IGNORECASE)
+_COMPILE_RE = re.compile(
+    r"(compile_error|validation failed|must be >=|must be <=|valueerror|validationerror)",
+    re.IGNORECASE,
+)
+
+
+def _current_invocation_argv() -> list[str]:
+    argv = list(getattr(sys, "orig_argv", sys.argv))
+    if not argv:
+        return []
+    repo_root = Path.cwd().resolve()
+    executable = Path(argv[0]).name or os.fspath(Path(argv[0]))
+    return [executable] + [_portable_invocation_arg(arg, repo_root) for arg in argv[1:]]
+
+
+def _portable_invocation_arg(arg: str, repo_root: Path) -> str:
+    path = Path(arg)
+    if not path.is_absolute():
+        return arg
+    try:
+        # ``as_posix()`` keeps the relative form stable across Windows and
+        # POSIX — ``os.fspath`` would emit ``autoqec\envs\…`` on Windows
+        # and break the test harness (and diffable provenance hashes).
+        return path.resolve().relative_to(repo_root).as_posix()
+    except ValueError:
+        return arg
 
 
 def _read_text_if_exists(path: Path) -> str:
@@ -52,22 +82,31 @@ def _first_matching_line(candidates: list[str], predicate) -> str | None:
     return None
 
 
+def _round_sort_key(path: Path) -> tuple[int, int | str]:
+    suffix = path.name.removeprefix("round_")
+    if suffix.isdigit():
+        return (0, int(suffix))
+    return (1, path.name)
+
+
 def _diagnose_failure_signature(metrics: dict | None, train_log_text: str, config_text: str) -> tuple[str, list[str]]:
     status_reason = ""
+    status = ""
     if metrics is not None:
         status_reason = str(metrics.get("status_reason") or "")
+        status = str(metrics.get("status") or "").lower()
     candidates = [status_reason, train_log_text, config_text]
 
     oom_signal = _first_matching_line(
         candidates,
-        lambda line: "out of memory" in line or "oom" in line or "vram" in line,
+        lambda line: bool(_OOM_RE.search(line)),
     )
     if oom_signal is not None:
         return "oom", [oom_signal]
 
     nan_signal = _first_matching_line(
         candidates,
-        lambda line: "nan" in line,
+        lambda line: bool(_NAN_RE.search(line)),
     )
     if nan_signal is not None:
         return "nan_loss", [nan_signal]
@@ -78,6 +117,20 @@ def _diagnose_failure_signature(metrics: dict | None, train_log_text: str, confi
     )
     if degenerate_signal is not None:
         return "degenerate_p_zero", [degenerate_signal]
+
+    if status == "compile_error":
+        compile_signal = _first_matching_line(
+            candidates,
+            lambda line: bool(_COMPILE_RE.search(line)),
+        )
+        return "compile_error", [compile_signal or status_reason or status]
+
+    compile_signal = _first_matching_line(
+        candidates,
+        lambda line: bool(_COMPILE_RE.search(line)),
+    )
+    if compile_signal is not None:
+        return "compile_error", [compile_signal]
 
     return "unknown", []
 def _write_round_metrics(round_dir: str, metrics: RoundMetrics) -> RoundMetrics:
@@ -337,6 +390,8 @@ def _run_round_impl(
             training_profile=profile,
             seed=0,
             round_dir=round_dir,
+            env_yaml_path=env_yaml,
+            invocation_argv=_current_invocation_argv(),
             code_cwd=code_cwd,
             branch=branch,
             fork_from=parsed_fork_from,
@@ -358,6 +413,8 @@ def _run_round_impl(
             training_profile=profile,
             seed=0,
             round_dir=round_dir,
+            env_yaml_path=env_yaml,
+            invocation_argv=_current_invocation_argv(),
             code_cwd=None,
         )
         from autoqec.runner.runner import run_round
@@ -479,19 +536,35 @@ def run_round_internal_cmd() -> None:
 @click.option("--rounds", type=int, default=10)
 @click.option("--profile", type=click.Choice(["dev", "prod"]), default="dev")
 @click.option("--no-llm", is_flag=True, help="Pick random seed templates instead of calling subagents")
-def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
+@click.option(
+    "--run-dir",
+    default=None,
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    help="Existing live-LLM run directory to resume; not supported with --no-llm.",
+)
+def run(env_yaml: str, rounds: int, profile: str, no_llm: bool, run_dir: Path | None) -> None:
     env = load_env_yaml(env_yaml)
     if not no_llm:
         # live LLM path — P0.1
         from autoqec.orchestration.llm_loop import run_llm_loop
-        run_dir = run_llm_loop(
-            env=env, rounds=rounds, profile=profile, env_yaml_path=env_yaml,
-        )
+        loop_kwargs = {
+            "env": env,
+            "rounds": rounds,
+            "profile": profile,
+            "env_yaml_path": env_yaml,
+            "invocation_argv": _current_invocation_argv(),
+        }
+        if run_dir is not None:
+            loop_kwargs["run_dir"] = run_dir
+        run_dir = run_llm_loop(**loop_kwargs)
         click.echo(
             f"{RESULT_PREFIX}"
             + json.dumps({"run_dir": str(run_dir), "rounds": rounds})
         )
         return
+
+    if run_dir is not None:
+        raise click.ClickException("--run-dir is only supported on the live LLM path")
 
     from autoqec.runner.runner import run_round
 
@@ -519,6 +592,8 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
             training_profile=profile,
             seed=round_idx,
             round_dir=str(round_dir),
+            env_yaml_path=env_yaml,
+            invocation_argv=_current_invocation_argv(),
         )
         metrics = run_round(cfg, env)
         record = metrics.model_dump()
@@ -616,6 +691,31 @@ def verify(round_dir: str, env: str, n_shots: int | None, n_seeds: int) -> None:
     click.echo(report.verdict)
 
 
+@main.command(name="package-run")
+@click.argument("run_dir")
+def package_run(run_dir: str) -> None:
+    from autoqec.tools.advisor_replay import package_run_dir
+
+    rd = Path(run_dir).resolve()
+    rounds = sorted(path.name for path in rd.glob("round_*") if path.is_dir())
+    try:
+        package_path = package_run_dir(rd)
+    except (FileExistsError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(
+        RESULT_PREFIX
+        + json.dumps(
+            {
+                "run_dir": str(rd),
+                "package_path": str(package_path),
+                "rounds": rounds,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
 @main.command(name="review-log")
 @click.argument("run_dir")
 def review_log(run_dir: str) -> None:
@@ -649,7 +749,7 @@ def diagnose(run_dir: str) -> None:
     if (rd / "metrics.json").exists() or (rd / "train.log").exists():
         target = rd
     else:
-        round_dirs = sorted(rd.glob("round_*"))
+        round_dirs = sorted(rd.glob("round_*"), key=_round_sort_key)
         if not round_dirs:
             click.echo("No round dirs found and no metrics in given path")
             return

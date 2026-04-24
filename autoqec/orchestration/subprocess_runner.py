@@ -29,7 +29,7 @@ from pathlib import Path
 import yaml
 
 from autoqec.envs.schema import EnvSpec
-from autoqec.runner.manifest import write_artifact_manifest
+from autoqec.runner.artifact_manifest import write_artifact_manifest
 from autoqec.runner.schema import RoundMetrics, RunnerConfig
 
 log = logging.getLogger(__name__)
@@ -238,13 +238,20 @@ def run_round_in_subprocess(
     if safe_round_attempt_id is not None:
         child_env[AUTOQEC_CHILD_ROUND_ATTEMPT_ID] = safe_round_attempt_id
 
-    child_argv = ["python", "-m", "cli.autoqec", "run-round-internal"]
+    # Keep argv[0] aligned with the un-resolved venv interpreter. Passing
+    # executable=sys.executable but argv[0]="python" still lets the child
+    # process re-identify itself as the system interpreter.
+    child_argv = [sys.executable, "-m", "cli.autoqec", "run-round-internal"]
     try:
         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
         # Static child command only; all dynamic values go through validated env vars.
+        # ``sys.executable`` is passed un-resolved: ``Path.resolve()`` follows the
+        # venv's ``bin/python`` symlink back to the system interpreter, dropping
+        # the child out of the venv's site-packages (Linux/macOS venvs use
+        # symlinks). Keep the symlink so the child inherits the parent's venv.
         proc = subprocess.run(
             child_argv,
-            executable=str(Path(sys.executable).resolve()),
+            executable=sys.executable,
             cwd=code_cwd,
             env=child_env,
             shell=False,
@@ -257,9 +264,15 @@ def run_round_in_subprocess(
             try:
                 write_artifact_manifest(
                     round_dir=Path(round_dir),
-                    env_yaml_path=env_file,
-                    dsl_config=cfg.predecoder_config,
-                    cmd_line=child_argv,
+                    config=cfg.model_copy(
+                        update={
+                            "env_yaml_path": str(env_file),
+                            "invocation_argv": child_argv,
+                        }
+                    ),
+                    checkpoint_path=Path(round_dir) / "checkpoint.pt",
+                    metrics_path=Path(round_dir) / "metrics.json",
+                    train_log_path=Path(round_dir) / "train.log",
                 )
             except Exception as exc:  # noqa: BLE001 - manifest failures must not mask a round.
                 round_path = Path(round_dir)

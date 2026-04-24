@@ -63,6 +63,7 @@ EXPECTED_FIELDS: dict[str, set[str]] = {
         "round_attempt_id",
         "commit_message",
         "env_yaml_path",
+        "invocation_argv",
     },
     # §2.2 + §15 RoundMetrics
     "RoundMetrics": {
