@@ -1,0 +1,24 @@
+{
+  "verdict": "FAILED",
+  "ler_holdout": 0.2292,
+  "ler_holdout_ci": [
+    0.2178,
+    0.2406
+  ],
+  "delta_ler_holdout": -0.2166,
+  "ler_shuffled": 0.2292,
+  "ablation_sanity_ok": true,
+  "holdout_seeds_used": [
+    9000,
+    9001,
+    9002,
+    9003,
+    9004
+  ],
+  "seed_leakage_check_ok": true,
+  "notes": "n_shots=5000, plain_ler=0.0126, pred_ler=0.2292, shuffled_ler=0.2292",
+  "branch": null,
+  "commit_sha": null,
+  "delta_vs_baseline_holdout": -0.2166,
+  "paired_eval_bundle_id": "4d89644f-f0e7-5442-965f-4ffc11047fbe"
+}
