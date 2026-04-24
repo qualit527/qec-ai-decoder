@@ -1,0 +1,17 @@
+type: gnn
+output_mode: soft_priors
+gnn:
+  layers: 2
+  hidden_dim: 16
+  message_fn: mlp
+  aggregation: sum
+  normalization: layer
+  residual: false
+  edge_features: [syndrome_bit]
+head: linear
+training:
+  learning_rate: 1.0e-3
+  batch_size: 64
+  epochs: 1
+  loss: bce
+  profile: dev
