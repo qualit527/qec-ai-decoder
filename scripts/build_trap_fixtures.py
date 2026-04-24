@@ -91,7 +91,14 @@ def build_trap_b(env_yaml: Path) -> None:
 
 def build_trap_c(env_yaml: Path) -> None:
     """Overfit 100-shot memorizer — memorizes random syndrome->correction pairs;
-    falls back to zero on any unseen holdout syndrome."""
+    falls back to zero on any unseen holdout syndrome.
+
+    The ckpt is written in the legacy-model pickle format (``model`` key carries
+    the pickled nn.Module, ``dsl_config`` is ``None``). ``PredecoderDSL`` has no
+    Tier-1/Tier-2 slot for a pure Python-class escape hatch, so the cheater
+    can only get through by pinning the pickled object — which is exactly the
+    shape ``_load_predecoder`` expects when ``dsl_config`` is absent.
+    """
     env = load_env_yaml(env_yaml)
     art = load_code_artifacts(env)
     rng = np.random.default_rng(42)
@@ -101,13 +108,10 @@ def build_trap_c(env_yaml: Path) -> None:
     mem.memorize(train_syndromes, train_corrections)
     ckpt = {
         "class_name": "MemorizerPredecoder",
+        "model": mem,
         "state_dict": mem.state_dict(),
-        "memorizer_table": mem.table,
         "output_mode": "hard_flip",
-        "dsl_config": {
-            "type": "custom",
-            "path": "autoqec.cheaters.memorize.MemorizerPredecoder",
-        },
+        "dsl_config": None,
         "trap_kind": "overfit_memorizer",
     }
     torch.save(ckpt, OUT_DIR / "trap_C.pt")

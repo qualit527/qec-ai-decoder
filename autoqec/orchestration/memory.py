@@ -98,12 +98,25 @@ class RunMemory:
         process killed between the tmp write and the rename leaves the old
         pareto.json intact for the next reconcile cycle to pick up.
         """
-        tmp_path = self.pareto_path.with_suffix(self.pareto_path.suffix + ".tmp")
+        self._atomic_write_json(self.pareto_path, pareto)
+
+    def update_fork_graph(self, graph: dict) -> None:
+        """Replace ``fork_graph.json`` atomically (issue #50, §15.4).
+
+        Same tmp+rename pattern as ``update_pareto`` so a process killed
+        between the tmp write and the directory-entry swap leaves the old
+        fork_graph.json intact. The file is overwritten on every round
+        because the graph is recomputed from scratch from ``history.jsonl``.
+        """
+        self._atomic_write_json(self.run_dir / "fork_graph.json", graph)
+
+    def _atomic_write_json(self, target: Path, payload) -> None:
+        tmp_path = target.with_suffix(target.suffix + ".tmp")
         tmp_path.write_text(
-            json.dumps(pareto, indent=2, ensure_ascii=False),
+            json.dumps(payload, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-        os.replace(tmp_path, self.pareto_path)
+        os.replace(tmp_path, target)
 
     # ─── L2 summary (rebuilt each round from L1) ─────────────────────
 

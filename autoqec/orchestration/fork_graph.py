@@ -10,6 +10,22 @@ from __future__ import annotations
 from typing import Any
 
 
+def _history_node_branch(row: dict[str, Any]) -> str | None:
+    """Return the node key used in fork_graph for one history row.
+
+    Worktree-backed rounds already have a git branch name. The no-LLM path does
+    not, so synthesize a stable node id from the round index to keep
+    ``fork_graph.json`` structurally useful for artifact review.
+    """
+    branch = row.get("branch")
+    if branch:
+        return str(branch)
+    round_idx = row.get("round")
+    if isinstance(round_idx, int):
+        return f"round_{round_idx}"
+    return None
+
+
 def non_dominated(points: list[dict]) -> list[dict]:
     """Return the non-dominated subset over (+delta_ler, -flops, -n_params).
 
@@ -76,10 +92,13 @@ def build_fork_graph(
                     "hypothesis_1line": (row.get("hypothesis") or "")[:80],
                 }
             )
-        elif row.get("branch"):
+        else:
+            node_branch = _history_node_branch(row)
+            if node_branch is None:
+                continue
             nodes.append(
                 {
-                    "branch": row["branch"],
+                    "branch": node_branch,
                     "commit_sha": row.get("commit_sha"),
                     "parent": row.get("fork_from", "baseline"),
                     "delta_vs_parent": row.get("delta_vs_parent") or row.get("delta_ler"),
@@ -88,7 +107,7 @@ def build_fork_graph(
                     "flops": row.get("flops_per_syndrome"),
                     "params": row.get("n_params"),
                     "status": status.upper() or "OK",
-                    "on_pareto": row["branch"] in pareto_branches,
+                    "on_pareto": node_branch in pareto_branches,
                     "hypothesis_1line": (row.get("hypothesis") or "")[:80],
                     "failure_reason": row.get("status_reason"),
                 }
