@@ -93,6 +93,8 @@ The snapshot contains at least one successful BB72 round with
 ## Runtime Expectations
 
 See `demos/demo-2-bb72/runtime.md` for separate CPU, GPU, and OSD-cost notes.
+For a live-presentation script focused on the one-prompt delegation story, see
+`demos/demo-2-bb72/walkthrough.md`.
 
 ## How We Check This Demo Is Correct
 
