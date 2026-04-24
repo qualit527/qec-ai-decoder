@@ -81,7 +81,8 @@ Rules:
 - **API documentation**: [`docs/api-documentation.md`](docs/api-documentation.md)
 - **Master plan**: [`docs/superpowers/plans/2026-04-21-autoqec-master.md`](docs/superpowers/plans/2026-04-21-autoqec-master.md)
 - **Per-owner plans**: [`docs/superpowers/plans/`](docs/superpowers/plans/)
-- **Test plan**: [`docs/test-plan.md`](docs/test-plan.md) documents `make test-integration`; human demo walkthrough: [`docs/verification/human-verification-test-plan.md`](docs/verification/human-verification-test-plan.md)
+- **Test plan**: [`docs/verification/human-verification-test-plan.md`](docs/verification/human-verification-test-plan.md)
+- **Developer test targets**: [`docs/test-plan.md`](docs/test-plan.md) — `make lint`, `make test`, and `make test-integration` gate the full unit + GPU/integration suites (the one-prompt flow above only exercises `make test` + traps).
 - **Knowledge base**: `knowledge/` — 81-paper index + 3 synthesis documents (roadmap, strategic assessment, autoresearch patterns)
 
 ## Architecture at a glance
