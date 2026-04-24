@@ -1,0 +1,26 @@
+name: bb72_perf
+code:
+  type: parity_check_matrix
+  source: circuits/bb72_Hx.npy
+noise:
+  type: depolarizing
+  p: [5.0e-2]
+  seed_policy:
+    train: [1, 999]
+    val: [1000, 1999]
+    holdout: [9000, 9999]
+constraints:
+  latency_flops_budget: 50000000
+  param_budget: 500000
+  target_ler: 1.0e-4
+  target_p: 5.0e-2
+baseline_decoders:
+  - bposd
+classical_backend: osd
+eval_protocol:
+  min_shots_train: 8192
+  min_shots_val: 4096
+  min_shots_verify: 200000
+  bootstrap_ci: 0.95
+  osd_orders_reported: [0]
+  x_z_decoding: x_only
