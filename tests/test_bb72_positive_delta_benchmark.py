@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from autoqec.runner.schema import RoundMetrics
@@ -40,6 +42,18 @@ def test_parse_args_returns_explicit_paths(tmp_path: Path) -> None:
     assert args.env_yaml == env_yaml
     assert args.config_dir == config_dir
     assert args.output_root == output_root
+
+
+def test_script_help_runs_from_repo_root() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(RUNNER_PATH), "--help"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "--env-yaml" in completed.stdout
 
 
 def test_run_benchmark_writes_positive_summary_and_report(

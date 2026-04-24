@@ -2,22 +2,27 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
-from autoqec.envs.schema import load_env_yaml
-from autoqec.runner.runner import run_round
-from autoqec.runner.schema import RoundMetrics, RunnerConfig
-
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from autoqec.envs.schema import load_env_yaml  # noqa: E402
+from autoqec.runner.schema import RoundMetrics, RunnerConfig  # noqa: E402
+
+
 DEFAULT_ENV_YAML = REPO_ROOT / "autoqec/envs/builtin/bb72_perf.yaml"
 DEFAULT_CONFIG_DIR = Path(__file__).resolve().parent / "configs"
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "runs"
 CLAIM = "benchmark evidence, not a VERIFIED holdout claim"
+RunRound = Callable[[RunnerConfig, Any], RoundMetrics]
+run_round: RunRound | None = None
 
 
 class BenchmarkFailure(RuntimeError):
@@ -133,6 +138,13 @@ def _write_report(summary: dict[str, Any], report_path: Path) -> None:
 
 
 def run_benchmark(env_yaml: Path, config_dir: Path, output_root: Path) -> Path:
+    global run_round
+
+    if run_round is None:
+        from autoqec.runner.runner import run_round as imported_run_round
+
+        run_round = imported_run_round
+
     env_yaml = Path(env_yaml)
     config_dir = Path(config_dir)
     output_root = Path(output_root)
