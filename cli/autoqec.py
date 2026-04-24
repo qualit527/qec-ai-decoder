@@ -533,23 +533,35 @@ def run_round_internal_cmd() -> None:
 @click.option("--rounds", type=int, default=10)
 @click.option("--profile", type=click.Choice(["dev", "prod"]), default="dev")
 @click.option("--no-llm", is_flag=True, help="Pick random seed templates instead of calling subagents")
-def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
+@click.option(
+    "--run-dir",
+    default=None,
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    help="Existing live-LLM run directory to resume; not supported with --no-llm.",
+)
+def run(env_yaml: str, rounds: int, profile: str, no_llm: bool, run_dir: Path | None) -> None:
     env = load_env_yaml(env_yaml)
     if not no_llm:
         # live LLM path — P0.1
         from autoqec.orchestration.llm_loop import run_llm_loop
-        run_dir = run_llm_loop(
-            env=env,
-            rounds=rounds,
-            profile=profile,
-            env_yaml_path=env_yaml,
-            invocation_argv=_current_invocation_argv(),
-        )
+        loop_kwargs = {
+            "env": env,
+            "rounds": rounds,
+            "profile": profile,
+            "env_yaml_path": env_yaml,
+            "invocation_argv": _current_invocation_argv(),
+        }
+        if run_dir is not None:
+            loop_kwargs["run_dir"] = run_dir
+        run_dir = run_llm_loop(**loop_kwargs)
         click.echo(
             f"{RESULT_PREFIX}"
             + json.dumps({"run_dir": str(run_dir), "rounds": rounds})
         )
         return
+
+    if run_dir is not None:
+        raise click.ClickException("--run-dir is only supported on the live LLM path")
 
     from autoqec.runner.runner import run_round
 

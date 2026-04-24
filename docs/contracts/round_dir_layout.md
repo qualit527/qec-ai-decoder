@@ -140,6 +140,17 @@ eval_wallclock_s)` from `history.jsonl`.
 - Failure-path rounds still emit `metrics.json`, and absent artifacts stay
   `null` in `RoundMetrics` instead of claiming files that were never
   produced.
+- Live-LLM resume treats round `N` as complete only when both
+  `history.jsonl` has a row with `round == N` and
+  `round_N/metrics.json` exists with parseable JSON. If both files carry a
+  non-empty `round_attempt_id`, the IDs must match. There is no separate
+  explicit marker file; `history.jsonl` is the orchestration source of
+  truth and `metrics.json` proves the Runner finished the same attempt.
+  Re-running `cli.autoqec run ... --run-dir runs/<run_id>` skips completed
+  rounds and starts at the first incomplete round. Linux SIGINT behavior is
+  covered by `tests/test_llm_loop_resume.py`; Windows SIGINT delivery differs,
+  so Windows coverage should exercise the same helper semantics without
+  relying on POSIX signal delivery.
 - `round_<N>/round_<N>_pointer.json` is written for worktree-branch
   rounds so startup reconciliation can recover the `round_attempt_id`.
   Covered in `test_pointer_writer.py` (unit) and the worktree
