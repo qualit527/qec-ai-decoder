@@ -82,6 +82,11 @@ EXPECTED_FIELDS: dict[str, set[str]] = {
         "vram_peak_gb",
         "checkpoint_path",
         "training_log_path",
+        # Training-loss telemetry (added 2026-04-24 for deltaLER=0 diagnostics)
+        "train_loss_initial",
+        "train_loss_final",
+        "train_loss_mean_last_epoch",
+        "train_batches_total",
         # §15 additions
         "round_attempt_id",
         "reconcile_id",

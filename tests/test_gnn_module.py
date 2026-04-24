@@ -53,6 +53,42 @@ def test_gnn_hard_flip_shape() -> None:
     assert out.shape == (2, 6)
 
 
+def test_gnn_hard_flip_output_is_differentiable() -> None:
+    """Regression (2026-04-24): the hard_flip head previously returned
+    ``(sigmoid(logits) > 0.5).long()`` — a non-differentiable hard
+    threshold — which meant backprop produced zero gradients and the
+    model could never learn. The hard decision now happens outside the
+    model (in ``decode_with_predecoder``), and the model returns
+    sigmoid probabilities in both modes so gradients flow.
+    """
+    model = BipartiteGNN(
+        n_var=8,
+        n_check=4,
+        hidden_dim=6,
+        layers=1,
+        message_fn="mlp",
+        aggregation="sum",
+        normalization="none",
+        residual=False,
+        output_mode="hard_flip",
+    )
+    syndrome = torch.rand(3, 4)
+    edge_index = torch.stack(
+        torch.meshgrid(torch.arange(8), torch.arange(4), indexing="ij"),
+        dim=0,
+    ).reshape(2, -1)
+    out = model(syndrome, {"edge_index": edge_index, "n_var": 8, "n_check": 4})
+    assert out.dtype.is_floating_point, (
+        "hard_flip output must stay differentiable (float), not hard-thresholded long"
+    )
+    loss = out.sum()
+    loss.backward()
+    grads = [p.grad for p in model.parameters() if p.requires_grad]
+    assert any(g is not None and g.abs().sum() > 0 for g in grads), (
+        "no parameter received a non-zero gradient — hard_flip path is still cutting the graph"
+    )
+
+
 def test_make_message_fn_variants_and_helpers() -> None:
     x = torch.randn(3, 8)
     gated = _make_message_fn("gated_mlp", 4)
@@ -111,4 +147,4 @@ def test_predecoder_base_expected_output_shape_switches() -> None:
     base = PredecoderBase()
     assert base.expected_output_shape == "[batch, n_faults] float in [0, 1]"
     base.output_mode = "hard_flip"
-    assert base.expected_output_shape == "[batch, n_checks] long"
+    assert base.expected_output_shape == "[batch, n_checks] float in [0, 1]"

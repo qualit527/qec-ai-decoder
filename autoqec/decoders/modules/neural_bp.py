@@ -119,9 +119,15 @@ class NeuralBP(PredecoderBase):
         if self.output_mode == "soft_priors":
             return probs
 
+        # hard_flip: keep gradients alive by using the soft probabilities
+        # straight through a differentiable parity projection. The
+        # classical-backend adapter thresholds at 0.5 at eval time.
         if parity_check is not None:
-            parity = torch.as_tensor(parity_check, dtype=torch.long, device=syndrome.device)
-            correction = (probs > 0.5).long()
-            cleaned = (correction @ parity.T) % 2
-            return cleaned.long()
-        return (syndrome > 0.5).long()
+            parity = torch.as_tensor(parity_check, dtype=probs.dtype, device=syndrome.device)
+            # Soft "cleaned syndrome" — matmul of soft error probs with H^T.
+            # Kept in [0, 1]-ish range via clamp; no hard Booleanization here.
+            cleaned = (probs @ parity.T).clamp(0.0, 1.0)
+            return cleaned
+        # No parity matrix (stim path) — use the syndrome passthrough as a
+        # differentiable weak baseline.
+        return syndrome.float()

@@ -186,6 +186,7 @@ def test_run_command_delegates_to_llm_loop(monkeypatch, tmp_path) -> None:
 
     def fake_run_llm_loop(*, env, rounds, profile, env_yaml_path, invocation_argv):
         calls["env_name"] = env.name
+        calls["env_yaml_path"] = env_yaml_path
         calls["rounds"] = rounds
         calls["profile"] = profile
         calls["env_yaml_path"] = env_yaml_path

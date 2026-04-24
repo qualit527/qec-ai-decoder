@@ -18,6 +18,7 @@ class PredecoderBase(nn.Module):
     @property
     def expected_output_shape(self) -> str:
         if self.output_mode == "hard_flip":
-            return "[batch, n_checks] long"
+            # Soft probabilities per detector; backend thresholds at 0.5.
+            return "[batch, n_checks] float in [0, 1]"
         return "[batch, n_faults] float in [0, 1]"
 

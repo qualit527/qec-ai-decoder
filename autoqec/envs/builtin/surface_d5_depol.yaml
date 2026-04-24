@@ -10,8 +10,9 @@ noise:
     val: [1000, 1999]
     holdout: [9000, 9999]
 constraints:
-  latency_flops_budget: 10000000
-  param_budget: 200000
+  # latency_flops_budget and param_budget intentionally omitted - no hard
+  # caps on model size or per-syndrome FLOPs. Optimize for delta_ler within
+  # the wall-clock budget only.
   target_ler: 1.0e-4
   target_p: 1.0e-3
 baseline_decoders:

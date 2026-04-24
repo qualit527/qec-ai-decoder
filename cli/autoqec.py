@@ -59,7 +59,10 @@ def _portable_invocation_arg(arg: str, repo_root: Path) -> str:
     if not path.is_absolute():
         return arg
     try:
-        return os.fspath(path.resolve().relative_to(repo_root))
+        # ``as_posix()`` keeps the relative form stable across Windows and
+        # POSIX — ``os.fspath`` would emit ``autoqec\envs\…`` on Windows
+        # and break the test harness (and diffable provenance hashes).
+        return path.resolve().relative_to(repo_root).as_posix()
     except ValueError:
         return arg
 
@@ -635,8 +638,8 @@ def add_env(out: str, name: str, code_source: str, noise_p: str, backend: str) -
             "seed_policy": {"train": [1, 999], "val": [1000, 1999], "holdout": [9000, 9999]},
         },
         "constraints": {
-            "latency_flops_budget": 10000000,
-            "param_budget": 200000,
+            # No hard cap on model size or per-syndrome FLOPs — the only
+            # effective budget is outer wall-clock (see machine_state).
             "target_ler": 1e-4,
             "target_p": min(ps),
         },
