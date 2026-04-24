@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 import torch
 import yaml
 
@@ -97,6 +99,45 @@ class _TinyModel(torch.nn.Module):
         return torch.sigmoid(self.linear(syndrome.float()))
 
 
+def _valid_manifest_payload() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "repo": {"commit_sha": "abc123", "branch": "topic", "dirty": False},
+        "environment": {
+            "env_yaml_path": "autoqec/envs/builtin/surface_d5_depol.yaml",
+            "env_yaml_sha256": "deadbeef",
+        },
+        "round": {
+            "run_id": "demo-run",
+            "round_dir": "round_1",
+            "round": 1,
+            "dsl_config_sha256": "cafebabe",
+            "command_line": ["python", "-m", "cli.autoqec", "run", "--no-llm"],
+        },
+        "artifacts": {
+            "config_yaml": "config.yaml",
+            "checkpoint": "checkpoint.pt",
+            "metrics": "metrics.json",
+            "train_log": "train.log",
+        },
+        "packages": {
+            "python": "3.12.3",
+            "torch": "2.0",
+            "cuda": "none",
+            "stim": "1.0",
+            "pymatching": "2.0",
+            "ldpc": "1.0",
+        },
+    }
+
+
+def _materialize_manifest_artifacts(round_dir: Path) -> None:
+    (round_dir / "config.yaml").write_text("type: gnn\n", encoding="utf-8")
+    (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
+    (round_dir / "metrics.json").write_text('{"status":"ok"}', encoding="utf-8")
+    (round_dir / "train.log").write_text("0\t0.1\n", encoding="utf-8")
+
+
 def test_run_round_success_writes_consumable_artifacts(monkeypatch, tmp_path: Path) -> None:
     from autoqec.runner import runner
 
@@ -169,6 +210,58 @@ def test_run_round_success_writes_consumable_artifacts(monkeypatch, tmp_path: Pa
     assert "stim" in manifest["packages"]
     assert "pymatching" in manifest["packages"]
     assert "ldpc" in manifest["packages"]
+
+
+def test_git_output_returns_none_when_git_command_fails(monkeypatch, tmp_path: Path) -> None:
+    from autoqec.runner import artifact_manifest
+
+    def fake_check_output(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(1, "git")
+
+    monkeypatch.setattr(artifact_manifest.subprocess, "check_output", fake_check_output)
+
+    assert artifact_manifest._git_output(tmp_path, "rev-parse", "HEAD") is None
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda payload: payload.update(schema_version=2), "unsupported artifact manifest schema_version"),
+        (lambda payload: payload.__setitem__("packages", None), "artifact manifest missing section: packages"),
+        (lambda payload: payload["repo"].__setitem__("commit_sha", ""), "artifact manifest missing repo.commit_sha"),
+        (
+            lambda payload: payload["environment"].__setitem__("env_yaml_sha256", None),
+            "artifact manifest missing environment.env_yaml_sha256",
+        ),
+        (
+            lambda payload: payload["round"].__setitem__("dsl_config_sha256", None),
+            "artifact manifest missing round.dsl_config_sha256",
+        ),
+        (
+            lambda payload: payload["round"].__setitem__("command_line", ["python", 1]),
+            "artifact manifest round.command_line must be a list of strings",
+        ),
+        (
+            lambda payload: payload["artifacts"].__setitem__("config_yaml", ""),
+            "artifact manifest missing artifacts.config_yaml",
+        ),
+        (
+            lambda payload: payload["artifacts"].__setitem__("config_yaml", "../config.yaml"),
+            "artifact manifest artifacts.config_yaml must be a safe relative path",
+        ),
+    ],
+)
+def test_validate_artifact_manifest_rejects_invalid_payloads(tmp_path: Path, mutate, message: str) -> None:
+    from autoqec.runner.artifact_manifest import validate_artifact_manifest
+
+    round_dir = tmp_path / "round_1"
+    round_dir.mkdir()
+    _materialize_manifest_artifacts(round_dir)
+    payload = _valid_manifest_payload()
+    mutate(payload)
+
+    with pytest.raises(ValueError, match=message):
+        validate_artifact_manifest(round_dir, payload)
 
 
 def test_run_round_compile_error_emits_metrics_without_claiming_missing_artifacts(
