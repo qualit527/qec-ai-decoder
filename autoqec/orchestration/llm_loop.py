@@ -30,6 +30,65 @@ def _env_yaml_path(env: EnvSpec) -> str | None:
     return str(builtin_path) if builtin_path.exists() else None
 
 
+def _history_rows_by_round(run_dir: Path) -> dict[int, dict[str, Any]]:
+    history_path = run_dir / "history.jsonl"
+    if not history_path.exists():
+        return {}
+
+    rows_by_round: dict[int, dict[str, Any]] = {}
+    for line in history_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        round_idx = row.get("round")
+        if isinstance(round_idx, int):
+            rows_by_round[round_idx] = row
+    return rows_by_round
+
+
+def _parse_metrics(round_dir: Path) -> dict[str, Any] | None:
+    metrics_path = round_dir / "metrics.json"
+    if not metrics_path.exists():
+        return None
+    try:
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return metrics if isinstance(metrics, dict) else None
+
+
+def _round_is_complete(run_dir: Path, round_idx: int, history_rows: dict[int, dict[str, Any]]) -> bool:
+    """Return True when a previous invocation durably completed ``round_idx``.
+
+    Resume is gated by both the append-only orchestration record
+    (``history.jsonl`` row with ``round == N``) and the Runner artifact
+    (``round_N/metrics.json``). If both surfaces carry ``round_attempt_id`` they
+    must match, preventing a stale metrics file from making a different attempt
+    look complete. No explicit marker file is used.
+    """
+    history_row = history_rows.get(round_idx)
+    if history_row is None:
+        return False
+
+    metrics = _parse_metrics(run_dir / f"round_{round_idx}")
+    if metrics is None:
+        return False
+
+    history_attempt_id = history_row.get("round_attempt_id")
+    metrics_attempt_id = metrics.get("round_attempt_id")
+    if (
+        isinstance(history_attempt_id, str)
+        and history_attempt_id
+        and isinstance(metrics_attempt_id, str)
+        and metrics_attempt_id
+    ):
+        return history_attempt_id == metrics_attempt_id
+    return True
+
+
 def run_llm_loop(
     env: EnvSpec,
     rounds: int,
@@ -43,11 +102,15 @@ def run_llm_loop(
     run_dir = Path(run_dir) if run_dir else (Path("runs") / run_id).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
     mem = RunMemory(run_dir)
+    completed_rounds = _history_rows_by_round(run_dir)
 
     for round_idx in range(1, rounds + 1):
+        if _round_is_complete(run_dir, round_idx, completed_rounds):
+            print(f"Skipping completed round {round_idx}")
+            continue
+
         round_dir = run_dir / f"round_{round_idx}"
         round_dir.mkdir(parents=True, exist_ok=True)
-        # P1.4 will add a skip-if-complete check here.
 
         # --- Ideator ---
         ideator_ctx = mem.l3_for_ideator(
@@ -133,6 +196,7 @@ def run_llm_loop(
             verify_verdict=verify_verdict,
             verify_report=verify_report,
         )
+        completed_rounds[round_idx] = record
 
     # Final bookkeeping line for smoke scripts.
     print(f"AUTOQEC_RESULT_JSON={json.dumps({'run_dir': str(run_dir)})}")

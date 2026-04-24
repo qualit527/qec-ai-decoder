@@ -53,6 +53,26 @@ pytest tests/ -m "not integration" -v --run-slow
 `-m "not integration"` explicitly, so the wall-clock budget for the default
 gate stays stable.
 
+## Live-LLM resume
+
+The live-LLM path supports resuming an existing run directory:
+
+```bash
+python -m cli.autoqec run <env-yaml> --run-dir runs/<run_id>
+```
+
+Resume treats round `N` as complete only when both conditions hold:
+
+- `history.jsonl` contains a row with `round == N`
+- `round_N/metrics.json` exists and contains parseable JSON
+
+If both surfaces also carry a non-empty `round_attempt_id`, the IDs must
+match. There is no separate marker file. In practice `history.jsonl` is the
+orchestration source of truth and `metrics.json` proves the Runner finished
+the same attempt. Linux SIGINT coverage lives in
+`tests/test_llm_loop_resume.py`; Windows should exercise the same helper
+semantics without relying on POSIX signal delivery.
+
 ## When to run integration tests
 
 Run `make test-integration` before merging changes that affect:
