@@ -162,7 +162,7 @@ All are registered in `cli/autoqec.py`.
 - `python -m cli.autoqec run-round <env.yaml> <config.yaml> <round_dir> [--profile dev|prod|benchmark]`
   — one Runner round from a hand-written DSL config. Primary building
   block the `/autoqec-run` skill calls per round.
-- `python -m cli.autoqec run <env.yaml> --rounds N --profile dev --no-llm`
+- `python -m cli.autoqec run <env.yaml> --rounds N --profile dev|prod|benchmark --no-llm`
   — N-round random-template smoke loop. **No LLM.** Writes
   `runs/<id>/history.jsonl + history.json`; does **not** write
   `log.md` / `pareto.json` (those are orchestration-side, only produced

@@ -204,6 +204,7 @@ def test_interfaces_contract_documents_benchmark_profile() -> None:
 
     assert 'training_profile: Literal["dev", "prod", "benchmark"] = "dev"' in contract
     assert "[--profile dev|prod|benchmark]" in contract
+    assert "--rounds N --profile dev|prod|benchmark --no-llm" in contract
 
 
 def test_api_docs_document_benchmark_profile() -> None:
