@@ -102,8 +102,9 @@ def test_run_command_delegates_to_llm_loop(monkeypatch, tmp_path) -> None:
 
     calls: dict = {}
 
-    def fake_run_llm_loop(*, env, rounds, profile):
+    def fake_run_llm_loop(*, env, rounds, profile, env_yaml_path=None):
         calls["env_name"] = env.name
+        calls["env_yaml_path"] = env_yaml_path
         calls["rounds"] = rounds
         calls["profile"] = profile
         run_dir = tmp_path / "fake_run"
@@ -117,7 +118,12 @@ def test_run_command_delegates_to_llm_loop(monkeypatch, tmp_path) -> None:
         cli.run, [env.model_dump()["name"], "--rounds", "2"], catch_exceptions=False
     )
     assert result.exit_code == 0, result.output
-    assert calls == {"env_name": env.name, "rounds": 2, "profile": "dev"}
+    assert calls == {
+        "env_name": env.name,
+        "env_yaml_path": env.name,
+        "rounds": 2,
+        "profile": "dev",
+    }
     assert cli.RESULT_PREFIX in result.output
 
 

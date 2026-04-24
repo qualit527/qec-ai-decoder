@@ -72,13 +72,13 @@ def test_profile_params_and_failure_rate_cover_both_modes() -> None:
     parity_env = load_env_yaml("autoqec/envs/builtin/bb72_depol.yaml")
 
     assert runner._profile_params(stim_env, "dev") == {
-        "n_shots_train": 4096,
-        "n_shots_val": 256,
+        "n_shots_train": 2048,
+        "n_shots_val": 2048,
         "epochs_cap": 3,
     }
     assert runner._profile_params(stim_env, "prod") == {
-        "n_shots_train": 16384,
-        "n_shots_val": 1024,
+        "n_shots_train": 8192,
+        "n_shots_val": 8192,
         "epochs_cap": 10,
     }
 
@@ -314,6 +314,67 @@ def test_run_round_success_hard_flip_mwpm_path(monkeypatch, tmp_path) -> None:
     metrics = runner.run_round(cfg, env, safety=RunnerSafety(VRAM_PRE_CHECK=False))
     assert metrics.status == "ok"
     assert metrics.flops_per_syndrome == 123
+
+
+def test_run_round_populates_delta_ler_ci_bounds(monkeypatch, tmp_path) -> None:
+    """Regression (2026-04-24): `delta_ler_ci_low/high` are the Analyst's
+    candidate rule (`delta + 0.5 * (hi - lo) > 0`). Leaving them `None`
+    makes the rule degenerate to `delta > 0`, which dooms every
+    statistically-noisy round to `ignore`. The Runner must populate a
+    paired-bootstrap CI over the per-shot Δ.
+    """
+    env = load_env_yaml("autoqec/envs/builtin/bb72_depol.yaml")
+    cfg = RunnerConfig(
+        env_name=env.name,
+        predecoder_config={
+            "type": "gnn",
+            "output_mode": "soft_priors",
+            "training": {
+                "learning_rate": 1e-3, "batch_size": 2, "epochs": 1,
+            },
+        },
+        training_profile="dev",
+        seed=0,
+        round_dir=str(tmp_path / "round_1"),
+    )
+    batch = SampleBatch(
+        syndrome=torch.zeros((4, 3), dtype=torch.float32),
+        errors=torch.zeros((4, 5), dtype=torch.int64),
+        observables=torch.zeros((4, 5), dtype=torch.int64),
+    )
+    calls = iter([batch, batch])
+
+    # Craft the mocked decoder so the predecoder path gets 1 failure per
+    # 4 shots and plain gets 2 — so delta is well above zero and the CI
+    # should be non-trivial (not degenerate to [0, 0]).
+    call_count = {"n": 0}
+    def fake_decode(preds, *_args, **_kwargs):
+        call_count["n"] += 1
+        B = preds.shape[0]
+        out = np.zeros((B, 5), dtype=np.int64)
+        # First call = plain baseline (uniform priors), second = predecoder.
+        if call_count["n"] == 1:
+            out[:2] = 1  # 2 mismatches
+        else:
+            out[:1] = 1  # 1 mismatch
+        return out
+
+    monkeypatch.setattr(runner, "load_code_artifacts", lambda _env: _parity_artifacts())
+    monkeypatch.setattr(runner, "compile_predecoder", lambda *_a, **_k: FakeModel("soft_priors", 5))
+    monkeypatch.setattr(runner, "sample_syndromes", lambda *_a, **_k: next(calls))
+    monkeypatch.setattr(runner, "decode_with_predecoder", fake_decode)
+    monkeypatch.setattr(runner, "estimate_flops", lambda *_a, **_k: 123)
+    monkeypatch.setattr(runner.torch.cuda, "is_available", lambda: False)
+
+    metrics = runner.run_round(cfg, env, safety=RunnerSafety(VRAM_PRE_CHECK=False))
+
+    assert metrics.status == "ok"
+    assert metrics.delta_ler_ci_low is not None, "CI low must be populated"
+    assert metrics.delta_ler_ci_high is not None, "CI high must be populated"
+    assert metrics.delta_ler_ci_low <= metrics.delta_ler <= metrics.delta_ler_ci_high, (
+        f"CI must bracket point estimate: {metrics.delta_ler_ci_low} <= "
+        f"{metrics.delta_ler} <= {metrics.delta_ler_ci_high}"
+    )
 
 
 def test_stim_soft_priors_training_target_is_errors_not_syndrome(monkeypatch, tmp_path) -> None:

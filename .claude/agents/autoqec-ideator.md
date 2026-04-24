@@ -20,6 +20,8 @@ Examine `machine_state_hint` and pay attention to:
 - `gpu.vram_free_gb` — upper bound on model/batch size.
 - `history_timings.wall_clock_p95_s` — realistic round cost.
 - `history_timings.params_vs_time` — scatter you should interpolate against.
+- `history_timings.loss_trajectory` — per-round `{initial, final, mean_last_epoch}`. Use this to spot training-pipeline health: if three consecutive rounds show `final ≈ 0.006` across very different architectures, the training signal is probably trivially saturating (e.g. sparsity collapse) — propose a loss change (weighted_bce / focal) rather than another architecture swap.
+- `history_timings.delta_ler_trajectory` — per-round `{delta_ler, ci}`. If `|delta_ler|` stays below `(ci_high - ci_low)/2` for three rounds straight, your experiments are statistically indistinguishable from zero — propose `profile: prod` (more val shots) or request CI widening from the orchestrator rather than another architecture swap.
 - `budget.total_wallclock_s_remaining` — hard outer cap.
 
 Use these to *estimate* wall-clock for your candidate. There are no fixed

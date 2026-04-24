@@ -41,10 +41,30 @@ class SampleBatch:
     observables: torch.Tensor
 
 
-def _select_seeds(seed_range: tuple[int, int], n_shots: int, max_unique: int = 8) -> list[int]:
+def _select_seeds(
+    seed_range: tuple[int, int],
+    n_shots: int,
+    max_unique: int = 8,
+    round_offset: int = 0,
+) -> list[int]:
+    """Pick ``max_unique`` distinct seeds inside ``seed_range``.
+
+    ``round_offset`` shifts the chosen block by ``max_unique`` each round
+    so round N and N+1 see different draws. The shift wraps modulo the
+    policy width so long runs don't starve — every seed in the range is
+    eventually visited, which is what we want for diversity without
+    silently leaking into an adjacent policy band (train vs val).
+    """
     start, end = seed_range
     count = min(max_unique, max(1, n_shots))
-    return list(range(start, min(end + 1, start + count)))
+    policy_width = max(1, end - start + 1)
+    shift = (round_offset * count) % policy_width
+    shifted_start = start + shift
+    # Wrap seeds inside [start, end] so we never hand out seeds outside
+    # the configured policy band.
+    seeds = [start + ((shift + i) % policy_width) for i in range(count)]
+    del shifted_start  # shifted_start is only kept for readability above
+    return seeds
 
 
 def _stim_edge_index_and_prior(circuit: stim.Circuit) -> tuple[torch.Tensor, torch.Tensor]:
@@ -100,7 +120,13 @@ def load_code_artifacts(env_spec: EnvSpec) -> CodeArtifacts:
     raise ValueError(f"Unsupported code type: {env_spec.code.type}")
 
 
-def _sample_stim(circuit: stim.Circuit, seed_range: tuple[int, int], n_shots: int) -> SampleBatch:
+def _sample_stim(
+    circuit: stim.Circuit,
+    seed_range: tuple[int, int],
+    n_shots: int,
+    *,
+    round_offset: int = 0,
+) -> SampleBatch:
     """Sample from the DEM sampler so we get error labels alongside
     detectors and observables.
 
@@ -111,7 +137,7 @@ def _sample_stim(circuit: stim.Circuit, seed_range: tuple[int, int], n_shots: in
     sampler on detector and observable marginals for decomposed DEMs.
     """
     dem = circuit.detector_error_model(decompose_errors=True)
-    seeds = _select_seeds(seed_range, n_shots)
+    seeds = _select_seeds(seed_range, n_shots, round_offset=round_offset)
     per_seed = max(1, int(np.ceil(n_shots / len(seeds))))
     detections_all: list[np.ndarray] = []
     errors_all: list[np.ndarray] = []
@@ -137,8 +163,10 @@ def _sample_parity(
     p_error: float,
     seed_range: tuple[int, int],
     n_shots: int,
+    *,
+    round_offset: int = 0,
 ) -> SampleBatch:
-    seeds = _select_seeds(seed_range, n_shots)
+    seeds = _select_seeds(seed_range, n_shots, round_offset=round_offset)
     per_seed = max(1, int(np.ceil(n_shots / len(seeds))))
     syndromes_all: list[np.ndarray] = []
     errors_all: list[np.ndarray] = []
@@ -166,12 +194,29 @@ def sample_syndromes(
     artifacts: CodeArtifacts,
     seed_range: tuple[int, int],
     n_shots: int,
+    *,
+    round_offset: int = 0,
 ) -> SampleBatch:
+    """Sample a batch of shots for training or evaluation.
+
+    ``round_offset`` shifts the chosen seed block so that round N and
+    round N+1 see different 4096-shot draws (see `_select_seeds`). Pass
+    the running round index (or `RunnerConfig.seed`) so the data
+    distribution genuinely changes round-to-round — otherwise every
+    round retrains on the identical batch and the Ideator cannot tell
+    "architecture bad" from "this draw was adversarial."
+    """
     if artifacts.code_type == "stim_circuit":
-        return _sample_stim(artifacts.code_artifact, seed_range, n_shots)  # type: ignore[arg-type]
+        return _sample_stim(
+            artifacts.code_artifact,  # type: ignore[arg-type]
+            seed_range,
+            n_shots,
+            round_offset=round_offset,
+        )
     return _sample_parity(
         artifacts.code_artifact,  # type: ignore[arg-type]
         float(env_spec.noise.p[0]),
         seed_range,
         n_shots,
+        round_offset=round_offset,
     )

@@ -28,8 +28,11 @@ assumptions.
   `autoqec/envs/builtin/surface_d5_depol.yaml`).
 - `rounds` — default `1`. Each round is Ideator → Coder → Runner →
   Analyst and takes ~2–5 min in dev profile.
-- `profile` — `dev` (4096 train / 256 val shots, 3 epochs) or `prod`
-  (16384 train / 1024 val shots, 10 epochs). Default `dev`.
+- `profile` — `dev` (2048 train / 2048 val shots, 3 epochs) or `prod`
+  (8192 train / 8192 val shots, 10 epochs). Val shots matter more than
+  train shots here because Δ_LER stderr scales as 1/√n_val — undersized
+  val makes every round statistically indistinguishable from zero.
+  Default `dev`.
 
 ## Default output_mode
 

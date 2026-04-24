@@ -27,6 +27,9 @@ def test_estimate_flops_success_and_fallback(monkeypatch) -> None:
         def total(self):
             return 123
 
+        def unsupported_ops(self):
+            return {}
+
     fake_module = types.ModuleType("fvcore.nn")
     fake_module.FlopCountAnalysis = FakeAnalysis
     monkeypatch.setitem(sys.modules, "fvcore.nn", fake_module)
@@ -40,6 +43,35 @@ def test_estimate_flops_success_and_fallback(monkeypatch) -> None:
 
     fake_module.FlopCountAnalysis = RaisingAnalysis
     assert estimate_flops(model, (torch.randn(1, 2),)) == 2 * sum(p.numel() for p in model.parameters())
+
+
+def test_estimate_flops_falls_back_when_fvcore_reports_unsupported_ops(monkeypatch) -> None:
+    """Regression (2026-04-24): fvcore silently undercounts FLOPs when it
+    hits unsupported ops (``aten::index_add_``, ``aten::sigmoid``, etc.).
+    Pareto uses ``flops_per_syndrome`` as a hard axis, so architectures
+    that happen to use unsupported ops look artificially cheap and
+    preferentially survive the prune. When any unsupported op is
+    reported, fall back to ``2 * n_params`` so all affected architectures
+    pay the same proxy — fair, even if not exact.
+    """
+    class PartialAnalysis:
+        def __init__(self, _model, _inputs):
+            pass
+
+        def total(self):
+            return 7  # absurdly low — as if most ops were skipped
+
+        def unsupported_ops(self):
+            return {"aten::index_add_": 4, "aten::sigmoid": 5}
+
+    fake_module = types.ModuleType("fvcore.nn")
+    fake_module.FlopCountAnalysis = PartialAnalysis
+    monkeypatch.setitem(sys.modules, "fvcore.nn", fake_module)
+
+    model = torch.nn.Linear(2, 3)
+    n_params = sum(p.numel() for p in model.parameters())
+    # Must return the fallback (2*n_params), not the undercount 7.
+    assert estimate_flops(model, (torch.randn(1, 2),)) == 2 * n_params
 
 
 def test_backend_adapter_error_branches(monkeypatch) -> None:

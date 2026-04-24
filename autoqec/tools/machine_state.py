@@ -66,6 +66,30 @@ def machine_state(
     wall_mean = (sum(timings) / n) if n else 0
     wall_p95 = sorted(timings)[min(int(0.95 * n), max(n - 1, 0))] if n else 0
     params_vs_time = [(int(r.get("n_params", 0) or 0), t) for r, t in zip(history, timings)]
+    loss_trajectory: list[dict] = []
+    delta_trajectory: list[dict] = []
+    for r in history:
+        # Skip non-training statuses — their loss fields are absent and
+        # delta is meaningless. This keeps the Ideator focused on the
+        # rounds that actually ran training.
+        if r.get("status") != "ok":
+            continue
+        round_idx = r.get("round")
+        if r.get("train_loss_initial") is not None:
+            loss_trajectory.append({
+                "round": round_idx,
+                "initial": r.get("train_loss_initial"),
+                "final": r.get("train_loss_final"),
+                "mean_last_epoch": r.get("train_loss_mean_last_epoch"),
+            })
+        if r.get("delta_ler") is not None:
+            ci_lo = r.get("delta_ler_ci_low")
+            ci_hi = r.get("delta_ler_ci_high")
+            delta_trajectory.append({
+                "round": round_idx,
+                "delta_ler": r.get("delta_ler"),
+                "ci": [ci_lo, ci_hi] if (ci_lo is not None or ci_hi is not None) else None,
+            })
     spent = sum(timings)
     remaining = (total_wallclock_s_budget - spent) if total_wallclock_s_budget is not None else None
 
@@ -77,6 +101,13 @@ def machine_state(
             "wall_clock_p95_s": wall_p95,
             "params_vs_time": params_vs_time,
             "killed_by_safety_count": killed,
+            # Per-round training-loss + Δ_LER so the Ideator can detect
+            # "loss drops but Δ_LER flat across every round" (harness /
+            # loss-alignment bug) vs "this architecture doesn't work"
+            # (science). Entries are in history order; rounds without
+            # a training run (status != ok) are omitted.
+            "loss_trajectory": loss_trajectory,
+            "delta_ler_trajectory": delta_trajectory,
         },
         "budget": {
             "total_wallclock_s_spent": spent,

@@ -14,6 +14,23 @@ def test_select_seeds_respects_range_and_caps_unique_count() -> None:
     assert runner_data._select_seeds((10, 30), 20) == list(range(10, 18))
 
 
+def test_select_seeds_respects_round_offset_for_data_diversity() -> None:
+    """Regression (2026-04-24): without a round-scoped offset, every
+    round re-samples from the same 8 seeds → identical training batches
+    across rounds. The Ideator then can't distinguish "architecture bad"
+    from "this particular shot distribution is adversarial."
+    """
+    base = runner_data._select_seeds((1, 999), 4096, round_offset=0)
+    shifted = runner_data._select_seeds((1, 999), 4096, round_offset=1)
+    assert base == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert shifted == [9, 10, 11, 12, 13, 14, 15, 16]
+    # Offset wraps within the policy range so long runs don't starve.
+    wrapped = runner_data._select_seeds((1, 999), 4096, round_offset=200)
+    assert len(wrapped) == 8
+    assert all(1 <= s <= 999 for s in wrapped)
+    assert wrapped != base
+
+
 def test_stim_artifacts_and_sampling_cover_stim_path() -> None:
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
     artifacts = runner_data.load_code_artifacts(env)

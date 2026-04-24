@@ -58,6 +58,49 @@ def run_round_plan(
     }
 
 
+def _cold_start_best_so_far(mem: RunMemory, top_k: int = 3) -> list[dict]:
+    """Cold-start fallback when ``pareto.json`` is empty.
+
+    The Pareto only admits rounds with ``verify_verdict == "VERIFIED"``,
+    which requires the Analyst to say ``candidate`` first, which in turn
+    requires ``delta_ler + 0.5*(ci_high-ci_low) > 0``. Until a round
+    clears that bar the Pareto is ``[]`` and the Coder previously saw an
+    empty ``best_so_far`` — no reference configs to mutate from. We
+    instead surface the top-``top_k`` ``status=ok`` rows by ``delta_ler``
+    so the Coder has *something* to steer off of, each entry flagged
+    ``cold_start_fallback=True`` so the Coder knows it is NOT VERIFIED.
+    """
+    if not mem.history_path.exists():
+        return []
+    rows: list[dict] = []
+    with mem.history_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    ok = [r for r in rows if r.get("status") == "ok" and r.get("delta_ler") is not None]
+    # Stable descending sort by delta_ler — None handled by the filter above.
+    ok.sort(key=lambda r: float(r["delta_ler"]), reverse=True)
+    out: list[dict] = []
+    for r in ok[:top_k]:
+        out.append(
+            {
+                "round": r.get("round"),
+                "delta_ler": r.get("delta_ler"),
+                "flops_per_syndrome": r.get("flops_per_syndrome"),
+                "n_params": r.get("n_params"),
+                "train_loss_final": r.get("train_loss_final"),
+                "checkpoint_path": r.get("checkpoint_path"),
+                "cold_start_fallback": True,
+            }
+        )
+    return out
+
+
 def build_coder_prompt(
     hypothesis: dict,
     mem: RunMemory,
@@ -67,8 +110,10 @@ def build_coder_prompt(
 ) -> str:
     """Build the Coder prompt after the Ideator returns a hypothesis.
 
-    `best_so_far` defaults to the current Pareto (top 3). Callers can
-    override when they want a tighter "dominant configs only" slice.
+    `best_so_far` defaults to the current Pareto (top 3); when the Pareto
+    is empty (cold-start, no VERIFIED round yet) it falls back to the top
+    3 ``status=ok`` history rows by ``delta_ler`` so the Coder always
+    has a reference config to steer off of.
 
     `worktree_dir`, when supplied, is threaded into the Coder ctx so the
     subagent knows where to make edits + commit (§15.4).
@@ -76,6 +121,8 @@ def build_coder_prompt(
     if best_so_far is None:
         pareto = json.loads(mem.pareto_path.read_text(encoding="utf-8") or "[]")
         best_so_far = pareto[:3]
+        if not best_so_far:
+            best_so_far = _cold_start_best_so_far(mem)
     ctx = mem.l3_for_coder(
         hypothesis=hypothesis,
         schema_md=dsl_schema_md,
