@@ -7,7 +7,7 @@ Linux without relying on bash, `ls | head`, `wc`, or `/tmp`.
 Usage::
 
     python scripts/run_quick.py                       # defaults
-    python scripts/run_quick.py --rounds 5 --profile prod
+    python scripts/run_quick.py --rounds 5 --profile benchmark
     python scripts/run_quick.py --env-yaml envs/my.yaml
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--env-yaml", default=str(DEFAULT_ENV_YAML))
     p.add_argument("--rounds", type=int, default=3)
-    p.add_argument("--profile", choices=("dev", "prod"), default="dev")
+    p.add_argument("--profile", choices=("dev", "prod", "benchmark"), default="dev")
     return p.parse_args()
 
 
@@ -59,8 +59,9 @@ def _validated_env_yaml(raw: str) -> str:
 def main() -> int:
     args = _parse_args()
     env_yaml_checked = _validated_env_yaml(args.env_yaml)
-    # argparse already restricts args.profile to ('dev','prod') and args.rounds
-    # to int, so every element below is either a literal or a validated value.
+    # argparse restricts args.profile to the known training profiles
+    # (including benchmark) and args.rounds to int, so every element below
+    # is either a literal or a validated value.
     subprocess.run(  # noqa: S603 — list-form, no shell; inputs validated above
         [
             sys.executable,

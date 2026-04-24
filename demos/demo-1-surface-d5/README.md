@@ -142,3 +142,8 @@ That is a `25.31x` GPU speedup on training wall-clock for the same config.
   holdout verification still belongs to the verifier workflow.
 - `dev` profile uses very small shot counts, so `delta_ler` is mostly a
   structural smoke signal here rather than a meaningful decoder ranking.
+
+For positive `delta_ler` performance evidence, use
+`experiments/bb72-positive-delta/`. Demo 1 is the live-loop stability path;
+the current `surface_d5 + mwpm + soft_priors` route does not use neural
+soft-prior outputs inside MWPM.

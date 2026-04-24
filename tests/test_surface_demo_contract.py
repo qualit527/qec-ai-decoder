@@ -45,6 +45,13 @@ def test_demo1_readme_describes_live_gpu_validation_contract() -> None:
     assert "expected_output/live_llm_gpu_round3/runtime_env.json" in readme
 
 
+def test_demo1_readme_links_stability_demo_to_performance_benchmark() -> None:
+    readme = README_PATH.read_text(encoding="utf-8")
+
+    assert "experiments/bb72-positive-delta/" in readme
+    assert "surface_d5 + mwpm + soft_priors" in readme
+
+
 def test_demo1_expected_output_contains_live_gpu_snapshot() -> None:
     expected_root = REPO_ROOT / "demos/demo-1-surface-d5/expected_output/live_llm_gpu_round3"
 
