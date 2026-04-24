@@ -145,7 +145,7 @@ def _write_and_commit_pointer(
                 "commit",
                 "-q",
                 "-m",
-                f"round {round_idx}: pointer for attempt {round_attempt_id or 'unknown'}",
+                f"chore(pointer): record round {round_idx} pointer for attempt {round_attempt_id or 'unknown'}",
             ],
             check=True,
             capture_output=True,
@@ -238,13 +238,12 @@ def run_round_in_subprocess(
     if safe_round_attempt_id is not None:
         child_env[AUTOQEC_CHILD_ROUND_ATTEMPT_ID] = safe_round_attempt_id
 
-    child_argv = ["python", "-m", "cli.autoqec", "run-round-internal"]
+    child_argv = [sys.executable, "-m", "cli.autoqec", "run-round-internal"]
     try:
         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
         # Static child command only; all dynamic values go through validated env vars.
         proc = subprocess.run(
             child_argv,
-            executable=str(Path(sys.executable).resolve()),
             cwd=code_cwd,
             env=child_env,
             shell=False,

@@ -175,7 +175,7 @@ def test_subprocess_runner_cleans_tempfiles_and_sets_writable_mplconfig(
     assert "MPLCONFIGDIR" in captured["env"]
 
 
-def test_subprocess_runner_uses_shell_false_and_resolved_cwd(tmp_path):
+def test_subprocess_runner_uses_shell_false_and_venv_python(tmp_path):
     """The child process must spawn via a static internal command.
 
     subprocess_runner now also issues git invocations for the §15.10
@@ -219,10 +219,10 @@ def test_subprocess_runner_uses_shell_false_and_resolved_cwd(tmp_path):
     with patch.object(subprocess_runner.subprocess, "run", side_effect=_fake_run):
         subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id="u1")
 
-    assert captured["argv"] == ["python", "-m", "cli.autoqec", "run-round-internal"]
+    assert captured["argv"] == [sys.executable, "-m", "cli.autoqec", "run-round-internal"]
     assert captured["kwargs"]["shell"] is False
     assert captured["kwargs"]["cwd"] == str(tmp_path.resolve())
-    assert captured["kwargs"]["executable"] == str(Path(sys.executable).resolve())
+    assert "executable" not in captured["kwargs"]
     child_env = captured["kwargs"]["env"]
     assert child_env["AUTOQEC_CHILD_ROUND_DIR"] == str((tmp_path / "round_1").resolve())
     assert child_env["AUTOQEC_CHILD_BRANCH"] == "exp/foo/01-bar"
@@ -308,6 +308,11 @@ def test_subprocess_runner_writes_and_commits_pointer(tmp_path):
         text=True,
     ).strip()
     assert metrics.commit_sha == head_sha
+    tip_subject = subprocess.check_output(
+        ["git", "-C", str(tmp_path), "log", "-1", "--pretty=%s"],
+        text=True,
+    ).strip()
+    assert tip_subject.startswith("chore(")
 
 
 def test_subprocess_runner_writes_artifact_manifest(tmp_path):
@@ -369,8 +374,8 @@ def test_subprocess_runner_writes_artifact_manifest(tmp_path):
     assert manifest["repo"]["commit_sha"] == worktree_run_sha
     assert manifest["environment"]["env_yaml_sha256"]
     assert manifest["round"]["dsl_config_sha256"]
-    assert manifest["round"]["command_line"] == [
-        "python",
+    assert Path(manifest["round"]["command_line"][0]).name.startswith("python")
+    assert manifest["round"]["command_line"][1:] == [
         "-m",
         "cli.autoqec",
         "run-round-internal",

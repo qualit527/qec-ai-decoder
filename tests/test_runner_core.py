@@ -154,6 +154,48 @@ def test_run_round_returns_vram_precheck_kill(monkeypatch, tmp_path) -> None:
     assert "VRAM estimate" in (metrics.status_reason or "")
 
 
+def test_run_round_handles_neural_bp_config_when_gnn_block_is_null(monkeypatch, tmp_path) -> None:
+    env = load_env_yaml("autoqec/envs/builtin/bb72_depol.yaml")
+    cfg = RunnerConfig(
+        env_name=env.name,
+        predecoder_config={
+            "type": "neural_bp",
+            "output_mode": "soft_priors",
+            "gnn": None,
+            "neural_bp": {
+                "iterations": 2,
+                "weight_sharing": "per_layer",
+                "damping": "fixed",
+                "attention_aug": False,
+                "attention_heads": 1,
+            },
+            "training": {"learning_rate": 1e-3, "batch_size": 2, "epochs": 1},
+        },
+        training_profile="dev",
+        seed=0,
+        round_dir=str(tmp_path / "round_1"),
+    )
+    train_pair = (
+        torch.zeros((2, 3), dtype=torch.float32),
+        torch.zeros((2, 5), dtype=torch.float32),
+    )
+    val_pair = (
+        torch.zeros((2, 3), dtype=torch.float32),
+        torch.zeros((2, 5), dtype=torch.int64),
+    )
+    calls = iter([train_pair, val_pair])
+
+    monkeypatch.setattr(runner, "load_code_artifacts", lambda _env: _parity_artifacts())
+    monkeypatch.setattr(runner, "compile_predecoder", lambda *_args, **_kwargs: FakeModel("soft_priors", 5))
+    monkeypatch.setattr(runner, "sample_syndromes", lambda *_args, **_kwargs: next(calls))
+    monkeypatch.setattr(runner.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(runner, "decode_with_predecoder", lambda *_args, **_kwargs: np.zeros((2, 5), dtype=np.int64))
+    monkeypatch.setattr(runner, "estimate_flops", lambda *_args, **_kwargs: 10)
+
+    metrics = runner.run_round(cfg, env, safety=RunnerSafety(VRAM_PRE_CHECK=False))
+    assert metrics.status == "ok"
+
+
 def test_run_round_returns_wall_clock_cutoff(monkeypatch, tmp_path) -> None:
     env = load_env_yaml("autoqec/envs/builtin/bb72_depol.yaml")
     cfg = RunnerConfig(

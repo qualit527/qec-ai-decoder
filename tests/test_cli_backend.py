@@ -7,6 +7,7 @@ from autoqec.agents.cli_backend import (
     _build_cli_argv,
     _parse_fenced_json,
     invoke_subagent,
+    invoke_subagent_with_metadata,
 )
 
 
@@ -72,3 +73,27 @@ def test_invoke_subagent_propagates_nonzero(monkeypatch):
     with patch("subprocess.run", return_value=FakeCompleted()):
         with pytest.raises(InvalidSubagentResponseError, match="exit 2"):
             invoke_subagent("ideator", "prompt")
+
+
+def test_invoke_subagent_with_metadata_parses_claude_json_result(monkeypatch):
+    monkeypatch.setenv("AUTOQEC_ANALYST_BACKEND", "claude-cli")
+    monkeypatch.setenv("AUTOQEC_ANALYST_MODEL", "claude-haiku-4-5")
+
+    class FakeCompleted:
+        stdout = (
+            '{"result":"```json\\n{\\"summary_1line\\": \\"ok\\", \\"verdict\\": \\"candidate\\", '
+            '\\"next_hypothesis_seed\\": \\"try bigger\\"}\\n```",'
+            '"usage":{"input_tokens":123,"output_tokens":45},'
+            '"duration_ms":789,"total_cost_usd":0.00123}'
+        )
+        stderr = ""
+        returncode = 0
+
+    with patch("subprocess.run", return_value=FakeCompleted()):
+        payload, meta = invoke_subagent_with_metadata("analyst", "prompt")
+
+    assert payload["verdict"] == "candidate"
+    assert meta["usage"]["input_tokens"] == 123
+    assert meta["usage"]["output_tokens"] == 45
+    assert meta["duration_ms"] == 789
+    assert meta["total_cost_usd"] == 0.00123

@@ -433,5 +433,6 @@ def test_subprocess_runner_uses_internal_command_env_bridge(tmp_path):
     with patch.object(subprocess_runner.subprocess, "run", side_effect=_fake_run):
         subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id="u1")
 
-    assert captured["argv"] == ["python", "-m", "cli.autoqec", "run-round-internal"]
+    assert Path(captured["argv"][0]).name.startswith("python")
+    assert captured["argv"][1:] == ["-m", "cli.autoqec", "run-round-internal"]
     assert captured["kwargs"]["env"]["AUTOQEC_CHILD_BRANCH"] == "exp/foo/01-bar"

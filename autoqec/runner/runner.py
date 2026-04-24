@@ -118,9 +118,11 @@ def run_round(
 
     n_params = int(sum(parameter.numel() for parameter in model.parameters()))
     profile = _profile_params(env_spec, config.training_profile)
+    gnn_cfg = config.predecoder_config.get("gnn") or {}
+    neural_bp_cfg = config.predecoder_config.get("neural_bp") or {}
     hidden_hint = (
-        config.predecoder_config.get("gnn", {}).get("hidden_dim")
-        or config.predecoder_config.get("neural_bp", {}).get("attention_heads")
+        gnn_cfg.get("hidden_dim")
+        or neural_bp_cfg.get("attention_heads")
         or 64
     )
 
