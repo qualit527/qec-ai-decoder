@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 import random
 import time
@@ -21,6 +22,30 @@ from autoqec.runner.safety import RunnerSafety, estimate_vram_gb, nan_rate
 from autoqec.runner.schema import RoundMetrics, RunnerConfig
 
 
+def _summarize_losses(losses: list[float], batches_per_epoch: int) -> dict[str, float | int | None]:
+    """Derive the loss-telemetry fields surfaced on RoundMetrics.
+
+    Finite-only: NaN/inf entries are dropped before summarizing so a single
+    bad batch doesn't poison the rolling means. If no finite losses exist
+    (e.g., compile_error before any step), every summary field is None.
+    """
+    finite = [x for x in losses if math.isfinite(x)]
+    if not finite:
+        return {
+            "train_loss_initial": None,
+            "train_loss_final": None,
+            "train_loss_mean_last_epoch": None,
+            "train_batches_total": len(losses),
+        }
+    tail = finite[-batches_per_epoch:] if batches_per_epoch > 0 else finite
+    return {
+        "train_loss_initial": float(finite[0]),
+        "train_loss_final": float(finite[-1]),
+        "train_loss_mean_last_epoch": float(sum(tail) / len(tail)),
+        "train_batches_total": len(losses),
+    }
+
+
 class RunnerCallPathError(RuntimeError):
     """Raised when run_round is called in-process with cfg.code_cwd set.
 
@@ -31,16 +56,25 @@ class RunnerCallPathError(RuntimeError):
 
 
 def _profile_params(env_spec: EnvSpec, profile: str) -> dict[str, int]:
+    """Return per-profile caps on training shots/epochs.
+
+    ``dev`` is still the smoke profile, but the pre-2026-04-24 caps
+    (256 train / 64 val / 1 epoch → 1-4 batches total) were too small
+    for any real learning. With the training pipeline now correctly
+    using DEM-error labels and MWPM honouring soft priors, ``dev`` gets
+    enough shots to actually move the loss; ``prod`` stays the option
+    for serious runs.
+    """
     if profile == "dev":
         return {
-            "n_shots_train": min(env_spec.eval_protocol.min_shots_train, 256),
-            "n_shots_val": min(env_spec.eval_protocol.min_shots_val, 64),
-            "epochs_cap": 1,
+            "n_shots_train": min(env_spec.eval_protocol.min_shots_train, 4096),
+            "n_shots_val": min(env_spec.eval_protocol.min_shots_val, 256),
+            "epochs_cap": 3,
         }
     return {
-        "n_shots_train": min(env_spec.eval_protocol.min_shots_train, 2048),
-        "n_shots_val": min(env_spec.eval_protocol.min_shots_val, 256),
-        "epochs_cap": 3,
+        "n_shots_train": min(env_spec.eval_protocol.min_shots_train, 16384),
+        "n_shots_val": min(env_spec.eval_protocol.min_shots_val, 1024),
+        "epochs_cap": 10,
     }
 
 
@@ -120,14 +154,14 @@ def run_round(
             )
 
     model = model.to(device)
-    train_syndrome, train_target = sample_syndromes(
+    train_batch = sample_syndromes(
         env_spec,
         artifacts,
         env_spec.noise.seed_policy.train,
         profile["n_shots_train"],
     )
-    train_syndrome = train_syndrome.to(device)
-    train_target = train_target.to(device)
+    train_syndrome = train_batch.syndrome.to(device)
+    train_errors = train_batch.errors.to(device)
 
     ctx = {
         "edge_index": artifacts.edge_index.to(device),
@@ -145,6 +179,7 @@ def run_round(
     batch_size = int(config.predecoder_config["training"]["batch_size"])
     epochs = min(int(config.predecoder_config["training"]["epochs"]), profile["epochs_cap"])
     losses: list[float] = []
+    batches_per_epoch = max(1, math.ceil(train_syndrome.shape[0] / batch_size))
 
     train_start = time.time()
     for _ in range(epochs):
@@ -157,21 +192,35 @@ def run_round(
                         status_reason="wall_clock_cutoff during training",
                         n_params=n_params,
                         train_wallclock_s=time.time() - train_start,
+                        **_summarize_losses(losses, batches_per_epoch),
                     ),
                 )
             batch_syndrome = train_syndrome[start : start + batch_size]
-            if artifacts.code_type == "stim_circuit":
-                target = batch_syndrome
-            elif model.output_mode == "soft_priors":
-                target = train_target[start : start + batch_size].float()
-            else:
-                target = batch_syndrome
+            batch_errors = train_errors[start : start + batch_size]
 
             pred = model(batch_syndrome, ctx)
             if model.output_mode == "soft_priors":
-                pred_slice = pred[:, : target.shape[1]].clamp(1e-5, 1 - 1e-5)
-                loss = F.binary_cross_entropy(pred_slice, target.float())
+                # Supervised per-mechanism error probability. Errors shape
+                # (B, n_var) must match pred shape (B, n_var) — no slicing.
+                assert pred.shape == batch_errors.shape, (
+                    f"predecoder output {pred.shape} must match errors "
+                    f"target {batch_errors.shape} in soft_priors mode"
+                )
+                pred_clamped = pred.clamp(1e-5, 1 - 1e-5)
+                loss = F.binary_cross_entropy(pred_clamped, batch_errors.float())
             else:
+                # hard_flip: model outputs a "cleaned syndrome" (B, n_check)
+                # which is fed directly to the classical backend. We have
+                # no ground-truth cleaned syndrome, so we train against the
+                # syndrome that an ideal predecoder would produce: the
+                # syndrome minus the syndrome of the supervised error
+                # vector. For a correct decoder that output is all-zeros,
+                # but operator-level XOR is non-differentiable so we use
+                # the raw syndrome as a weak surrogate — see docs for
+                # limitations. This is the best we can do without a
+                # proper differentiable reconstruction loss; users wanting
+                # meaningful deltaLER should prefer output_mode=soft_priors.
+                target = batch_syndrome
                 loss = F.mse_loss(pred.float(), target.float())
 
             if not torch.isfinite(loss):
@@ -184,6 +233,7 @@ def run_round(
                             status_reason=f"NaN rate {nan_rate(losses):.3f}",
                             n_params=n_params,
                             train_wallclock_s=time.time() - train_start,
+                            **_summarize_losses(losses, batches_per_epoch),
                         ),
                     )
                 continue
@@ -198,16 +248,23 @@ def run_round(
         "\n".join(f"{idx}\t{loss:.6g}" for idx, loss in enumerate(losses)),
         encoding="utf-8",
     )
+    loss_summary = _summarize_losses(losses, batches_per_epoch)
 
     eval_start = time.time()
-    val_syndrome, val_target = sample_syndromes(
+    val_batch = sample_syndromes(
         env_spec,
         artifacts,
         env_spec.noise.seed_policy.val,
         profile["n_shots_val"],
     )
+    val_syndrome = val_batch.syndrome
+    # LER is always computed against observables. For parity-check codes
+    # observables aliases errors, so the comparison reduces to the
+    # prior behaviour. For stim_circuit codes observables is the logical
+    # outcome (shape (B, num_observables)), which is what both the MWPM
+    # baseline and the reweighted path return from their decode calls.
     syndrome_np = val_syndrome.numpy()
-    target_np = val_target.numpy()
+    target_np = val_batch.observables.numpy()
 
     if env_spec.classical_backend == "mwpm":
         baseline = PymatchingBaseline.from_circuit(artifacts.code_artifact)  # type: ignore[arg-type]
@@ -263,5 +320,6 @@ def run_round(
         vram_peak_gb=float(torch.cuda.max_memory_allocated() / 1e9) if torch.cuda.is_available() else 0.0,
         checkpoint_path=str(checkpoint_path),
         training_log_path=str(train_log),
+        **loss_summary,
     )
     return _write_metrics(round_dir, metrics)

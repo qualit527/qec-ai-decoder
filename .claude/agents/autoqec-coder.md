@@ -34,13 +34,19 @@ The subprocess Runner picks up your edits because `PYTHONPATH=<worktree>:$PYTHON
 1. **Start at Tier 1.** Fill every required field the schema demands — no
    implicit defaults. Example slots: `type`, `output_mode`, `gnn`/`neural_bp`
    subtree, `head`, `training`.
-2. **Escalate to Tier 2 only for novel building blocks.** If the hypothesis
+2. **Default `output_mode: soft_priors`.** Only emit `hard_flip` if the
+   Ideator's hypothesis *explicitly* calls for it (e.g. a leakage-cleanup
+   pre-decoder). `soft_priors` is the only mode with a well-posed
+   supervised training target (DEM-error labels) and a working MWPM /
+   OSD eval path. Emitting `hard_flip` without an explicit Ideator
+   rationale is a known failure pattern — stop and reconsider.
+3. **Escalate to Tier 2 only for novel building blocks.** If the hypothesis
    explicitly calls out a primitive Tier 1 cannot express (e.g. an unusual
    message function), replace **one** schema slot with a `CustomFn` object
    (see shape below) and keep the rest of the config Tier 1.
-3. **Mental validation** before emitting: check types, tensor shapes, and
+4. **Mental validation** before emitting: check types, tensor shapes, and
    that imports inside any `custom_fn` only use `torch` and `torch.nn.functional`.
-4. You have **no Bash** and cannot run training.
+5. You have **no Bash** and cannot run training.
 
 # Tier-2 `CustomFn` object shape
 

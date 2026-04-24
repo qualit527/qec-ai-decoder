@@ -52,6 +52,12 @@ def test_backend_adapter_error_branches(monkeypatch) -> None:
         def decode_batch(self, arr):
             return arr.astype(np.int64)
 
+        def decode(self, arr):
+            # Single-shot variant used by the reweighted-MWPM path. Return
+            # zero observables regardless of the input so callers only need
+            # the shape to line up.
+            return np.zeros(1, dtype=np.int64)
+
     fake_pymatching = types.ModuleType("pymatching")
     fake_pymatching.Matching = type(
         "Matching",
@@ -61,7 +67,11 @@ def test_backend_adapter_error_branches(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "pymatching", fake_pymatching)
     circuit = stim.Circuit.from_file(env.code.source)
     syndrome = np.zeros((2, circuit.num_detectors), dtype=np.uint8)
-    out = decode_with_predecoder(np.ones_like(syndrome), env, syndrome, circuit, "soft_priors")
+    # soft_priors MWPM path rebuilds a DEM per shot, so priors must have
+    # one column per DEM error mechanism (not per detector).
+    dem = circuit.detector_error_model(decompose_errors=True)
+    priors = np.ones((2, dem.num_errors), dtype=float) * 0.01
+    out = decode_with_predecoder(priors, env, syndrome, circuit, "soft_priors")
     assert out.shape[0] == 2
 
     bad_env = env.model_copy(update={"classical_backend": "unknown"})

@@ -125,6 +125,10 @@ class BipartiteGNN(PredecoderBase):
             logits = self.head(h_v).squeeze(-1)
             return torch.sigmoid(logits)
 
+        # hard_flip: return soft sigmoid probabilities so gradients flow
+        # through training. The hard threshold at 0.5 is applied by the
+        # classical-backend adapter at eval time (see
+        # autoqec.decoders.backend_adapter.decode_with_predecoder).
         logits = self.head(h_c).squeeze(-1)
-        return (torch.sigmoid(logits) > 0.5).long()
+        return torch.sigmoid(logits)
 

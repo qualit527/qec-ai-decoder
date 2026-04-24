@@ -21,6 +21,26 @@ class CodeArtifacts:
     parity_check_matrix: np.ndarray | None = None
 
 
+@dataclass(frozen=True)
+class SampleBatch:
+    """One batch of sampled shots, split into the three surfaces callers
+    need.
+
+    ``syndrome`` feeds the predecoder's forward pass. ``errors`` is the
+    supervised target for ``soft_priors`` training — one entry per DEM
+    error mechanism (stim) or per physical qubit (parity-check). It has
+    the same width as the predecoder's ``soft_priors`` output so
+    ``BCE(pred, errors.float())`` is well-defined with no slicing.
+    ``observables`` is the logical outcome used by the LER comparison at
+    eval. For parity-check codes there is no separate observable surface,
+    so ``observables`` aliases ``errors``.
+    """
+
+    syndrome: torch.Tensor
+    errors: torch.Tensor
+    observables: torch.Tensor
+
+
 def _select_seeds(seed_range: tuple[int, int], n_shots: int, max_unique: int = 8) -> list[int]:
     start, end = seed_range
     count = min(max_unique, max(1, n_shots))
@@ -80,19 +100,36 @@ def load_code_artifacts(env_spec: EnvSpec) -> CodeArtifacts:
     raise ValueError(f"Unsupported code type: {env_spec.code.type}")
 
 
-def _sample_stim(circuit: stim.Circuit, seed_range: tuple[int, int], n_shots: int) -> tuple[torch.Tensor, torch.Tensor]:
+def _sample_stim(circuit: stim.Circuit, seed_range: tuple[int, int], n_shots: int) -> SampleBatch:
+    """Sample from the DEM sampler so we get error labels alongside
+    detectors and observables.
+
+    We use ``stim.DetectorErrorModel.compile_sampler`` rather than
+    ``circuit.compile_detector_sampler`` because the latter only exposes
+    ``(detections, observables)`` — insufficient for supervised training
+    of a soft-priors predecoder. The DEM sampler agrees with the circuit
+    sampler on detector and observable marginals for decomposed DEMs.
+    """
+    dem = circuit.detector_error_model(decompose_errors=True)
     seeds = _select_seeds(seed_range, n_shots)
     per_seed = max(1, int(np.ceil(n_shots / len(seeds))))
-    detections_all = []
-    observables_all = []
+    detections_all: list[np.ndarray] = []
+    errors_all: list[np.ndarray] = []
+    observables_all: list[np.ndarray] = []
     for seed in seeds:
-        sampler = circuit.compile_detector_sampler(seed=seed)
-        detections, observables = sampler.sample(shots=per_seed, separate_observables=True)
+        sampler = dem.compile_sampler(seed=seed)
+        detections, observables, errors = sampler.sample(shots=per_seed, return_errors=True)
         detections_all.append(detections)
+        errors_all.append(errors)
         observables_all.append(observables)
     detections = np.concatenate(detections_all, axis=0)[:n_shots]
+    errors = np.concatenate(errors_all, axis=0)[:n_shots]
     observables = np.concatenate(observables_all, axis=0)[:n_shots]
-    return torch.from_numpy(detections.astype(np.float32)), torch.from_numpy(observables.astype(np.int64))
+    return SampleBatch(
+        syndrome=torch.from_numpy(detections.astype(np.float32)),
+        errors=torch.from_numpy(errors.astype(np.int64)),
+        observables=torch.from_numpy(observables.astype(np.int64)),
+    )
 
 
 def _sample_parity(
@@ -100,11 +137,11 @@ def _sample_parity(
     p_error: float,
     seed_range: tuple[int, int],
     n_shots: int,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> SampleBatch:
     seeds = _select_seeds(seed_range, n_shots)
     per_seed = max(1, int(np.ceil(n_shots / len(seeds))))
-    syndromes_all = []
-    errors_all = []
+    syndromes_all: list[np.ndarray] = []
+    errors_all: list[np.ndarray] = []
     for seed in seeds:
         rng = np.random.default_rng(seed)
         errors = rng.binomial(1, p_error, size=(per_seed, parity_check.shape[1])).astype(np.uint8)
@@ -113,7 +150,15 @@ def _sample_parity(
         errors_all.append(errors)
     syndromes = np.concatenate(syndromes_all, axis=0)[:n_shots]
     errors = np.concatenate(errors_all, axis=0)[:n_shots]
-    return torch.from_numpy(syndromes.astype(np.float32)), torch.from_numpy(errors.astype(np.int64))
+    errors_tensor = torch.from_numpy(errors.astype(np.int64))
+    return SampleBatch(
+        syndrome=torch.from_numpy(syndromes.astype(np.float32)),
+        errors=errors_tensor,
+        # Parity-check codes have no distinct observable surface; callers
+        # that want "what LER compares against" can use `.observables`
+        # unconditionally.
+        observables=errors_tensor,
+    )
 
 
 def sample_syndromes(
@@ -121,7 +166,7 @@ def sample_syndromes(
     artifacts: CodeArtifacts,
     seed_range: tuple[int, int],
     n_shots: int,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> SampleBatch:
     if artifacts.code_type == "stim_circuit":
         return _sample_stim(artifacts.code_artifact, seed_range, n_shots)  # type: ignore[arg-type]
     return _sample_parity(
@@ -130,4 +175,3 @@ def sample_syndromes(
         seed_range,
         n_shots,
     )
-

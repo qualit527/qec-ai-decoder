@@ -24,15 +24,16 @@ def test_stim_artifacts_and_sampling_cover_stim_path() -> None:
     assert artifacts.edge_index.shape[0] == 2
     assert artifacts.prior_p.shape[0] == artifacts.n_var
 
-    syndrome, targets = runner_data.sample_syndromes(
+    batch = runner_data.sample_syndromes(
         env,
         artifacts,
         env.noise.seed_policy.train,
         5,
     )
-    assert syndrome.shape[0] == 5
-    assert syndrome.shape[1] == artifacts.n_check
-    assert targets.shape[0] == 5
+    assert batch.syndrome.shape[0] == 5
+    assert batch.syndrome.shape[1] == artifacts.n_check
+    assert batch.errors.shape[0] == 5
+    assert batch.observables.shape[0] == 5
 
 
 def test_stim_edge_index_and_prior_skips_non_error_instructions() -> None:
@@ -54,14 +55,14 @@ def test_parity_edge_index_and_sampling_cover_parity_path() -> None:
     assert artifacts.edge_index.shape[0] == 2
     assert artifacts.prior_p.shape[0] == artifacts.n_var
 
-    syndrome, errors = runner_data.sample_syndromes(
+    batch = runner_data.sample_syndromes(
         env,
         artifacts,
         env.noise.seed_policy.train,
         6,
     )
-    assert syndrome.shape == (6, artifacts.n_check)
-    assert errors.shape == (6, artifacts.n_var)
+    assert batch.syndrome.shape == (6, artifacts.n_check)
+    assert batch.errors.shape == (6, artifacts.n_var)
 
 
 def test_parity_edge_index_uses_nonzero_entries() -> None:
@@ -72,9 +73,47 @@ def test_parity_edge_index_uses_nonzero_entries() -> None:
 
 def test_sample_parity_respects_requested_shot_count() -> None:
     parity = np.array([[1, 0, 1], [0, 1, 1]], dtype=np.uint8)
-    syndrome, errors = runner_data._sample_parity(parity, 0.1, (1, 5), 3)
-    assert syndrome.shape == (3, 2)
-    assert errors.shape == (3, 3)
+    batch = runner_data._sample_parity(parity, 0.1, (1, 5), 3)
+    assert batch.syndrome.shape == (3, 2)
+    assert batch.errors.shape == (3, 3)
+    # parity-check path aliases observables to errors
+    assert torch.equal(batch.errors, batch.observables)
+
+
+def test_sample_syndromes_stim_returns_errors_and_observables() -> None:
+    """For stim_circuit envs, sampling must yield DEM-error labels (for
+    supervised soft_priors training) AND logical observables (for LER
+    computation). Prior to 2026-04-24 the sampler only exposed observables,
+    forcing the training loop to use `target=syndrome` — identity learning.
+    """
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    artifacts = runner_data.load_code_artifacts(env)
+
+    batch = runner_data.sample_syndromes(env, artifacts, env.noise.seed_policy.train, 8)
+
+    assert batch.syndrome.shape == (8, artifacts.n_check)
+    assert batch.errors.shape == (8, artifacts.n_var), (
+        "errors shape must match predecoder soft_priors output width (n_var = "
+        "num DEM error mechanisms) so BCE(pred, errors) is well-defined"
+    )
+    # Single-logical surface code: num_observables = 1.
+    assert batch.observables.shape == (8, 1)
+    # Errors and observables must NOT be identical arrays — they are distinct
+    # quantities for stim circuits.
+    assert batch.errors.shape != batch.observables.shape
+
+
+def test_sample_syndromes_parity_populates_all_three_fields() -> None:
+    env = load_env_yaml("autoqec/envs/builtin/bb72_depol.yaml")
+    artifacts = runner_data.load_code_artifacts(env)
+
+    batch = runner_data.sample_syndromes(env, artifacts, env.noise.seed_policy.train, 6)
+
+    assert batch.syndrome.shape == (6, artifacts.n_check)
+    assert batch.errors.shape == (6, artifacts.n_var)
+    # Parity-check codes have no separate observables; we duplicate errors
+    # so callers can still ask for `.observables` uniformly.
+    assert torch.equal(batch.errors, batch.observables)
 
 
 def test_load_code_artifacts_rejects_unsupported_code_type() -> None:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -25,8 +25,11 @@ class CodeSpec(BaseModel):
 
 
 class ConstraintsSpec(BaseModel):
-    latency_flops_budget: int = 10_000_000
-    param_budget: int = 200_000
+    # None = unlimited. Kept as informational metadata for the Ideator, not
+    # enforced anywhere in the runner. The only effective budget is the
+    # outer wall-clock budget surfaced via machine_state.
+    latency_flops_budget: Optional[int] = None
+    param_budget: Optional[int] = None
     target_ler: float = 1e-4
     target_p: float = 1e-3
 
@@ -52,7 +55,10 @@ class EnvSpec(BaseModel):
 
 def load_env_yaml(path: str | Path) -> EnvSpec:
     path = Path(path).expanduser().resolve()
-    with path.open() as f:
+    # Force UTF-8 so YAMLs with non-ASCII comments load consistently on
+    # Windows (system default is GBK/CP936 there, which chokes on em-dashes
+    # and other common punctuation).
+    with path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if "code" in data:
         code = dict(data["code"] or {})

@@ -8,6 +8,7 @@ import torch
 import yaml
 
 from autoqec.envs.schema import EnvSpec
+from autoqec.runner.data import SampleBatch
 from autoqec.runner.runner import run_round
 from autoqec.runner.safety import RunnerSafety
 from autoqec.runner.schema import RoundMetrics, RunnerConfig
@@ -103,9 +104,10 @@ def test_run_round_success_writes_consumable_artifacts(monkeypatch, tmp_path: Pa
     monkeypatch.setattr(
         runner,
         "sample_syndromes",
-        lambda *_args, **_kwargs: (
-            torch.zeros((4, 2), dtype=torch.float32),
-            torch.zeros((4, 2), dtype=torch.int64),
+        lambda *_args, **_kwargs: SampleBatch(
+            syndrome=torch.zeros((4, 2), dtype=torch.float32),
+            errors=torch.zeros((4, 2), dtype=torch.int64),
+            observables=torch.zeros((4, 2), dtype=torch.int64),
         ),
     )
     monkeypatch.setattr(
@@ -184,9 +186,10 @@ def test_run_round_safety_kill_emits_metrics_without_claiming_missing_artifacts(
     monkeypatch.setattr(
         runner,
         "sample_syndromes",
-        lambda *_args, **_kwargs: (
-            torch.zeros((4, 2), dtype=torch.float32),
-            torch.zeros((4, 2), dtype=torch.int64),
+        lambda *_args, **_kwargs: SampleBatch(
+            syndrome=torch.zeros((4, 2), dtype=torch.float32),
+            errors=torch.zeros((4, 2), dtype=torch.int64),
+            observables=torch.zeros((4, 2), dtype=torch.int64),
         ),
     )
 
