@@ -88,6 +88,7 @@ def test_no_llm_demo_smoke_writes_valid_artifact_contract(
     assert (round_dir / "train.log").exists()
     assert (round_dir / "checkpoint.pt").exists()
     assert (round_dir / "metrics.json").exists()
+    assert (round_dir / "artifact_manifest.json").exists()
 
     metrics = RoundMetrics.model_validate_json(
         (round_dir / "metrics.json").read_text(encoding="utf-8")
@@ -99,6 +100,21 @@ def test_no_llm_demo_smoke_writes_valid_artifact_contract(
     assert Path(metrics.training_log_path).exists()
     assert metrics.n_params is not None and metrics.n_params > 0
     assert metrics.flops_per_syndrome is not None and metrics.flops_per_syndrome > 0
+
+    manifest = json.loads((round_dir / "artifact_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == 1
+    assert manifest["repo"]["commit_sha"]
+    assert manifest["environment"]["env_yaml_path"] == str(repo_root / env_relpath)
+    assert manifest["environment"]["env_yaml_sha256"]
+    assert manifest["environment"]["env_yaml_sha256"] != "unavailable"
+    assert manifest["round"]["command_line"][0] == sys.executable
+    assert manifest["round"]["dsl_config_sha256"]
+    assert manifest["artifacts"] == {
+        "config_yaml": "config.yaml",
+        "checkpoint": "checkpoint.pt",
+        "metrics": "metrics.json",
+        "train_log": "train.log",
+    }
 
     candidate_pareto = json.loads((run_dir / "candidate_pareto.json").read_text(encoding="utf-8"))
     assert isinstance(candidate_pareto, list)

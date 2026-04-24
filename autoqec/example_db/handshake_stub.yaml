@@ -1,6 +1,8 @@
 # Minimal Tier-1 GNN config used by scripts/e2e_handshake.py to prove the
 # orchestration ↔ Runner contract end-to-end without an LLM in the loop.
-# Kept deliberately tiny so a dev-profile round completes in seconds.
+# Kept deliberately tiny so a dev-profile round completes in seconds. Use
+# scripts/e2e_handshake.py --min-steps 100 for the verification gate that
+# requires a train.log with >= 100 wc -l training-step lines.
 type: gnn
 output_mode: soft_priors
 gnn:

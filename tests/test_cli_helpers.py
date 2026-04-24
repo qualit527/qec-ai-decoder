@@ -94,18 +94,102 @@ def test_run_round_internal_cmd_reads_env_bridge(monkeypatch, tmp_path) -> None:
     assert captured["round_attempt_id"] == "uuid-1"
 
 
+def test_current_invocation_argv_handles_empty_orig_argv(monkeypatch) -> None:
+    monkeypatch.setattr(cli.sys, "orig_argv", [])
+    monkeypatch.setattr(cli.sys, "argv", [])
+
+    assert cli._current_invocation_argv() == []
+
+
+def test_current_invocation_argv_uses_basename_for_executable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli.sys,
+        "orig_argv",
+        ["/home/example/.venv/bin/python", "-m", "cli.autoqec", "run"],
+    )
+
+    assert cli._current_invocation_argv() == ["python", "-m", "cli.autoqec", "run"]
+
+
+def test_current_invocation_argv_relativizes_repo_paths(monkeypatch, tmp_path: Path) -> None:
+    repo_env = tmp_path / "autoqec" / "envs" / "builtin" / "surface.yaml"
+    repo_env.parent.mkdir(parents=True)
+    repo_env.write_text("name: surface\n", encoding="utf-8")
+    external = tmp_path.parent / "outside.yaml"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli.sys,
+        "orig_argv",
+        ["/opt/python/bin/python", "-m", "cli.autoqec", "run", str(repo_env), str(external)],
+    )
+
+    assert cli._current_invocation_argv() == [
+        "python",
+        "-m",
+        "cli.autoqec",
+        "run",
+        "autoqec/envs/builtin/surface.yaml",
+        str(external),
+    ]
+
+
+def test_read_text_if_exists_returns_empty_string_for_missing_file(tmp_path: Path) -> None:
+    assert cli._read_text_if_exists(tmp_path / "missing.txt") == ""
+
+
+def test_enrich_local_worktree_metrics_returns_early_for_compose_conflict(tmp_path: Path) -> None:
+    metrics = RoundMetrics(
+        round_idx=1,
+        status="compose_conflict",
+        hypothesis="conflict",
+        delta_ler=0.0,
+        n_params=1,
+        flops_per_shot=1,
+        train_wallclock_s=0.0,
+        branch=None,
+        commit_sha=None,
+        worktree_path=None,
+        round_attempt_id="existing-round-id",
+    )
+
+    enriched = cli._enrich_local_worktree_metrics(
+        metrics,
+        round_dir=str(tmp_path / "round_1"),
+        code_cwd=str(tmp_path),
+        branch="exp/t/compose",
+        fork_from=["exp/a", "exp/b"],
+        compose_mode="pure",
+        round_attempt_id="new-round-id",
+    )
+
+    assert enriched.status == "compose_conflict"
+    assert enriched.branch is None
+    assert enriched.commit_sha is None
+    assert enriched.compose_mode == "pure"
+    assert enriched.fork_from == ["exp/a", "exp/b"]
+    assert enriched.round_attempt_id == "new-round-id"
+    assert (tmp_path / "round_1" / "metrics.json").exists()
+
+
 def test_run_command_delegates_to_llm_loop(monkeypatch, tmp_path) -> None:
     """P0.1 wired the LLM path; the CLI should now call run_llm_loop (not raise)."""
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "load_env_yaml", lambda _path: env)
+    monkeypatch.setattr(
+        cli.sys,
+        "orig_argv",
+        ["/home/example/.venv/bin/python", "-m", "cli.autoqec", "run", env.model_dump()["name"]],
+    )
 
     calls: dict = {}
 
-    def fake_run_llm_loop(*, env, rounds, profile):
+    def fake_run_llm_loop(*, env, rounds, profile, env_yaml_path, invocation_argv):
         calls["env_name"] = env.name
         calls["rounds"] = rounds
         calls["profile"] = profile
+        calls["env_yaml_path"] = env_yaml_path
+        calls["invocation_argv"] = invocation_argv
         run_dir = tmp_path / "fake_run"
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
@@ -117,7 +201,13 @@ def test_run_command_delegates_to_llm_loop(monkeypatch, tmp_path) -> None:
         cli.run, [env.model_dump()["name"], "--rounds", "2"], catch_exceptions=False
     )
     assert result.exit_code == 0, result.output
-    assert calls == {"env_name": env.name, "rounds": 2, "profile": "dev"}
+    assert calls == {
+        "env_name": env.name,
+        "rounds": 2,
+        "profile": "dev",
+        "env_yaml_path": env.model_dump()["name"],
+        "invocation_argv": ["python", "-m", "cli.autoqec", "run", env.model_dump()["name"]],
+    }
     assert cli.RESULT_PREFIX in result.output
 
 
@@ -464,6 +554,106 @@ def test_verify_command_runs_with_offline_backend_env(monkeypatch, tmp_path) -> 
     assert (round_dir / "verification_report.json").exists()
 
 
+def test_package_run_command_emits_result_prefix(tmp_path) -> None:
+    run_dir = tmp_path / "runs" / "demo-run"
+    round_dir = run_dir / "round_1"
+    round_dir.mkdir(parents=True)
+    (round_dir / "config.yaml").write_text("type: gnn\n", encoding="utf-8")
+    (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
+    (round_dir / "metrics.json").write_text(json.dumps({"status": "ok"}), encoding="utf-8")
+    (round_dir / "train.log").write_text("0\t0.1\n", encoding="utf-8")
+    (round_dir / "artifact_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "repo": {"commit_sha": "abc123", "branch": "topic", "dirty": False},
+                "environment": {"env_yaml_path": "autoqec/envs/builtin/surface_d5_depol.yaml", "env_yaml_sha256": "deadbeef"},
+                "round": {
+                    "run_id": "demo-run",
+                    "round_dir": "round_1",
+                    "round": 1,
+                    "dsl_config_sha256": "cafebabe",
+                    "command_line": ["python", "-m", "cli.autoqec", "run", "--no-llm"],
+                },
+                "artifacts": {
+                    "config_yaml": "config.yaml",
+                    "checkpoint": "checkpoint.pt",
+                    "metrics": "metrics.json",
+                    "train_log": "train.log",
+                },
+                "packages": {
+                    "python": "3.12.3",
+                    "torch": "2.0",
+                    "cuda": "none",
+                    "stim": "1.0",
+                    "pymatching": "2.0",
+                    "ldpc": "1.0",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli.main, ["package-run", str(run_dir)], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    payload_line = next(line for line in result.output.splitlines() if line.startswith(cli.RESULT_PREFIX))
+    payload = json.loads(payload_line[len(cli.RESULT_PREFIX) :])
+    assert payload["run_dir"] == str(run_dir.resolve())
+    assert payload["package_path"].endswith("demo-run.tar.gz")
+    assert payload["rounds"] == ["round_1"]
+    assert Path(payload["package_path"]).exists()
+
+
+def test_package_run_command_refuses_to_overwrite_existing_tarball(tmp_path) -> None:
+    run_dir = tmp_path / "runs" / "demo-run"
+    round_dir = run_dir / "round_1"
+    round_dir.mkdir(parents=True)
+    (round_dir / "config.yaml").write_text("type: gnn\n", encoding="utf-8")
+    (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
+    (round_dir / "metrics.json").write_text(json.dumps({"status": "ok"}), encoding="utf-8")
+    (round_dir / "train.log").write_text("0\t0.1\n", encoding="utf-8")
+    (round_dir / "artifact_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "repo": {"commit_sha": "abc123", "branch": "topic", "dirty": False},
+                "environment": {"env_yaml_path": "autoqec/envs/builtin/surface_d5_depol.yaml", "env_yaml_sha256": "deadbeef"},
+                "round": {
+                    "run_id": "demo-run",
+                    "round_dir": "round_1",
+                    "round": 1,
+                    "dsl_config_sha256": "cafebabe",
+                    "command_line": ["python", "-m", "cli.autoqec", "run", "--no-llm"],
+                },
+                "artifacts": {
+                    "config_yaml": "config.yaml",
+                    "checkpoint": "checkpoint.pt",
+                    "metrics": "metrics.json",
+                    "train_log": "train.log",
+                },
+                "packages": {
+                    "python": "3.12.3",
+                    "torch": "2.0",
+                    "cuda": "none",
+                    "stim": "1.0",
+                    "pymatching": "2.0",
+                    "ldpc": "1.0",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir.parent / "demo-run.tar.gz").write_text("already here", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli.main, ["package-run", str(run_dir)])
+
+    assert result.exit_code != 0
+    assert "already exists" in result.output
+
+
 def test_review_log_handles_missing_history(tmp_path) -> None:
     runner = CliRunner()
     result = runner.invoke(cli.review_log, [str(tmp_path)], catch_exceptions=False)
@@ -553,6 +743,27 @@ def test_diagnose_uses_latest_round_from_run_dir(tmp_path) -> None:
     result = runner.invoke(cli.diagnose, [str(run_dir)], catch_exceptions=False)
     payload = json.loads(result.output)
     assert payload["path"].endswith("round_2")
+
+
+def test_round_sort_key_orders_named_rounds_after_numbered_rounds() -> None:
+    paths = [Path("round_baseline"), Path("round_10"), Path("round_2")]
+
+    assert sorted(paths, key=cli._round_sort_key) == [
+        Path("round_2"),
+        Path("round_10"),
+        Path("round_baseline"),
+    ]
+
+
+def test_diagnose_failure_signature_detects_compile_text_without_metrics() -> None:
+    root_cause, signals = cli._diagnose_failure_signature(
+        None,
+        "",
+        "ValidationError: hidden_dim must be >= 4",
+    )
+
+    assert root_cause == "compile_error"
+    assert signals == ["ValidationError: hidden_dim must be >= 4"]
 
 
 @pytest.mark.parametrize(
