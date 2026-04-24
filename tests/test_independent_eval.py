@@ -102,7 +102,7 @@ def test_decode_holdout_covers_model_none_and_osd_path(monkeypatch):
     target = torch.zeros((2, artifacts.n_var), dtype=torch.int64)
 
     monkeypatch.setattr(ie, "_sample_holdout", lambda *_args, **_kwargs: (syndrome, target))
-    plain, pred, shuffled, bundle_id = ie._decode_holdout(None, env, artifacts, [9000], 2)
+    plain, pred, shuffled, bundle_id, sha = ie._decode_holdout(None, env, artifacts, [9000], 2)
     assert plain.shape == pred.shape == shuffled.shape == (2,)
     assert uuid.UUID(bundle_id)
 
@@ -130,7 +130,7 @@ def test_decode_holdout_sets_parity_ctx_and_ablation(monkeypatch):
 
     model = FakeModel()
     monkeypatch.setattr(ie, "decode_with_predecoder", lambda *_args, **_kwargs: np.zeros((2, artifacts.n_var), dtype=np.int64))
-    plain, pred, shuffled, bundle_id = ie._decode_holdout(model, env, artifacts, [9000], 2)
+    plain, pred, shuffled, bundle_id, sha = ie._decode_holdout(model, env, artifacts, [9000], 2)
     assert plain.shape == pred.shape == shuffled.shape == (2,)
     assert uuid.UUID(bundle_id)
 
@@ -164,7 +164,7 @@ def test_decode_holdout_reuses_exact_paired_batch_and_bundle_id(monkeypatch):
         def forward(self, syndrome, _ctx):
             return torch.zeros((syndrome.shape[0], artifacts.n_var), dtype=torch.float32)
 
-    _, _, _, bundle_id = ie._decode_holdout(FakeModel(), env, artifacts, [9000], 2)
+    _, _, _, bundle_id, _ = ie._decode_holdout(FakeModel(), env, artifacts, [9000], 2)
 
     assert len(seen_batches) == 3
     assert seen_batches[0].tobytes() == seen_batches[1].tobytes()
@@ -197,6 +197,7 @@ def test_independent_verify_can_return_failed_and_verified(monkeypatch):
             np.array([1, 1, 1], dtype=np.int32),
             np.array([0, 0, 0], dtype=np.int32),
             "11111111-1111-5111-8111-111111111111",
+            "a" * 64,
         )
 
     monkeypatch.setattr(ie, "_decode_holdout", fake_decode_failed)
@@ -216,6 +217,7 @@ def test_independent_verify_can_return_failed_and_verified(monkeypatch):
             np.array([0, 0, 0], dtype=np.int32),
             np.array([1, 1, 1], dtype=np.int32),
             "22222222-2222-5222-8222-222222222222",
+            "b" * 64,
         )
 
     monkeypatch.setattr(ie, "_decode_holdout", fake_decode_verified)

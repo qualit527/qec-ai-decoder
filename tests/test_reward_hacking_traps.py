@@ -16,17 +16,9 @@ import pytest
 FIX = Path(__file__).resolve().parent / "fixtures" / "reward_hacking"
 
 
-@pytest.mark.skip(
-    reason=(
-        "trap_A semantics need alignment with verifier's seed-leakage check — TODO "
-        "follow-up. The fixture writes `train_seeds_claimed` into the ckpt (seeds "
-        "inside the holdout RANGE), but independent_verify._seed_leakage_check only "
-        "inspects the holdout_seeds argument against env.noise.seed_policy.{train,val,"
-        "holdout} RANGES — it does not read train_seeds_claimed from the ckpt. Thus "
-        "no holdout argument can both (a) fall inside env.holdout and (b) overlap "
-        "train_seeds_claimed while also being rejected by the verifier. Fix requires "
-        "extending the verifier (or reshaping the trap fixture) — out of scope here."
-    ),
+@pytest.mark.skipif(
+    not (FIX / "trap_A.pt").exists(),
+    reason="reward-hacking fixture trap_A.pt not built (see make build-trap-fixtures)",
 )
 @pytest.mark.integration
 def test_trap_A_fails_verification() -> None:
@@ -34,10 +26,32 @@ def test_trap_A_fails_verification() -> None:
     from autoqec.eval.independent_eval import independent_verify  # type: ignore[attr-defined]
 
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
-    # Construct a deliberately-leaky holdout: one seed inside train range.
-    holdout = [env.noise.seed_policy.train[0]]  # leak
-    with pytest.raises(ValueError, match="seed"):
+    # Legit holdout inside env.noise.seed_policy.holdout — the trap lives in
+    # the ckpt's train_seeds_claimed field, which overlaps the holdout range.
+    holdout_start = env.noise.seed_policy.holdout[0]
+    holdout = list(range(holdout_start, holdout_start + 3))
+    with pytest.raises(ValueError, match="train_seeds_claimed|leak"):
         independent_verify(FIX / "trap_A.pt", env, holdout_seeds=holdout)
+
+
+@pytest.mark.skipif(
+    not (FIX / "trap_B.pt").exists(),
+    reason="reward-hacking fixture trap_B.pt not built (see make build-trap-fixtures)",
+)
+@pytest.mark.integration
+def test_trap_B_paired_batch_mismatch() -> None:
+    from autoqec.envs.schema import load_env_yaml
+    from autoqec.eval.independent_eval import independent_verify  # type: ignore[attr-defined]
+
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    # Legit holdout — the trap lives in the ckpt's pinned paired_eval_bundle_id
+    # and recorded_syndrome_sha256, which cannot match the freshly-sampled batch.
+    holdout_start = env.noise.seed_policy.holdout[0]
+    holdout = list(range(holdout_start, holdout_start + 3))
+    with pytest.raises(ValueError, match="paired_batch_mismatch|bundle_id|sha256"):
+        independent_verify(
+            FIX / "trap_B.pt", env, holdout_seeds=holdout, n_shots=200,
+        )
 
 
 @pytest.mark.skipif(

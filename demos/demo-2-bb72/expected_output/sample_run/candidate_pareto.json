@@ -1,0 +1,10 @@
+[
+  {
+    "round": 1,
+    "delta_ler": 0.0,
+    "flops_per_syndrome": 679104,
+    "n_params": 4401,
+    "checkpoint_path": "runs/20260424-003058/round_1/checkpoint.pt",
+    "verified": false
+  }
+]
