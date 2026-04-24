@@ -48,4 +48,5 @@ def test_positive_delta_readme_states_scope_and_reproduction_command() -> None:
     assert "benchmark evidence" in readme
     assert "not a VERIFIED holdout claim" in readme
     assert "python experiments/bb72-positive-delta/run.py" in readme
+    assert "runs/YYYYMMDDTHHMMSSZ-bb72-positive-delta/" in readme
     assert "surface_d5 + mwpm + soft_priors" in readme

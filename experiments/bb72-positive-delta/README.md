@@ -24,7 +24,7 @@ python experiments/bb72-positive-delta/run.py
 The script writes:
 
 ```text
-runs/YYYYMMDD-HHMMSS-bb72-positive-delta/
+runs/YYYYMMDDTHHMMSSZ-bb72-positive-delta/
 |- round_1/
 |- round_2/
 |- round_3/
