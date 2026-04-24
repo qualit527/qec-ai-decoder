@@ -22,6 +22,19 @@ def _load_benchmark_module():
     return module
 
 
+def _write_minimal_round_config(path: Path) -> None:
+    path.write_text(
+        "type: gnn\ntraining: {learning_rate: 0.001, batch_size: 2, epochs: 1}\n",
+        encoding="utf-8",
+    )
+
+
+def _assert_summary_and_report_absent(run_root: Path, run_id: str) -> None:
+    run_dir = run_root / run_id
+    assert not (run_dir / "summary.json").exists()
+    assert not (run_dir / "report.md").exists()
+
+
 def test_parse_args_returns_explicit_paths(tmp_path: Path) -> None:
     module = _load_benchmark_module()
     env_yaml = tmp_path / "env.yaml"
@@ -139,12 +152,10 @@ def test_run_benchmark_fails_when_all_deltas_are_nonpositive(
     module = _load_benchmark_module()
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
-    (config_dir / "round_1.yaml").write_text(
-        "type: gnn\ntraining: {learning_rate: 0.001, batch_size: 2, epochs: 1}\n",
-        encoding="utf-8",
-    )
+    _write_minimal_round_config(config_dir / "round_1.yaml")
     env_yaml = tmp_path / "env.yaml"
     env_yaml.write_text("name: fake\n", encoding="utf-8")
+    output_root = tmp_path / "runs"
 
     monkeypatch.setattr(
         module, "load_env_yaml", lambda _path: type("Env", (), {"name": "bb72_perf"})()
@@ -164,9 +175,50 @@ def test_run_benchmark_fails_when_all_deltas_are_nonpositive(
     monkeypatch.setattr(module, "_run_id", lambda: "all-zero")
 
     try:
-        module.run_benchmark(env_yaml=env_yaml, config_dir=config_dir, output_root=tmp_path / "runs")
+        module.run_benchmark(env_yaml=env_yaml, config_dir=config_dir, output_root=output_root)
     except module.BenchmarkFailure as exc:
         assert "no positive delta_ler" in str(exc)
+        _assert_summary_and_report_absent(output_root, "all-zero")
+    else:
+        raise AssertionError("expected BenchmarkFailure")
+
+
+def test_run_benchmark_fails_when_best_round_does_not_improve_over_round_one(
+    monkeypatch, tmp_path: Path
+) -> None:
+    module = _load_benchmark_module()
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    _write_minimal_round_config(config_dir / "round_1.yaml")
+    _write_minimal_round_config(config_dir / "round_2.yaml")
+    env_yaml = tmp_path / "env.yaml"
+    env_yaml.write_text("name: fake\n", encoding="utf-8")
+    output_root = tmp_path / "runs"
+    deltas = iter([0.02, 0.02])
+
+    monkeypatch.setattr(
+        module, "load_env_yaml", lambda _path: type("Env", (), {"name": "bb72_perf"})()
+    )
+
+    def fake_run_round(_cfg, _env):
+        delta = next(deltas)
+        return RoundMetrics(
+            status="ok",
+            ler_plain_classical=0.1,
+            ler_predecoder=0.1 - delta,
+            delta_ler=delta,
+            flops_per_syndrome=1000,
+            n_params=2000,
+        )
+
+    monkeypatch.setattr(module, "run_round", fake_run_round)
+    monkeypatch.setattr(module, "_run_id", lambda: "no-improvement")
+
+    try:
+        module.run_benchmark(env_yaml=env_yaml, config_dir=config_dir, output_root=output_root)
+    except module.BenchmarkFailure as exc:
+        assert "best round did not improve over round 1" in str(exc)
+        _assert_summary_and_report_absent(output_root, "no-improvement")
     else:
         raise AssertionError("expected BenchmarkFailure")
 
@@ -175,12 +227,10 @@ def test_run_benchmark_fails_on_non_ok_round(monkeypatch, tmp_path: Path) -> Non
     module = _load_benchmark_module()
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
-    (config_dir / "round_1.yaml").write_text(
-        "type: gnn\ntraining: {learning_rate: 0.001, batch_size: 2, epochs: 1}\n",
-        encoding="utf-8",
-    )
+    _write_minimal_round_config(config_dir / "round_1.yaml")
     env_yaml = tmp_path / "env.yaml"
     env_yaml.write_text("name: fake\n", encoding="utf-8")
+    output_root = tmp_path / "runs"
 
     monkeypatch.setattr(
         module, "load_env_yaml", lambda _path: type("Env", (), {"name": "bb72_perf"})()
@@ -193,8 +243,24 @@ def test_run_benchmark_fails_on_non_ok_round(monkeypatch, tmp_path: Path) -> Non
     monkeypatch.setattr(module, "_run_id", lambda: "compile-error")
 
     try:
-        module.run_benchmark(env_yaml=env_yaml, config_dir=config_dir, output_root=tmp_path / "runs")
+        module.run_benchmark(env_yaml=env_yaml, config_dir=config_dir, output_root=output_root)
     except module.BenchmarkFailure as exc:
         assert "round 1 failed with status compile_error" in str(exc)
+        _assert_summary_and_report_absent(output_root, "compile-error")
     else:
         raise AssertionError("expected BenchmarkFailure")
+
+
+def test_main_reports_benchmark_failure(monkeypatch, capsys) -> None:
+    module = _load_benchmark_module()
+
+    def fake_run_benchmark(**_kwargs):
+        raise module.BenchmarkFailure("bad benchmark")
+
+    monkeypatch.setattr(module, "run_benchmark", fake_run_benchmark)
+
+    exit_code = module.main([])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err == "BB72_POSITIVE_DELTA_ERROR=bad benchmark\n"
