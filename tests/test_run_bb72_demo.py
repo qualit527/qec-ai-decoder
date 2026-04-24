@@ -76,3 +76,28 @@ def test_main_runs_no_llm_smoke_and_reports_candidate_pareto(
     assert "--rounds" in argv and "1" in argv
     assert "--profile" in argv and "dev" in argv
     assert "--no-llm" in argv
+
+
+def test_main_forwards_benchmark_profile_override(monkeypatch, tmp_path: Path) -> None:
+    from scripts import run_bb72_demo
+
+    env_yaml = tmp_path / "bb72.yaml"
+    env_yaml.write_text("name: bb72\n", encoding="utf-8")
+    run_dir = tmp_path / "runs" / "20260424-010000"
+    run_dir.mkdir(parents=True)
+
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(run_bb72_demo, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(run_bb72_demo, "DEFAULT_ENV_YAML", env_yaml)
+    monkeypatch.setattr(run_bb72_demo.subprocess, "run", fake_run)
+
+    assert run_bb72_demo.main(["--env-yaml", str(env_yaml), "--profile", "benchmark"]) == 0
+
+    argv = calls[0][0]
+    profile_idx = argv.index("--profile")
+    assert argv[profile_idx + 1] == "benchmark"

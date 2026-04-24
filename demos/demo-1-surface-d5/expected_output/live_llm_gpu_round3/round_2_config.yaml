@@ -1,0 +1,18 @@
+type: gnn
+output_mode: soft_priors
+gnn:
+  layers: 3
+  hidden_dim: 64
+  message_fn: gated_mlp
+  aggregation: sum
+  normalization: layer
+  residual: true
+  edge_features: []
+neural_bp: null
+head: mlp_small
+training:
+  learning_rate: 0.001
+  batch_size: 128
+  epochs: 50
+  loss: bce
+  profile: prod

@@ -15,6 +15,7 @@ from typing import Any
 
 from autoqec.agents.cli_backend import invoke_subagent
 from autoqec.agents.dispatch import build_prompt
+from autoqec.decoders.dsl_schema import PredecoderDSL
 from autoqec.envs.schema import EnvSpec
 from autoqec.eval.independent_eval import independent_verify
 from autoqec.orchestration.loop import build_analyst_prompt, build_coder_prompt
@@ -28,6 +29,48 @@ from autoqec.tools.machine_state import machine_state
 def _env_yaml_path(env: EnvSpec) -> str | None:
     builtin_path = Path(__file__).resolve().parents[1] / "envs" / "builtin" / f"{env.name}.yaml"
     return str(builtin_path) if builtin_path.exists() else None
+
+
+def _validated_coder_response(
+    hypothesis: dict[str, Any],
+    *,
+    mem: RunMemory,
+    dsl_schema_md: str,
+    max_attempts: int = 2,
+) -> dict[str, Any]:
+    prompt = build_coder_prompt(
+        hypothesis=hypothesis,
+        mem=mem,
+        dsl_schema_md=dsl_schema_md,
+    )
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        coder_resp = invoke_subagent("coder", prompt)
+        try:
+            dsl = PredecoderDSL.model_validate(coder_resp["dsl_config"])
+            if dsl.output_mode != "soft_priors":
+                raise ValueError(
+                    "Live AutoQEC training rounds must use output_mode=soft_priors "
+                    "for trainable predecoders; hard_flip is non-differentiable in runner.py."
+                )
+            return coder_resp
+        except Exception as exc:  # ValidationError or malformed payload shape
+            last_error = exc
+            if attempt == max_attempts:
+                break
+            prompt = (
+                build_coder_prompt(
+                    hypothesis=hypothesis,
+                    mem=mem,
+                    dsl_schema_md=dsl_schema_md,
+                )
+                + "\n\nPredecoderDSL validation failed for your previous draft:\n"
+                + f"{exc}\n"
+                + "Return exactly one corrected fenced JSON block. "
+                  "Do not add keys outside the current schema."
+            )
+    assert last_error is not None
+    raise RuntimeError(f"Coder failed to emit a valid PredecoderDSL after {max_attempts} attempts: {last_error}")
 
 
 def _history_rows_by_round(run_dir: Path) -> dict[int, dict[str, Any]]:
@@ -127,11 +170,11 @@ def run_llm_loop(
             )
 
         # --- Coder ---
-        coder_prompt = build_coder_prompt(
-            hypothesis=ideator_resp, mem=mem,
+        coder_resp = _validated_coder_response(
+            hypothesis=ideator_resp,
+            mem=mem,
             dsl_schema_md=_dsl_schema_md(),
         )
-        coder_resp = invoke_subagent("coder", coder_prompt)
 
         # --- Runner ---
         cfg = RunnerConfig(
@@ -204,5 +247,10 @@ def run_llm_loop(
 
 
 def _dsl_schema_md() -> str:
-    from autoqec.decoders.dsl_schema import PredecoderDSL
-    return json.dumps(PredecoderDSL.model_json_schema(), indent=2)
+    schema_path = Path(__file__).resolve().parents[1] / "decoders" / "dsl_schema.py"
+    return (
+        "# PredecoderDSL JSON schema\n"
+        + json.dumps(PredecoderDSL.model_json_schema(), indent=2)
+        + "\n\n# dsl_schema.py source\n"
+        + schema_path.read_text(encoding="utf-8")
+    )

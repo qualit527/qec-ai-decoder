@@ -32,7 +32,7 @@ Inputs:
 
 - `env_yaml`: path to an `EnvSpec` YAML file
 - `--rounds`: number of rounds to execute
-- `--profile`: `dev` or `prod`
+- `--profile`: `dev`, `prod`, or `benchmark`
 - `--no-llm`: required on the current public path; LLM orchestration remains
   a skill-driven flow rather than a plain CLI feature on `main`
 
@@ -71,7 +71,7 @@ Inputs:
 - `env_yaml`: path to an `EnvSpec` YAML file
 - `config_yaml`: path to a decoder config YAML
 - `round_dir`: output directory for round artifacts
-- `--profile`: `dev` or `prod`
+- `--profile`: `dev`, `prod`, or `benchmark`
 
 Worktree-aware options:
 

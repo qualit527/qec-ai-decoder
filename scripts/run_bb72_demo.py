@@ -44,7 +44,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--env-yaml", default=os.environ.get("ENV_YAML", str(DEFAULT_ENV_YAML)))
     p.add_argument("--mode", choices=tuple(_MODE_DEFAULTS), default=os.environ.get("MODE", "fast"))
     p.add_argument("--rounds", type=int, default=_env_int("ROUNDS"))
-    p.add_argument("--profile", choices=("dev", "prod"), default=os.environ.get("PROFILE"))
+    # Allow profile overrides to include benchmark while leaving mode
+    # defaults untouched for the existing fast/dev/prod presets.
+    p.add_argument("--profile", choices=("dev", "prod", "benchmark"), default=os.environ.get("PROFILE"))
     p.add_argument("--python-bin", default=os.environ.get("PYTHON_BIN"))
     return p.parse_args(argv)
 

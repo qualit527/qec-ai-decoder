@@ -12,6 +12,8 @@ the contract changes, update both files in the same commit.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import BaseModel
 
 import pytest
@@ -193,3 +195,21 @@ def test_all_contracted_models_importable() -> None:
     assert set(live) == set(EXPECTED_FIELDS), (
         f"coverage drift: live={sorted(live)} vs expected={sorted(EXPECTED_FIELDS)}"
     )
+
+
+def test_interfaces_contract_documents_benchmark_profile() -> None:
+    contract = (Path(__file__).resolve().parents[1] / "docs/contracts/interfaces.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'training_profile: Literal["dev", "prod", "benchmark"] = "dev"' in contract
+    assert "[--profile dev|prod|benchmark]" in contract
+    assert "--rounds N --profile dev|prod|benchmark --no-llm" in contract
+
+
+def test_api_docs_document_benchmark_profile() -> None:
+    api_docs = (Path(__file__).resolve().parents[1] / "docs/api-documentation.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert api_docs.count("`--profile`: `dev`, `prod`, or `benchmark`") == 2

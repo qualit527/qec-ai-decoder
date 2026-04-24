@@ -15,6 +15,14 @@ from types import SimpleNamespace
 import pytest
 
 
+def test_parse_args_accepts_benchmark_profile(monkeypatch) -> None:
+    from scripts.run_quick import _parse_args
+
+    monkeypatch.setattr("sys.argv", ["run_quick.py", "--profile", "benchmark"])
+
+    assert _parse_args().profile == "benchmark"
+
+
 def test_validated_env_yaml_rejects_missing_path(tmp_path: Path) -> None:
     from scripts.run_quick import _validated_env_yaml
 
@@ -86,3 +94,32 @@ def test_run_quick_reports_candidate_pareto_summary(monkeypatch, tmp_path: Path,
     assert "Candidate Pareto:" in out
     assert "[{'round': 1}]" in out
     assert "--no-llm" in calls[0][0]
+
+
+def test_run_quick_forwards_benchmark_profile(monkeypatch, tmp_path: Path) -> None:
+    from scripts import run_quick
+
+    env_yaml = tmp_path / "env.yaml"
+    env_yaml.write_text("name: smoke\n", encoding="utf-8")
+    run_dir = tmp_path / "runs" / "20260423-120000"
+    run_dir.mkdir(parents=True)
+
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(run_quick, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        run_quick,
+        "_parse_args",
+        lambda: SimpleNamespace(env_yaml=str(env_yaml), rounds=1, profile="benchmark"),
+    )
+    monkeypatch.setattr(run_quick.subprocess, "run", fake_run)
+
+    assert run_quick.main() == 0
+
+    argv = calls[0][0]
+    profile_idx = argv.index("--profile")
+    assert argv[profile_idx + 1] == "benchmark"

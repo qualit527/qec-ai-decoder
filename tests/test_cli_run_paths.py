@@ -186,3 +186,46 @@ def test_run_cli_no_llm_appends_one_history_row_per_round(tmp_path: Path) -> Non
     assert len(history_lines) == 2
     rows = [json.loads(line) for line in history_lines]
     assert [row["round"] for row in rows] == [1, 2]
+
+
+def test_run_cli_no_llm_accepts_template_name_and_pins_config(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    env_yaml = repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = (
+        f"{repo_root}{os.pathsep}{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(repo_root)
+    )
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "cli.autoqec",
+            "run",
+            str(env_yaml),
+            "--rounds",
+            "1",
+            "--profile",
+            "dev",
+            "--no-llm",
+            "--template-name",
+            "gnn_small",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+
+    payload = _extract_result_payload(completed.stdout)
+    run_dir = Path(payload["run_dir"])
+    assert run_dir.exists()
+    round_cfg = json.loads((run_dir / "round_1" / "metrics.json").read_text(encoding="utf-8"))
+    assert round_cfg["status"] == "ok"
+    saved_yaml = (run_dir / "round_1" / "config.yaml").read_text(encoding="utf-8")
+    assert "hidden_dim: 16" in saved_yaml

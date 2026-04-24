@@ -211,6 +211,31 @@ def test_run_command_delegates_to_llm_loop(monkeypatch, tmp_path) -> None:
     assert cli.RESULT_PREFIX in result.output
 
 
+def test_run_command_accepts_benchmark_profile(monkeypatch, tmp_path) -> None:
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "load_env_yaml", lambda _path: env)
+
+    calls: dict = {}
+
+    def fake_run_llm_loop(*, env, rounds, profile, env_yaml_path, invocation_argv):
+        calls["profile"] = profile
+        run_dir = tmp_path / "fake_run"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    _install_fake_llm_loop_module(monkeypatch, fake_run_llm_loop)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.run,
+        [env.model_dump()["name"], "--profile", "benchmark"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert calls["profile"] == "benchmark"
+
+
 def test_add_env_writes_yaml_for_mwpm_and_osd(tmp_path) -> None:
     runner = CliRunner()
     mwpm_out = tmp_path / "mwpm.yaml"
