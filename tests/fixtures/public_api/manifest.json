@@ -1,0 +1,45 @@
+{
+  "fixtures": [
+    {
+      "path": "interface_model_fields.json",
+      "category": "schema",
+      "stability": "contract",
+      "used_by": [
+        "tests/test_interfaces_contract.py"
+      ]
+    },
+    {
+      "path": "run_round_help_contract.json",
+      "category": "cli",
+      "stability": "smoke",
+      "used_by": [
+        "tests/test_cli_run_round_worktree.py"
+      ]
+    },
+    {
+      "path": "artifact_manifest_valid_payload.json",
+      "category": "artifact",
+      "stability": "contract",
+      "used_by": [
+        "tests/test_runner_artifacts.py"
+      ]
+    },
+    {
+      "path": "artifact_manifest_invalid_cases.json",
+      "category": "artifact",
+      "stability": "contract",
+      "used_by": [
+        "tests/test_runner_artifacts.py"
+      ]
+    },
+    {
+      "path": "artifact_manifest_output_contracts.json",
+      "category": "artifact",
+      "stability": "contract",
+      "used_by": [
+        "tests/test_runner_artifacts.py",
+        "tests/test_subprocess_runner.py"
+      ]
+    }
+  ]
+}

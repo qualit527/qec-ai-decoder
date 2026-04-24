@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -13,6 +14,11 @@ from autoqec.envs.schema import EnvSpec
 from autoqec.runner.runner import run_round
 from autoqec.runner.safety import RunnerSafety
 from autoqec.runner.schema import RoundMetrics, RunnerConfig
+from tests.fixture_utils import load_json_fixture
+
+
+ARTIFACT_MANIFEST_CONTRACTS = load_json_fixture("public_api", "artifact_manifest_output_contracts.json")
+ARTIFACT_MANIFEST_INVALID_CASES = load_json_fixture("public_api", "artifact_manifest_invalid_cases.json")
 
 
 def _toy_env() -> EnvSpec:
@@ -100,35 +106,17 @@ class _TinyModel(torch.nn.Module):
 
 
 def _valid_manifest_payload() -> dict[str, object]:
-    return {
-        "schema_version": 1,
-        "repo": {"commit_sha": "abc123", "branch": "topic", "dirty": False},
-        "environment": {
-            "env_yaml_path": "autoqec/envs/builtin/surface_d5_depol.yaml",
-            "env_yaml_sha256": "deadbeef",
-        },
-        "round": {
-            "run_id": "demo-run",
-            "round_dir": "round_1",
-            "round": 1,
-            "dsl_config_sha256": "cafebabe",
-            "command_line": ["python", "-m", "cli.autoqec", "run", "--no-llm"],
-        },
-        "artifacts": {
-            "config_yaml": "config.yaml",
-            "checkpoint": "checkpoint.pt",
-            "metrics": "metrics.json",
-            "train_log": "train.log",
-        },
-        "packages": {
-            "python": "3.12.3",
-            "torch": "2.0",
-            "cuda": "none",
-            "stim": "1.0",
-            "pymatching": "2.0",
-            "ldpc": "1.0",
-        },
-    }
+    return load_json_fixture("public_api", "artifact_manifest_valid_payload.json")
+
+
+def _apply_patch(payload: dict[str, object], patch: dict[str, object]) -> dict[str, object]:
+    patched = deepcopy(payload)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(patched.get(key), dict):
+            patched[key] = _apply_patch(patched[key], value)
+        else:
+            patched[key] = value
+    return patched
 
 
 def _materialize_manifest_artifacts(round_dir: Path) -> None:
@@ -140,6 +128,7 @@ def _materialize_manifest_artifacts(round_dir: Path) -> None:
 
 def test_run_round_success_writes_consumable_artifacts(monkeypatch, tmp_path: Path) -> None:
     from autoqec.runner import runner
+    contract = ARTIFACT_MANIFEST_CONTRACTS["runner_round_success"]
 
     monkeypatch.setattr(runner, "load_code_artifacts", lambda _env: _toy_artifacts())
     monkeypatch.setattr(runner, "compile_predecoder", lambda *_args, **_kwargs: _TinyModel())
@@ -189,27 +178,23 @@ def test_run_round_success_writes_consumable_artifacts(monkeypatch, tmp_path: Pa
 
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema_version"] == 1
-    assert manifest["repo"]["commit_sha"]
-    assert "branch" in manifest["repo"]
-    assert "dirty" in manifest["repo"]
-    assert manifest["environment"]["env_yaml_path"] == "autoqec/envs/builtin/surface_d5_depol.yaml"
-    assert manifest["environment"]["env_yaml_sha256"]
-    assert manifest["round"]["round_dir"] == "round_success"
-    assert manifest["round"]["round"] is None
-    assert manifest["round"]["command_line"] == ["python", "-m", "cli.autoqec", "run", "toy.yaml", "--no-llm"]
-    assert manifest["round"]["dsl_config_sha256"]
-    assert manifest["artifacts"] == {
-        "config_yaml": "config.yaml",
-        "checkpoint": "checkpoint.pt",
-        "metrics": "metrics.json",
-        "train_log": "train.log",
-    }
-    assert manifest["packages"]["python"]
-    assert "torch" in manifest["packages"]
-    assert "cuda" in manifest["packages"]
-    assert "stim" in manifest["packages"]
-    assert "pymatching" in manifest["packages"]
-    assert "ldpc" in manifest["packages"]
+    for key in contract["required_repo_truthy_fields"]:
+        assert manifest["repo"][key]
+    for key in contract["required_repo_present_fields"]:
+        assert key in manifest["repo"]
+    assert manifest["environment"]["env_yaml_path"] == contract["expected_environment"]["env_yaml_path"]
+    for key in contract["required_environment_truthy_fields"]:
+        assert manifest["environment"][key]
+    assert manifest["round"]["round_dir"] == contract["expected_round"]["round_dir"]
+    assert manifest["round"]["round"] == contract["expected_round"]["round"]
+    assert manifest["round"]["command_line"] == contract["expected_round"]["command_line"]
+    for key in contract["required_round_truthy_fields"]:
+        assert manifest["round"][key]
+    assert manifest["artifacts"] == contract["expected_artifacts"]
+    for key in contract["required_package_truthy_fields"]:
+        assert manifest["packages"][key]
+    for key in contract["required_package_present_fields"]:
+        assert key in manifest["packages"]
 
 
 def test_git_output_returns_none_when_git_command_fails(monkeypatch, tmp_path: Path) -> None:
@@ -224,43 +209,19 @@ def test_git_output_returns_none_when_git_command_fails(monkeypatch, tmp_path: P
 
 
 @pytest.mark.parametrize(
-    ("mutate", "message"),
-    [
-        (lambda payload: payload.update(schema_version=2), "unsupported artifact manifest schema_version"),
-        (lambda payload: payload.__setitem__("packages", None), "artifact manifest missing section: packages"),
-        (lambda payload: payload["repo"].__setitem__("commit_sha", ""), "artifact manifest missing repo.commit_sha"),
-        (
-            lambda payload: payload["environment"].__setitem__("env_yaml_sha256", None),
-            "artifact manifest missing environment.env_yaml_sha256",
-        ),
-        (
-            lambda payload: payload["round"].__setitem__("dsl_config_sha256", None),
-            "artifact manifest missing round.dsl_config_sha256",
-        ),
-        (
-            lambda payload: payload["round"].__setitem__("command_line", ["python", 1]),
-            "artifact manifest round.command_line must be a list of strings",
-        ),
-        (
-            lambda payload: payload["artifacts"].__setitem__("config_yaml", ""),
-            "artifact manifest missing artifacts.config_yaml",
-        ),
-        (
-            lambda payload: payload["artifacts"].__setitem__("config_yaml", "../config.yaml"),
-            "artifact manifest artifacts.config_yaml must be a safe relative path",
-        ),
-    ],
+    "case",
+    ARTIFACT_MANIFEST_INVALID_CASES,
+    ids=[case["name"] for case in ARTIFACT_MANIFEST_INVALID_CASES],
 )
-def test_validate_artifact_manifest_rejects_invalid_payloads(tmp_path: Path, mutate, message: str) -> None:
+def test_validate_artifact_manifest_rejects_invalid_payloads(tmp_path: Path, case: dict[str, object]) -> None:
     from autoqec.runner.artifact_manifest import validate_artifact_manifest
 
     round_dir = tmp_path / "round_1"
     round_dir.mkdir()
     _materialize_manifest_artifacts(round_dir)
-    payload = _valid_manifest_payload()
-    mutate(payload)
+    payload = _apply_patch(_valid_manifest_payload(), case["patch"])
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(ValueError, match=case["expected_error"]):
         validate_artifact_manifest(round_dir, payload)
 
 

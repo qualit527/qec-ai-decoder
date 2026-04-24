@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "repo": {
+    "commit_sha": "abc123",
+    "branch": "topic",
+    "dirty": false
+  },
+  "environment": {
+    "env_yaml_path": "autoqec/envs/builtin/surface_d5_depol.yaml",
+    "env_yaml_sha256": "deadbeef"
+  },
+  "round": {
+    "run_id": "demo-run",
+    "round_dir": "round_1",
+    "round": 1,
+    "dsl_config_sha256": "cafebabe",
+    "command_line": [
+      "python",
+      "-m",
+      "cli.autoqec",
+      "run",
+      "--no-llm"
+    ]
+  },
+  "artifacts": {
+    "config_yaml": "config.yaml",
+    "checkpoint": "checkpoint.pt",
+    "metrics": "metrics.json",
+    "train_log": "train.log"
+  },
+  "packages": {
+    "python": "3.12.3",
+    "torch": "2.0",
+    "cuda": "none",
+    "stim": "1.0",
+    "pymatching": "2.0",
+    "ldpc": "1.0"
+  }
+}

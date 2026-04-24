@@ -1,0 +1,14 @@
+{
+  "stability": "smoke",
+  "argv": [
+    "run-round",
+    "--help"
+  ],
+  "expected_flags": [
+    "--code-cwd",
+    "--branch",
+    "--fork-from",
+    "--compose-mode",
+    "--round-attempt-id"
+  ]
+}

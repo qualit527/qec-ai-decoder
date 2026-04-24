@@ -11,7 +11,11 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
+from tests.fixture_utils import load_json_fixture
+
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
+
+RUN_ROUND_HELP_CONTRACT = load_json_fixture("public_api", "run_round_help_contract.json")
 
 
 @pytest.mark.skipif(not _TORCH_AVAILABLE, reason="legacy runner path needs torch")
@@ -33,11 +37,11 @@ def test_run_round_legacy_positional_still_works(tmp_path):
 def test_run_round_accepts_worktree_flags_without_running():
     """The --help page lists the new flags so callers can discover them."""
     result = subprocess.run(
-        [sys.executable, "-m", "cli.autoqec", "run-round", "--help"],
+        [sys.executable, "-m", "cli.autoqec", *RUN_ROUND_HELP_CONTRACT["argv"]],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
-    for flag in ("--code-cwd", "--branch", "--fork-from", "--compose-mode", "--round-attempt-id"):
+    for flag in RUN_ROUND_HELP_CONTRACT["expected_flags"]:
         assert flag in result.stdout, f"missing flag {flag}"
 
 
