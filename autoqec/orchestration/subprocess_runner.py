@@ -238,7 +238,10 @@ def run_round_in_subprocess(
     if safe_round_attempt_id is not None:
         child_env[AUTOQEC_CHILD_ROUND_ATTEMPT_ID] = safe_round_attempt_id
 
-    child_argv = ["python", "-m", "cli.autoqec", "run-round-internal"]
+    # Keep argv[0] aligned with the un-resolved venv interpreter. Passing
+    # executable=sys.executable but argv[0]="python" still lets the child
+    # process re-identify itself as the system interpreter.
+    child_argv = [sys.executable, "-m", "cli.autoqec", "run-round-internal"]
     try:
         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
         # Static child command only; all dynamic values go through validated env vars.

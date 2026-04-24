@@ -219,7 +219,7 @@ def test_subprocess_runner_uses_shell_false_and_resolved_cwd(tmp_path):
     with patch.object(subprocess_runner.subprocess, "run", side_effect=_fake_run):
         subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id="u1")
 
-    assert captured["argv"] == ["python", "-m", "cli.autoqec", "run-round-internal"]
+    assert captured["argv"] == [sys.executable, "-m", "cli.autoqec", "run-round-internal"]
     assert captured["kwargs"]["shell"] is False
     assert captured["kwargs"]["cwd"] == str(tmp_path.resolve())
     # Must be sys.executable verbatim — resolving the symlink drops the child
@@ -265,6 +265,7 @@ def test_subprocess_runner_preserves_venv_symlink(tmp_path, monkeypatch):
 
     def _fake_run(argv, **kwargs):
         if "run-round-internal" in argv:
+            captured["argv"] = list(argv)
             captured["executable"] = kwargs.get("executable")
             return _FakeChild()
         return _FakeGit()
@@ -283,6 +284,7 @@ def test_subprocess_runner_preserves_venv_symlink(tmp_path, monkeypatch):
     with patch.object(subprocess_runner.subprocess, "run", side_effect=_fake_run):
         subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id="u1")
 
+    assert captured["argv"] == [str(fake_venv), "-m", "cli.autoqec", "run-round-internal"]
     assert captured["executable"] == str(fake_venv), (
         "subprocess_runner must pass sys.executable verbatim — resolving the "
         "venv's bin/python symlink drops the child out of the venv."
@@ -430,7 +432,7 @@ def test_subprocess_runner_writes_artifact_manifest(tmp_path):
     assert manifest["environment"]["env_yaml_sha256"]
     assert manifest["round"]["dsl_config_sha256"]
     assert manifest["round"]["command_line"] == [
-        "python",
+        sys.executable,
         "-m",
         "cli.autoqec",
         "run-round-internal",
