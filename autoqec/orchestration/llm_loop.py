@@ -49,7 +49,7 @@ def _history_rows_by_round(run_dir: Path) -> dict[int, dict[str, Any]]:
     return rows_by_round
 
 
-def _metrics_round_attempt_id(round_dir: Path) -> str | None:
+def _parse_metrics(round_dir: Path) -> dict[str, Any] | None:
     metrics_path = round_dir / "metrics.json"
     if not metrics_path.exists():
         return None
@@ -57,8 +57,7 @@ def _metrics_round_attempt_id(round_dir: Path) -> str | None:
         metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
-    value = metrics.get("round_attempt_id")
-    return value if isinstance(value, str) and value else None
+    return metrics if isinstance(metrics, dict) else None
 
 
 def _round_is_complete(run_dir: Path, round_idx: int, history_rows: dict[int, dict[str, Any]]) -> bool:
@@ -74,12 +73,18 @@ def _round_is_complete(run_dir: Path, round_idx: int, history_rows: dict[int, di
     if history_row is None:
         return False
 
-    metrics_attempt_id = _metrics_round_attempt_id(run_dir / f"round_{round_idx}")
-    if metrics_attempt_id is None:
+    metrics = _parse_metrics(run_dir / f"round_{round_idx}")
+    if metrics is None:
         return False
 
     history_attempt_id = history_row.get("round_attempt_id")
-    if isinstance(history_attempt_id, str) and history_attempt_id:
+    metrics_attempt_id = metrics.get("round_attempt_id")
+    if (
+        isinstance(history_attempt_id, str)
+        and history_attempt_id
+        and isinstance(metrics_attempt_id, str)
+        and metrics_attempt_id
+    ):
         return history_attempt_id == metrics_attempt_id
     return True
 
