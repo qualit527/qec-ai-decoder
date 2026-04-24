@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 from torch import nn
 
@@ -86,6 +87,8 @@ def test_profile_params_and_failure_rate_cover_both_modes() -> None:
         "n_shots_val": 4096,
         "epochs_cap": 6,
     }
+    with pytest.raises(ValueError, match="unknown training profile"):
+        runner._profile_params(stim_env, "unknown")
 
     preds = np.array([[0, 1], [1, 1]])
     targets = np.array([[0, 1], [0, 1]])

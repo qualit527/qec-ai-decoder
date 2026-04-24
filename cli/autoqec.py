@@ -436,7 +436,7 @@ def _run_round_impl(
 @click.argument("env_yaml")
 @click.argument("config_yaml")
 @click.argument("round_dir")
-@click.option("--profile", type=click.Choice(["dev", "prod"]), default="dev")
+@click.option("--profile", type=click.Choice(["dev", "prod", "benchmark"]), default="dev")
 @click.option(
     "--code-cwd",
     default=None,
@@ -531,7 +531,7 @@ def run_round_internal_cmd() -> None:
 @main.command()
 @click.argument("env_yaml")
 @click.option("--rounds", type=int, default=10)
-@click.option("--profile", type=click.Choice(["dev", "prod"]), default="dev")
+@click.option("--profile", type=click.Choice(["dev", "prod", "benchmark"]), default="dev")
 @click.option("--no-llm", is_flag=True, help="Pick random seed templates instead of calling subagents")
 @click.option(
     "--template-name",

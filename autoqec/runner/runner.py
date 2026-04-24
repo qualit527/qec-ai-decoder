@@ -50,11 +50,7 @@ def _profile_params(env_spec: EnvSpec, profile: str) -> dict[str, int]:
             "n_shots_val": env_spec.eval_protocol.min_shots_val,
             "epochs_cap": 6,
         }
-    return {
-        "n_shots_train": min(env_spec.eval_protocol.min_shots_train, 2048),
-        "n_shots_val": min(env_spec.eval_protocol.min_shots_val, 256),
-        "epochs_cap": 3,
-    }
+    raise ValueError(f"unknown training profile: {profile}")
 
 
 def _set_seed(seed: int) -> None:

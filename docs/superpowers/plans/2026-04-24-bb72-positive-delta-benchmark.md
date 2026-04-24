@@ -450,7 +450,7 @@ def run_benchmark(env_yaml: Path, config_dir: Path, output_root: Path) -> Path:
         cfg = RunnerConfig(
             env_name=env.name,
             predecoder_config=_load_config(config_path),
-            training_profile="prod",
+            training_profile="benchmark",
             seed=round_idx,
             round_dir=str(round_dir),
             env_yaml_path=str(env_yaml),
