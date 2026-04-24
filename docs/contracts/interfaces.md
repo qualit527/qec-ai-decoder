@@ -195,6 +195,7 @@ make them required on the worktree path. Authoritative source:
 - `round_attempt_id: Optional[str]` — UUID minted at Ideator emit-time; threaded through worktree subprocess/pointer paths.
 - `commit_message: Optional[str]` — Coder-proposed commit message for branch-producing paths.
 - `env_yaml_path: Optional[str]` — env YAML path used when hashing per-round artifact provenance.
+- `invocation_argv: Optional[list[str]]` — normalized command line captured in per-round artifact provenance.
 
 Validators: `code_cwd` set ⇒ `branch` required; list-form `fork_from` ⇒
 `compose_mode` required.
@@ -242,4 +243,3 @@ or `reconcile_id`; `branch` set ⇒ `commit_sha` required;
 ### `CoderResponse`
 
 - `commit_message: Optional[str]` — filled by Coder on the worktree path; absent tolerated on legacy responses.
-
