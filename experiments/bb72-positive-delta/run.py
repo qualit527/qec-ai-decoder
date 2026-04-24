@@ -50,17 +50,42 @@ def _load_config(path: Path) -> dict[str, Any]:
     return config
 
 
+def _repo_relative_or_original(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _summary_path(value: str | None, *, run_dir: Path) -> str | None:
+    if value is None:
+        return None
+
+    path = Path(value)
+    if not path.is_absolute():
+        return value
+
+    resolved = path.resolve()
+    for base in (run_dir.resolve(), REPO_ROOT):
+        try:
+            return str(resolved.relative_to(base))
+        except ValueError:
+            continue
+    return str(path)
+
+
 def _round_row(
     *,
     round_number: int,
     config_path: Path,
+    run_dir: Path,
     round_dir: Path,
     metrics: RoundMetrics,
 ) -> dict[str, Any]:
     return {
         "round": round_number,
         "config": config_path.name,
-        "round_dir": str(round_dir),
+        "round_dir": _summary_path(str(round_dir), run_dir=run_dir),
         "status": metrics.status,
         "status_reason": metrics.status_reason,
         "ler_plain_classical": metrics.ler_plain_classical,
@@ -72,8 +97,8 @@ def _round_row(
         "n_params": metrics.n_params,
         "train_wallclock_s": metrics.train_wallclock_s,
         "eval_wallclock_s": metrics.eval_wallclock_s,
-        "checkpoint_path": metrics.checkpoint_path,
-        "training_log_path": metrics.training_log_path,
+        "checkpoint_path": _summary_path(metrics.checkpoint_path, run_dir=run_dir),
+        "training_log_path": _summary_path(metrics.training_log_path, run_dir=run_dir),
     }
 
 
@@ -97,7 +122,7 @@ def _build_summary(*, run_id: str, env_yaml: Path, rows: list[dict[str, Any]]) -
 
     return {
         "run_id": run_id,
-        "env_yaml": str(env_yaml),
+        "env_yaml": _repo_relative_or_original(env_yaml),
         "claim": CLAIM,
         "has_positive_delta": best_delta is not None and best_delta > 0,
         "best_round": best_round,
@@ -187,6 +212,7 @@ def run_benchmark(env_yaml: Path, config_dir: Path, output_root: Path) -> Path:
             _round_row(
                 round_number=round_number,
                 config_path=config_path,
+                run_dir=run_dir,
                 round_dir=round_dir,
                 metrics=metrics,
             )

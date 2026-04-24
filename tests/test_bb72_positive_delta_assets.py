@@ -58,15 +58,66 @@ def test_positive_delta_expected_summary_schema() -> None:
     summary_path = REPO_ROOT / "experiments/bb72-positive-delta/expected_output/summary.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
 
+    assert set(summary) == {
+        "best_delta_ler",
+        "best_round",
+        "claim",
+        "env_yaml",
+        "has_positive_delta",
+        "improvement_vs_round_1",
+        "rounds",
+        "run_id",
+    }
     assert summary["claim"] == "benchmark evidence, not a VERIFIED holdout claim"
     assert summary["has_positive_delta"] is True
+    assert len(summary["rounds"]) == 3
+    assert [row["round"] for row in summary["rounds"]] == [1, 2, 3]
+    assert [row["config"] for row in summary["rounds"]] == [
+        "round_1_gnn_small.yaml",
+        "round_2_gnn_gated.yaml",
+        "round_3_neural_bp.yaml",
+    ]
+
+    def assert_portable_path(value: str) -> None:
+        assert not Path(value).is_absolute()
+        assert "/home/" not in value
+        assert ".worktrees" not in value
+
+    for key, value in summary.items():
+        if key.endswith("_path") or key.endswith("_yaml"):
+            assert isinstance(value, str)
+            assert_portable_path(value)
+
+    required_row_keys = {
+        "best_delta_ler_so_far",
+        "checkpoint_path",
+        "config",
+        "delta_ler",
+        "delta_ler_ci_high",
+        "delta_ler_ci_low",
+        "eval_wallclock_s",
+        "flops_per_syndrome",
+        "ler_plain_classical",
+        "ler_predecoder",
+        "n_params",
+        "round",
+        "round_dir",
+        "status",
+        "status_reason",
+        "train_wallclock_s",
+        "training_log_path",
+    }
+    for row in summary["rounds"]:
+        assert set(row) == required_row_keys
+        assert row["status"] == "ok"
+        for key, value in row.items():
+            if key.endswith("_path") or key.endswith("_dir"):
+                assert isinstance(value, str)
+                assert_portable_path(value)
+
+    best_row = max(summary["rounds"], key=lambda row: row["delta_ler"])
+    assert summary["best_delta_ler"] == best_row["delta_ler"]
+    assert summary["best_round"] == best_row["round"]
+    assert summary["improvement_vs_round_1"] == best_row["delta_ler"] - summary["rounds"][0]["delta_ler"]
     assert summary["best_delta_ler"] > 0
     assert summary["improvement_vs_round_1"] > 0
-    assert summary["best_round"] in {2, 3}
-    assert len(summary["rounds"]) == 3
-    for row in summary["rounds"]:
-        assert row["status"] == "ok"
-        assert "delta_ler" in row
-        assert "best_delta_ler_so_far" in row
-        assert "ler_plain_classical" in row
-        assert "ler_predecoder" in row

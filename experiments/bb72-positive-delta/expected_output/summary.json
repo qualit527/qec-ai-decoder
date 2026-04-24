@@ -2,13 +2,13 @@
   "best_delta_ler": 0.000244140625,
   "best_round": 2,
   "claim": "benchmark evidence, not a VERIFIED holdout claim",
-  "env_yaml": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/review-pr69-positive-delta-ler/autoqec/envs/builtin/bb72_perf.yaml",
+  "env_yaml": "autoqec/envs/builtin/bb72_perf.yaml",
   "has_positive_delta": true,
   "improvement_vs_round_1": 0.008544921875,
   "rounds": [
     {
       "best_delta_ler_so_far": -0.00830078125,
-      "checkpoint_path": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/review-pr69-positive-delta-ler/runs/20260424T130354Z-bb72-positive-delta/round_1/checkpoint.pt",
+      "checkpoint_path": "round_1/checkpoint.pt",
       "config": "round_1_gnn_small.yaml",
       "delta_ler": -0.00830078125,
       "delta_ler_ci_high": null,
@@ -19,15 +19,15 @@
       "ler_predecoder": 0.1875,
       "n_params": 2801,
       "round": 1,
-      "round_dir": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/review-pr69-positive-delta-ler/runs/20260424T130354Z-bb72-positive-delta/round_1",
+      "round_dir": "round_1",
       "status": "ok",
       "status_reason": null,
       "train_wallclock_s": 3.353449583053589,
-      "training_log_path": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/review-pr69-positive-delta-ler/runs/20260424T130354Z-bb72-positive-delta/round_1/train.log"
+      "training_log_path": "round_1/train.log"
     },
     {
       "best_delta_ler_so_far": 0.000244140625,
-      "checkpoint_path": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/review-pr69-positive-delta-ler/runs/20260424T130354Z-bb72-positive-delta/round_2/checkpoint.pt",
+      "checkpoint_path": "round_2/checkpoint.pt",
       "config": "round_2_gnn_gated.yaml",
       "delta_ler": 0.000244140625,
       "delta_ler_ci_high": null,
@@ -38,15 +38,15 @@
       "ler_predecoder": 0.178955078125,
       "n_params": 34753,
       "round": 2,
-      "round_dir": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/review-pr69-positive-delta-ler/runs/20260424T130354Z-bb72-positive-delta/round_2",
+      "round_dir": "round_2",
       "status": "ok",
       "status_reason": null,
       "train_wallclock_s": 16.743456840515137,
-      "training_log_path": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/review-pr69-positive-delta-ler/runs/20260424T130354Z-bb72-positive-delta/round_2/train.log"
+      "training_log_path": "round_2/train.log"
     },
     {
       "best_delta_ler_so_far": 0.000244140625,
-      "checkpoint_path": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/review-pr69-positive-delta-ler/runs/20260424T130354Z-bb72-positive-delta/round_3/checkpoint.pt",
+      "checkpoint_path": "round_3/checkpoint.pt",
       "config": "round_3_neural_bp.yaml",
       "delta_ler": -0.79638671875,
       "delta_ler_ci_high": null,
@@ -57,11 +57,11 @@
       "ler_predecoder": 0.9755859375,
       "n_params": 12,
       "round": 3,
-      "round_dir": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/review-pr69-positive-delta-ler/runs/20260424T130354Z-bb72-positive-delta/round_3",
+      "round_dir": "round_3",
       "status": "ok",
       "status_reason": null,
       "train_wallclock_s": 307.1963391304016,
-      "training_log_path": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/review-pr69-positive-delta-ler/runs/20260424T130354Z-bb72-positive-delta/round_3/train.log"
+      "training_log_path": "round_3/train.log"
     }
   ],
   "run_id": "20260424T130354Z-bb72-positive-delta"
