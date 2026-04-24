@@ -46,8 +46,6 @@ Thumbs.db
 *.log
 logs/
 
-# Git worktrees
-.worktrees/
 
 # mkdocs build output
 site/

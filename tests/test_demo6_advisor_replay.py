@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 
 import pytest
 
@@ -115,6 +116,27 @@ def test_package_run_dir_refuses_to_overwrite_existing_tarball(tmp_path: Path) -
         package_run_dir(run_dir)
 
 
+def test_package_run_dir_rejects_run_without_round_dirs(tmp_path: Path) -> None:
+    from autoqec.tools.advisor_replay import package_run_dir
+
+    run_dir = tmp_path / "runs" / "empty-run"
+    run_dir.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="no round_\\* subdirectories"):
+        package_run_dir(run_dir)
+
+
+def test_extract_run_package_rejects_empty_archive(tmp_path: Path) -> None:
+    from autoqec.tools.advisor_replay import extract_run_package
+
+    package_path = tmp_path / "empty.tar.gz"
+    with tarfile.open(package_path, "w:gz"):
+        pass
+
+    with pytest.raises(ValueError, match="was empty"):
+        extract_run_package(package_path, tmp_path / "extract")
+
+
 def test_compare_verification_reports_accepts_small_float_drift() -> None:
     from autoqec.tools.advisor_replay import compare_verification_reports
 
@@ -199,6 +221,7 @@ def test_run_verify_offline_unsets_backend_env(monkeypatch, tmp_path: Path) -> N
     monkeypatch.setenv("HTTPS_PROXY", "https://proxy.example")
     monkeypatch.setenv("http_proxy", "http://proxy.example")
     monkeypatch.setenv("https_proxy", "https://proxy.example")
+    monkeypatch.setenv("PYTHONPATH", "existing-pythonpath")
 
     captured: dict[str, object] = {}
 
@@ -259,6 +282,7 @@ def test_run_verify_offline_unsets_backend_env(monkeypatch, tmp_path: Path) -> N
     assert env["NO_PROXY"] == "*"
     assert env["AUTOQEC_REPLAY_NO_NETWORK"] == "1"
     assert "sitecustomize.py" in str(captured["offline_guard_path"])
+    assert env["PYTHONPATH"].endswith(f"{os.pathsep}existing-pythonpath")
 
 
 def test_replay_packaged_run_succeeds_without_original_report(monkeypatch, tmp_path: Path) -> None:
@@ -344,6 +368,53 @@ def test_replay_packaged_run_accepts_prebuilt_package(monkeypatch, tmp_path: Pat
     assert Path(result["replay_report_path"]).exists()
 
 
+def test_replay_packaged_run_copies_original_report_and_compares(tmp_path: Path) -> None:
+    from autoqec.tools import advisor_replay
+
+    run_dir = tmp_path / "runs" / "demo-run"
+    round_dir = run_dir / "round_1"
+    round_dir.mkdir(parents=True)
+    (round_dir / "config.yaml").write_text("type: gnn\n", encoding="utf-8")
+    (round_dir / "checkpoint.pt").write_text("stub", encoding="utf-8")
+    (round_dir / "metrics.json").write_text(json.dumps({"status": "ok"}), encoding="utf-8")
+    (round_dir / "train.log").write_text("0\t0.1\n", encoding="utf-8")
+    _write_manifest(round_dir)
+
+    original_report = {
+        "verdict": "SUSPICIOUS",
+        "holdout_seeds_used": [9000, 9001],
+        "paired_eval_bundle_id": "bundle-1",
+        "ler_holdout": 0.1,
+        "delta_ler_holdout": 0.0,
+        "ler_shuffled": 0.1,
+        "ler_holdout_ci": [0.08, 0.12],
+    }
+    (round_dir / "verification_report.json").write_text(json.dumps(original_report), encoding="utf-8")
+
+    def fake_run_verify_offline(round_dir, *, env_yaml, python_bin, n_shots, n_seeds):
+        del env_yaml, python_bin, n_shots, n_seeds
+        (round_dir / "verification_report.json").write_text(json.dumps(original_report), encoding="utf-8")
+        return original_report
+
+    advisor_replay.run_verify_offline = fake_run_verify_offline
+    try:
+        result = advisor_replay.replay_packaged_run(
+            run_dir,
+            env_yaml="autoqec/envs/builtin/surface_d5_depol.yaml",
+            python_bin=sys.executable,
+            n_shots=8,
+            n_seeds=2,
+            extract_root=tmp_path / "replay",
+        )
+    finally:
+        del advisor_replay.run_verify_offline
+
+    original_copy = Path(result["original_report_copy_path"])
+    assert original_copy.exists()
+    assert json.loads(original_copy.read_text(encoding="utf-8")) == original_report
+    assert Path(result["replay_report_path"]).exists()
+
+
 def test_no_network_sitecustomize_blocks_socket_connections(tmp_path: Path) -> None:
     from autoqec.tools.advisor_replay import _write_no_network_sitecustomize
 
@@ -371,6 +442,68 @@ def test_no_network_sitecustomize_blocks_socket_connections(tmp_path: Path) -> N
 
     assert completed.returncode != 0
     assert "blocks network access" in completed.stderr
+
+
+def test_advisor_replay_main_prints_json(monkeypatch, capsys) -> None:
+    from autoqec.tools import advisor_replay
+
+    expected = {
+        "package_path": "/tmp/demo-run.tar.gz",
+        "extracted_run_dir": "/tmp/replay/demo-run",
+        "round_dir": "/tmp/replay/demo-run/round_1",
+        "original_report_copy_path": None,
+        "replay_report_path": "/tmp/replay/demo-run/round_1/verification_report.json",
+        "float_tol": 1e-6,
+    }
+    captured: dict[str, object] = {}
+
+    def fake_replay_packaged_run(run_dir, **kwargs):
+        captured["run_dir"] = run_dir
+        captured["kwargs"] = kwargs
+        return expected
+
+    monkeypatch.setattr(advisor_replay, "replay_packaged_run", fake_replay_packaged_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "advisor_replay.py",
+            "--run-dir",
+            "/tmp/demo-run",
+            "--package-path",
+            "/tmp/demo-run.tar.gz",
+            "--env",
+            "autoqec/envs/builtin/surface_d5_depol.yaml",
+            "--python-bin",
+            "/tmp/fake-python",
+            "--n-shots",
+            "8",
+            "--n-seeds",
+            "2",
+            "--extract-root",
+            "/tmp/replay",
+            "--round-name",
+            "round_7",
+            "--float-tol",
+            "0.001",
+        ],
+    )
+
+    advisor_replay.main()
+
+    out = json.loads(capsys.readouterr().out)
+    assert out == expected
+    assert captured["run_dir"] == Path("/tmp/demo-run")
+    assert captured["kwargs"] == {
+        "package_path": Path("/tmp/demo-run.tar.gz"),
+        "env_yaml": "autoqec/envs/builtin/surface_d5_depol.yaml",
+        "python_bin": "/tmp/fake-python",
+        "n_shots": 8,
+        "n_seeds": 2,
+        "extract_root": Path("/tmp/replay"),
+        "round_name": "round_7",
+        "float_tol": 0.001,
+    }
 
 
 def test_demo6_readme_documents_no_network_and_existing_demo_packaging() -> None:

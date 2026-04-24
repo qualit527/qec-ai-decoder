@@ -69,6 +69,51 @@ def test_run_round_internal_cmd_reads_env_bridge(monkeypatch, tmp_path) -> None:
     assert captured["round_attempt_id"] == "uuid-1"
 
 
+def test_current_invocation_argv_handles_empty_orig_argv(monkeypatch) -> None:
+    monkeypatch.setattr(cli.sys, "orig_argv", [])
+    monkeypatch.setattr(cli.sys, "argv", [])
+
+    assert cli._current_invocation_argv() == []
+
+
+def test_read_text_if_exists_returns_empty_string_for_missing_file(tmp_path: Path) -> None:
+    assert cli._read_text_if_exists(tmp_path / "missing.txt") == ""
+
+
+def test_enrich_local_worktree_metrics_returns_early_for_compose_conflict(tmp_path: Path) -> None:
+    metrics = RoundMetrics(
+        round_idx=1,
+        status="compose_conflict",
+        hypothesis="conflict",
+        delta_ler=0.0,
+        n_params=1,
+        flops_per_shot=1,
+        train_wallclock_s=0.0,
+        branch=None,
+        commit_sha=None,
+        worktree_path=None,
+        round_attempt_id="existing-round-id",
+    )
+
+    enriched = cli._enrich_local_worktree_metrics(
+        metrics,
+        round_dir=str(tmp_path / "round_1"),
+        code_cwd=str(tmp_path),
+        branch="exp/t/compose",
+        fork_from=["exp/a", "exp/b"],
+        compose_mode="pure",
+        round_attempt_id="new-round-id",
+    )
+
+    assert enriched.status == "compose_conflict"
+    assert enriched.branch is None
+    assert enriched.commit_sha is None
+    assert enriched.compose_mode == "pure"
+    assert enriched.fork_from == ["exp/a", "exp/b"]
+    assert enriched.round_attempt_id == "new-round-id"
+    assert (tmp_path / "round_1" / "metrics.json").exists()
+
+
 def test_run_command_rejects_llm_mode(monkeypatch, tmp_path) -> None:
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
     monkeypatch.chdir(tmp_path)
