@@ -35,6 +35,26 @@ Integration tests are manual for now. The repository does not run them in
 the default GitHub Actions workflow unless that workflow is explicitly
 expanded in a later change.
 
+## Live-LLM resume
+
+The live-LLM path supports resuming an existing run directory:
+
+```bash
+python -m cli.autoqec run <env-yaml> --run-dir runs/<run_id>
+```
+
+Resume treats round `N` as complete only when both conditions hold:
+
+- `history.jsonl` contains a row with `round == N`
+- `round_N/metrics.json` exists and contains parseable JSON
+
+If both surfaces also carry a non-empty `round_attempt_id`, the IDs must
+match. There is no separate marker file. In practice `history.jsonl` is the
+orchestration source of truth and `metrics.json` proves the Runner finished
+the same attempt. Linux SIGINT coverage lives in
+`tests/test_llm_loop_resume.py`; Windows should exercise the same helper
+semantics without relying on POSIX signal delivery.
+
 ## When to run integration tests
 
 Run `make test-integration` before merging changes that affect:
