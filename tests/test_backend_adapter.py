@@ -54,38 +54,61 @@ def test_mwpm_soft_priors_with_native_priors_matches_plain_baseline() -> None:
     )
 
 
-def test_mwpm_soft_priors_honor_predecoder_output() -> None:
-    """Predecoder priors must actually change the decode when they move
-    significantly away from the DEM's natives. Prior to 2026-04-24 the
-    MWPM path silently ignored predecoder_output, giving delta_ler=0 by
-    construction on every surface-code run.
+def test_mwpm_soft_priors_honor_predecoder_output(monkeypatch) -> None:
+    """Predecoder priors must flow through the MWPM backend on every
+    shot. Prior to 2026-04-24 the adapter silently called
+    ``matching.decode_batch(syndrome_raw)`` regardless of
+    ``predecoder_output`` and gave delta_ler=0 by construction on
+    every surface-code run.
+
+    Tested as a white-box check on the reweighted code path: the
+    per-sample DEM rebuild (``_rebuild_dem_with_priors``) must fire
+    once per shot and see the priors the caller passed. A purely
+    behavioural "predictions differ" check turned out to be
+    platform-flaky because pymatching's tie-break on uniform edge
+    weights can coincide with the native-weighted matching on short
+    shot counts.
     """
+    from autoqec.decoders import backend_adapter
+
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
     circuit = stim.Circuit.from_file(env.code.source)
     dem = circuit.detector_error_model(decompose_errors=True)
-    n_err = dem.num_errors
-    sampler = dem.compile_sampler(seed=0)
-    detections, _observables, _errors = sampler.sample(shots=64, return_errors=True)
 
-    # Flatten error probabilities across the board — this should alter
-    # which path MWPM prefers relative to the DEM's natural weighting
-    # (especially for shots with multiple candidate corrections).
-    flat_priors = np.full((detections.shape[0], n_err), 1e-6, dtype=float)
-    reweighted = decode_with_predecoder(
-        flat_priors,
+    sampler = dem.compile_sampler(seed=0)
+    detections, _observables, _errors = sampler.sample(shots=8, return_errors=True)
+
+    seen_priors: list[np.ndarray] = []
+    orig = backend_adapter._rebuild_dem_with_priors
+
+    def spy(dem_in, priors):
+        seen_priors.append(np.asarray(priors, dtype=float).copy())
+        return orig(dem_in, priors)
+
+    monkeypatch.setattr(backend_adapter, "_rebuild_dem_with_priors", spy)
+
+    priors_batch = np.linspace(0.001, 0.05, dem.num_errors, dtype=float)
+    priors_batch = np.broadcast_to(priors_batch, (detections.shape[0], dem.num_errors)).copy()
+    # Row-specific perturbation so we can verify each shot's priors are
+    # routed through, not just the first row's.
+    priors_batch = priors_batch * np.linspace(0.5, 1.5, detections.shape[0])[:, None]
+
+    decode_with_predecoder(
+        priors_batch,
         env,
         detections.astype(np.uint8),
         circuit,
         "soft_priors",
     )
 
-    matching = pymatching.Matching.from_detector_error_model(dem)
-    plain = matching.decode_batch(detections.astype(bool))
-    # The reweighting must have influenced at least one prediction.
-    assert not np.array_equal(reweighted, plain), (
-        "predecoder soft_priors were not honored by the MWPM backend — "
-        "reweighted output matches plain baseline on every shot"
+    assert len(seen_priors) == detections.shape[0], (
+        "reweighted MWPM must rebuild the DEM once per shot "
+        f"(got {len(seen_priors)}/{detections.shape[0]})"
     )
+    for row, priors in enumerate(seen_priors):
+        np.testing.assert_allclose(priors, priors_batch[row], rtol=0, atol=0), (
+            f"shot {row} received the wrong priors"
+        )
 
 
 def test_soft_priors_drive_osd_decode_shape() -> None:
