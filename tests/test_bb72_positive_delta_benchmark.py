@@ -131,3 +131,70 @@ def test_run_benchmark_writes_positive_summary_and_report(
     ]
     assert "benchmark evidence" in report
     assert "not a VERIFIED holdout claim" in report
+
+
+def test_run_benchmark_fails_when_all_deltas_are_nonpositive(
+    monkeypatch, tmp_path: Path
+) -> None:
+    module = _load_benchmark_module()
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    (config_dir / "round_1.yaml").write_text(
+        "type: gnn\ntraining: {learning_rate: 0.001, batch_size: 2, epochs: 1}\n",
+        encoding="utf-8",
+    )
+    env_yaml = tmp_path / "env.yaml"
+    env_yaml.write_text("name: fake\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        module, "load_env_yaml", lambda _path: type("Env", (), {"name": "bb72_perf"})()
+    )
+    monkeypatch.setattr(
+        module,
+        "run_round",
+        lambda _cfg, _env: RoundMetrics(
+            status="ok",
+            ler_plain_classical=0.1,
+            ler_predecoder=0.1,
+            delta_ler=0.0,
+            flops_per_syndrome=1000,
+            n_params=2000,
+        ),
+    )
+    monkeypatch.setattr(module, "_run_id", lambda: "all-zero")
+
+    try:
+        module.run_benchmark(env_yaml=env_yaml, config_dir=config_dir, output_root=tmp_path / "runs")
+    except module.BenchmarkFailure as exc:
+        assert "no positive delta_ler" in str(exc)
+    else:
+        raise AssertionError("expected BenchmarkFailure")
+
+
+def test_run_benchmark_fails_on_non_ok_round(monkeypatch, tmp_path: Path) -> None:
+    module = _load_benchmark_module()
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    (config_dir / "round_1.yaml").write_text(
+        "type: gnn\ntraining: {learning_rate: 0.001, batch_size: 2, epochs: 1}\n",
+        encoding="utf-8",
+    )
+    env_yaml = tmp_path / "env.yaml"
+    env_yaml.write_text("name: fake\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        module, "load_env_yaml", lambda _path: type("Env", (), {"name": "bb72_perf"})()
+    )
+    monkeypatch.setattr(
+        module,
+        "run_round",
+        lambda _cfg, _env: RoundMetrics(status="compile_error", status_reason="bad config"),
+    )
+    monkeypatch.setattr(module, "_run_id", lambda: "compile-error")
+
+    try:
+        module.run_benchmark(env_yaml=env_yaml, config_dir=config_dir, output_root=tmp_path / "runs")
+    except module.BenchmarkFailure as exc:
+        assert "round 1 failed with status compile_error" in str(exc)
+    else:
+        raise AssertionError("expected BenchmarkFailure")

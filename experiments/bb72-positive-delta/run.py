@@ -107,6 +107,15 @@ def _build_summary(*, run_id: str, env_yaml: Path, rows: list[dict[str, Any]]) -
     }
 
 
+def _validate_summary(summary: dict[str, Any]) -> None:
+    if not summary["rounds"]:
+        raise BenchmarkFailure("benchmark produced no rounds")
+    if not summary["has_positive_delta"]:
+        raise BenchmarkFailure("no positive delta_ler found across benchmark rounds")
+    if summary["improvement_vs_round_1"] <= 0:
+        raise BenchmarkFailure("best round did not improve over round 1")
+
+
 def _write_report(summary: dict[str, Any], report_path: Path) -> None:
     lines = [
         "# BB72 Positive Delta Benchmark",
@@ -169,6 +178,11 @@ def run_benchmark(env_yaml: Path, config_dir: Path, output_root: Path) -> Path:
             env_yaml_path=str(env_yaml),
         )
         metrics = run_round(config, env)
+        if metrics.status != "ok":
+            raise BenchmarkFailure(
+                f"round {round_number} failed with status {metrics.status}: "
+                f"{metrics.status_reason}"
+            )
         rows.append(
             _round_row(
                 round_number=round_number,
@@ -179,6 +193,7 @@ def run_benchmark(env_yaml: Path, config_dir: Path, output_root: Path) -> Path:
         )
 
     summary = _build_summary(run_id=run_id, env_yaml=env_yaml, rows=rows)
+    _validate_summary(summary)
     (run_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True),
         encoding="utf-8",
@@ -198,11 +213,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
-    run_dir = run_benchmark(
-        env_yaml=args.env_yaml,
-        config_dir=args.config_dir,
-        output_root=args.output_root,
-    )
+    try:
+        run_dir = run_benchmark(
+            env_yaml=args.env_yaml,
+            config_dir=args.config_dir,
+            output_root=args.output_root,
+        )
+    except BenchmarkFailure as exc:
+        print(f"BB72_POSITIVE_DELTA_ERROR={exc}", file=sys.stderr)
+        return 1
     print(f"BB72_POSITIVE_DELTA_RUN_DIR={run_dir}")
     return 0
 
