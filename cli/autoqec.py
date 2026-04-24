@@ -484,7 +484,9 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
     if not no_llm:
         # live LLM path — P0.1
         from autoqec.orchestration.llm_loop import run_llm_loop
-        run_dir = run_llm_loop(env=env, rounds=rounds, profile=profile)
+        run_dir = run_llm_loop(
+            env=env, rounds=rounds, profile=profile, env_yaml_path=env_yaml,
+        )
         click.echo(
             f"{RESULT_PREFIX}"
             + json.dumps({"run_dir": str(run_dir), "rounds": rounds})
@@ -561,8 +563,8 @@ def add_env(out: str, name: str, code_source: str, noise_p: str, backend: str) -
             "seed_policy": {"train": [1, 999], "val": [1000, 1999], "holdout": [9000, 9999]},
         },
         "constraints": {
-            "latency_flops_budget": 10000000,
-            "param_budget": 200000,
+            # No hard cap on model size or per-syndrome FLOPs — the only
+            # effective budget is outer wall-clock (see machine_state).
             "target_ler": 1e-4,
             "target_p": min(ps),
         },

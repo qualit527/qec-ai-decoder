@@ -73,6 +73,21 @@ def test_run_llm_loop_happy_path(tmp_path, monkeypatch):
     assert len(hist) == 2
     assert len(responses["ideator"]) == 2
 
+    # Trace file captures the chat-level narrative (C route).
+    trace = (run_dir / "orchestrator_trace.md")
+    assert trace.exists()
+    text = trace.read_text(encoding="utf-8")
+    assert "# Orchestrator trace" in text
+    assert "## Round 1" in text
+    assert "## Round 2" in text
+    # At least one of each subagent/runner/verifier section per round.
+    assert text.count("ideator prompt") == 2
+    assert text.count("ideator response") == 2
+    assert text.count("coder response") == 2
+    assert text.count("runner metrics") == 2
+    assert text.count("analyst response") == 2
+    assert "run complete" in text
+
 
 def test_run_llm_loop_rejects_compose_rounds_until_p11(tmp_path, monkeypatch):
     """P0.1 ships without compose support; Ideator emitting list fork_from should error clearly."""

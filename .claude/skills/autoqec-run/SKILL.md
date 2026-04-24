@@ -27,9 +27,22 @@ assumptions.
 - `env_yaml` — path to an EnvSpec YAML (e.g.
   `autoqec/envs/builtin/surface_d5_depol.yaml`).
 - `rounds` — default `1`. Each round is Ideator → Coder → Runner →
-  Analyst and takes ~1–10 min in dev profile.
-- `profile` — `dev` (fast, 256/64 shots, 1 epoch) or `prod` (longer
-  training). Default `dev`.
+  Analyst and takes ~2–5 min in dev profile.
+- `profile` — `dev` (4096 train / 256 val shots, 3 epochs) or `prod`
+  (16384 train / 1024 val shots, 10 epochs). Default `dev`.
+
+## Default output_mode
+
+**Always default to `output_mode: soft_priors`** unless the user or the
+Ideator's hypothesis explicitly asks for `hard_flip`. `soft_priors` is
+the only mode with a well-posed supervised training target (DEM-error
+labels) and a working eval path on both MWPM (per-sample DEM
+reweighting) and OSD (priors passed to `bposd_decoder`). `hard_flip` is
+still supported but treats the raw syndrome as a weak surrogate target
+during training — it will not reliably move `delta_ler` without a
+problem-specific loss. If you find yourself emitting a DSL with
+`output_mode: hard_flip` without an explicit Ideator rationale, stop
+and check.
 
 ## Working scratch directory
 
@@ -50,13 +63,27 @@ to the user — do not silently skip.
 ### 1. Prepare the run + round directory
 
 Pick a run id (UTC `YYYYMMDD-HHMMSS`) if the user did not supply one. All
-subsequent paths live under `runs/<run_id>/`. Initialise memory via the
-Python helper — do NOT write `history.jsonl` / `pareto.json` / `log.md`
-by hand:
+subsequent paths live under `runs/<run_id>/`. Initialise memory **and**
+the orchestrator trace via the Python helpers — do NOT write
+`history.jsonl` / `pareto.json` / `log.md` / `orchestrator_trace.md` by
+hand:
 
 ```bash
-python -c "from autoqec.orchestration.memory import RunMemory; print(RunMemory('runs/<run_id>').run_dir)"
+python -c "
+from autoqec.orchestration.memory import RunMemory
+from autoqec.orchestration.trace import init_trace
+RunMemory('runs/<run_id>')
+init_trace('runs/<run_id>', env_yaml='<env_yaml>', rounds=<N_TOTAL>, profile='<profile>')
+print('runs/<run_id>')
+"
 ```
+
+`init_trace` is called **once per run** (before round 1). If
+`orchestrator_trace.md` already exists (resuming a killed run), it
+appends a `_resumed at ..._` divider instead of truncating. Every later
+step in this SKILL appends sections to that file via
+`append_section` / `append_note` so you get a chat-level narrative next
+to `history.jsonl`.
 
 ### 2. Build the Ideator prompt
 
@@ -71,14 +98,19 @@ Capture stdout into a JSON variable (the whole plan dict). The
 
 Use the `Agent` tool with `subagent_type="autoqec-ideator"` and pass the
 `ideator_prompt` verbatim. The subagent returns exactly one fenced
-```json block. Validate + parse via:
+```json block. Validate + parse **and trace** via:
 
 ```bash
 python -c "
 import sys, json
 from autoqec.agents.dispatch import parse_response
+from autoqec.orchestration.trace import append_note, append_section
 raw = sys.stdin.read()
+append_section('runs/<run_id>', <N>, 'ideator prompt', <IDEATOR_PROMPT>)
+append_note('runs/<run_id>', <N>, 'dispatched autoqec-ideator')
+append_section('runs/<run_id>', <N>, 'ideator raw', raw)
 parsed = parse_response('ideator', raw)
+append_section('runs/<run_id>', <N>, 'ideator parsed', parsed)
 print(json.dumps(parsed))
 "
 ```
@@ -114,15 +146,21 @@ Pipe the parsed Ideator JSON on stdin.
 keys (validated by `parse_response`): `tier`, `dsl_config`, `rationale`.
 `tier` is `"1"` or `"2"`.
 
-Double-check `dsl_config` against `PredecoderDSL`:
+Double-check `dsl_config` against `PredecoderDSL` **and trace**:
 
 ```bash
 python -c "
 import json, sys
 from autoqec.agents.dispatch import parse_response
 from autoqec.decoders.dsl_schema import PredecoderDSL
-parsed = parse_response('coder', sys.stdin.read())
+from autoqec.orchestration.trace import append_note, append_section
+raw = sys.stdin.read()
+append_section('runs/<run_id>', <N>, 'coder prompt', <CODER_PROMPT>)
+append_note('runs/<run_id>', <N>, 'dispatched autoqec-coder')
+append_section('runs/<run_id>', <N>, 'coder raw', raw)
+parsed = parse_response('coder', raw)
 PredecoderDSL(**parsed['dsl_config'])   # raises on schema drift
+append_section('runs/<run_id>', <N>, 'coder parsed', parsed)
 print(json.dumps(parsed))
 "
 ```
@@ -160,18 +198,31 @@ On `status=compose_conflict` or any non-ok status, call `cleanup_round_worktree`
 python -c "
 import json, sys, yaml
 from pathlib import Path
+from autoqec.orchestration.trace import append_note, append_section
 parsed = json.loads(sys.stdin.read())
 out = Path('runs/<run_id>/round_<N>')
 out.mkdir(parents=True, exist_ok=True)
-with (out / 'config.yaml').open('w', encoding='utf-8') as f:
+cfg_path = out / 'config.yaml'
+with cfg_path.open('w', encoding='utf-8') as f:
     yaml.safe_dump(parsed['dsl_config'], f, sort_keys=False)
+append_section('runs/<run_id>', <N>, 'config.yaml', cfg_path.read_text(encoding='utf-8'), fence='yaml')
+append_note('runs/<run_id>', <N>, 'invoking Runner (profile=<profile>)')
 "
 
 python -m cli.autoqec run-round <env_yaml> runs/<run_id>/round_<N>/config.yaml runs/<run_id>/round_<N> --profile <profile>
 ```
 
 The CLI prints the `RoundMetrics` JSON on stdout. Save it — you also
-need it for the Analyst.
+need it for the Analyst. Trace the metrics dict before moving on:
+
+```bash
+python -c "
+import json, sys
+from autoqec.orchestration.trace import append_section
+metrics = json.loads(sys.stdin.read())
+append_section('runs/<run_id>', <N>, 'runner metrics', metrics)
+"
+```
 
 **If `metrics.status != "ok"`**, skip the Analyst and the verifier for
 this round. Do not call `build_analyst_prompt`, do not dispatch the
@@ -197,6 +248,23 @@ print(build_analyst_prompt(mem=mem, round_dir='runs/<run_id>/round_<N>', prev_su
 keys (validated): `summary_1line`, `verdict` (`"candidate"` or
 `"ignore"`), `next_hypothesis_seed`.
 
+After receiving the raw response, validate **and trace**:
+
+```bash
+python -c "
+import json, sys
+from autoqec.agents.dispatch import parse_response
+from autoqec.orchestration.trace import append_note, append_section
+raw = sys.stdin.read()
+append_section('runs/<run_id>', <N>, 'analyst prompt', <ANALYST_PROMPT>)
+append_note('runs/<run_id>', <N>, 'dispatched autoqec-analyst')
+append_section('runs/<run_id>', <N>, 'analyst raw', raw)
+parsed = parse_response('analyst', raw)
+append_section('runs/<run_id>', <N>, 'analyst parsed', parsed)
+print(json.dumps(parsed))
+"
+```
+
 ### 9. Run the independent verifier (automatic)
 
 If `metrics.status == "ok"` AND the Analyst verdict is `candidate`:
@@ -205,7 +273,9 @@ If `metrics.status == "ok"` AND the Analyst verdict is `candidate`:
 from pathlib import Path
 from autoqec.envs.schema import load_env_yaml
 from autoqec.eval.independent_eval import independent_verify
+from autoqec.orchestration.trace import append_note, append_section
 
+append_note("runs/<run_id>", <N>, "running independent verifier")
 env = load_env_yaml("<ENV_YAML_PATH>")
 sp = env.noise.seed_policy
 holdout = list(range(sp.holdout[0], sp.holdout[1] + 1))[:50]
@@ -219,6 +289,7 @@ Path("<ROUND_DIR>/verification_report.json").write_text(
 )
 verify_verdict = report.verdict       # pass into record_round
 verify_report = report.model_dump()   # ditto
+append_section("runs/<run_id>", <N>, "verifier report", verify_report)
 ```
 
 **Skip cases:** `metrics.status != "ok"`, `compose_conflict`, Analyst verdict == `ignore`.
@@ -232,6 +303,7 @@ python -c "
 import json, sys
 from autoqec.orchestration.memory import RunMemory
 from autoqec.orchestration.round_recorder import record_round
+from autoqec.orchestration.trace import append_note
 payload = json.loads(sys.stdin.read())
 mem = RunMemory('runs/<run_id>')
 row = record_round(
@@ -239,6 +311,12 @@ row = record_round(
     round_metrics=payload['round_metrics'],
     verify_verdict=payload.get('verify_verdict'),  # 'VERIFIED' | 'FAILED' | None
     verify_report=payload.get('verify_report'),    # dict or None
+)
+metrics = payload['round_metrics']
+append_note(
+    'runs/<run_id>', metrics.get('round'),
+    f\"round {metrics.get('round')} recorded (status={metrics.get('status')}, \"
+    f\"verify={payload.get('verify_verdict') or 'skipped'})\",
 )
 print(json.dumps(row['summary_1line']))
 "
@@ -259,13 +337,24 @@ refreshes `pareto.json` (full non-dominated archive) alongside
 ### 11. Loop or stop
 
 If the user asked for more than one round, go back to step 2 with
-`round_idx+=1`. After the last round, print a short summary:
+`round_idx+=1`. After the last round, close the trace and print a short
+summary:
+
+```bash
+python -c "
+from autoqec.orchestration.trace import append_note
+append_note('runs/<run_id>', None, 'run complete — <N_TOTAL> round(s)')
+"
+```
+
+Then print to chat:
 
 ```
 Run complete. Path: runs/<run_id>/
-  log.md          narrative
-  history.jsonl   <N> rounds
-  pareto.json     top-K candidates by Δ LER
+  log.md                     one-liner per round
+  history.jsonl              <N> rounds
+  pareto.json                non-dominated archive (VERIFIED)
+  orchestrator_trace.md      full subagent + tool narrative
 ```
 
 ## Failure handling
@@ -300,8 +389,9 @@ If a compose round returns `status="compose_conflict"`:
 
 - Torch must be installed in the Python env used for `cli.autoqec
   run-round`. The rest of the loop is torch-free.
-- Dev profile rounds finish in 1–3 minutes on CPU; prod rounds take
-  10–20 min and benefit from GPU.
+- Dev profile rounds finish in 2–5 minutes on CPU (dominated by the
+  per-sample MWPM rebuild during eval); prod rounds take 10–30 min
+  and benefit from GPU for the training pass.
 - Verification runs **automatically** in this skill for successful
   rounds with Analyst verdict `candidate` (Step 9). `/verify-decoder`
   remains available for post-hoc re-audits with different holdout seeds.
