@@ -56,14 +56,12 @@ def _select_seeds(
     silently leaking into an adjacent policy band (train vs val).
     """
     start, end = seed_range
-    count = min(max_unique, max(1, n_shots))
     policy_width = max(1, end - start + 1)
+    count = min(max_unique, max(1, n_shots), policy_width)
     shift = (round_offset * count) % policy_width
-    shifted_start = start + shift
     # Wrap seeds inside [start, end] so we never hand out seeds outside
     # the configured policy band.
     seeds = [start + ((shift + i) % policy_width) for i in range(count)]
-    del shifted_start  # shifted_start is only kept for readability above
     return seeds
 
 

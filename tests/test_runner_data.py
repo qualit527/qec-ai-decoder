@@ -12,6 +12,7 @@ def test_select_seeds_respects_range_and_caps_unique_count() -> None:
     assert runner_data._select_seeds((10, 12), 0) == [10]
     assert runner_data._select_seeds((10, 12), 2) == [10, 11]
     assert runner_data._select_seeds((10, 30), 20) == list(range(10, 18))
+    assert runner_data._select_seeds((10, 12), 20) == [10, 11, 12]
 
 
 def test_select_seeds_respects_round_offset_for_data_diversity() -> None:
