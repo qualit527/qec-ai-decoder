@@ -700,6 +700,27 @@ def test_diagnose_uses_latest_round_from_run_dir(tmp_path) -> None:
     assert payload["path"].endswith("round_2")
 
 
+def test_round_sort_key_orders_named_rounds_after_numbered_rounds() -> None:
+    paths = [Path("round_baseline"), Path("round_10"), Path("round_2")]
+
+    assert sorted(paths, key=cli._round_sort_key) == [
+        Path("round_2"),
+        Path("round_10"),
+        Path("round_baseline"),
+    ]
+
+
+def test_diagnose_failure_signature_detects_compile_text_without_metrics() -> None:
+    root_cause, signals = cli._diagnose_failure_signature(
+        None,
+        "",
+        "ValidationError: hidden_dim must be >= 4",
+    )
+
+    assert root_cause == "compile_error"
+    assert signals == ["ValidationError: hidden_dim must be >= 4"]
+
+
 @pytest.mark.parametrize(
     ("fixture_name", "expected_root_cause", "expected_signal"),
     [
