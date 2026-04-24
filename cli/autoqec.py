@@ -49,7 +49,19 @@ def _current_invocation_argv() -> list[str]:
     argv = list(getattr(sys, "orig_argv", sys.argv))
     if not argv:
         return []
-    return [os.fspath(Path(argv[0]))] + argv[1:]
+    repo_root = Path.cwd().resolve()
+    executable = Path(argv[0]).name or os.fspath(Path(argv[0]))
+    return [executable] + [_portable_invocation_arg(arg, repo_root) for arg in argv[1:]]
+
+
+def _portable_invocation_arg(arg: str, repo_root: Path) -> str:
+    path = Path(arg)
+    if not path.is_absolute():
+        return arg
+    try:
+        return os.fspath(path.resolve().relative_to(repo_root))
+    except ValueError:
+        return arg
 
 
 def _read_text_if_exists(path: Path) -> str:
@@ -526,7 +538,13 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
     if not no_llm:
         # live LLM path — P0.1
         from autoqec.orchestration.llm_loop import run_llm_loop
-        run_dir = run_llm_loop(env=env, rounds=rounds, profile=profile)
+        run_dir = run_llm_loop(
+            env=env,
+            rounds=rounds,
+            profile=profile,
+            env_yaml_path=env_yaml,
+            invocation_argv=_current_invocation_argv(),
+        )
         click.echo(
             f"{RESULT_PREFIX}"
             + json.dumps({"run_dir": str(run_dir), "rounds": rounds})

@@ -360,8 +360,21 @@ def test_subprocess_runner_writes_artifact_manifest(tmp_path):
     manifest_path = Path(cfg.round_dir) / "artifact_manifest.json"
     assert manifest_path.exists()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["dsl_sha256"]
-    assert manifest["cmd_line"] == ["python", "-m", "cli.autoqec", "run-round-internal"]
+    assert manifest["schema_version"] == 1
+    assert manifest["environment"]["env_yaml_sha256"]
+    assert manifest["round"]["dsl_config_sha256"]
+    assert manifest["round"]["command_line"] == [
+        "python",
+        "-m",
+        "cli.autoqec",
+        "run-round-internal",
+    ]
+    assert manifest["artifacts"] == {
+        "config_yaml": "config.yaml",
+        "checkpoint": "checkpoint.pt",
+        "metrics": "metrics.json",
+        "train_log": "train.log",
+    }
 
 
 def test_subprocess_runner_skips_pointer_on_compose_conflict(tmp_path):

@@ -25,11 +25,19 @@ from autoqec.runner.schema import RunnerConfig
 from autoqec.tools.machine_state import machine_state
 
 
+def _env_yaml_path(env: EnvSpec) -> str | None:
+    builtin_path = Path(__file__).resolve().parents[1] / "envs" / "builtin" / f"{env.name}.yaml"
+    return str(builtin_path) if builtin_path.exists() else None
+
+
 def run_llm_loop(
     env: EnvSpec,
     rounds: int,
     profile: str,
     run_dir: Path | str | None = None,
+    *,
+    env_yaml_path: Path | str | None = None,
+    invocation_argv: list[str] | None = None,
 ) -> Path:
     run_id = time.strftime("%Y%m%d-%H%M%S")
     run_dir = Path(run_dir) if run_dir else (Path("runs") / run_id).resolve()
@@ -72,6 +80,8 @@ def run_llm_loop(
             round_attempt_id=str(uuid.uuid4()),
             fork_from=ideator_resp.get("fork_from", "baseline"),
             commit_message=coder_resp.get("commit_message"),
+            env_yaml_path=str(env_yaml_path) if env_yaml_path is not None else _env_yaml_path(env),
+            invocation_argv=invocation_argv or ["python", "-m", "cli.autoqec", "run"],
         )
         metrics = run_round(cfg, env)
 

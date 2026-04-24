@@ -202,7 +202,67 @@ def test_compare_verification_reports_rejects_mismatched_verdict() -> None:
         "verdict": "FAILED",
     }
 
-    with pytest.raises(AssertionError, match="verdict"):
+    with pytest.raises(ValueError, match="verdict"):
+        compare_verification_reports(original, replay, float_tol=1e-3)
+
+
+def test_compare_verification_reports_rejects_ci_length_without_asserts() -> None:
+    from autoqec.tools.advisor_replay import compare_verification_reports
+
+    original = {
+        "verdict": "VERIFIED",
+        "holdout_seeds_used": [9000],
+        "ler_holdout": 0.1,
+        "delta_ler_holdout": 0.02,
+        "ler_shuffled": 0.11,
+        "ler_holdout_ci": [0.08, 0.12],
+    }
+    replay = {
+        **original,
+        "ler_holdout_ci": [0.08],
+    }
+
+    with pytest.raises(ValueError, match="ler_holdout_ci"):
+        compare_verification_reports(original, replay, float_tol=1e-3)
+
+
+def test_compare_verification_reports_rejects_float_drift_without_asserts() -> None:
+    from autoqec.tools.advisor_replay import compare_verification_reports
+
+    original = {
+        "verdict": "VERIFIED",
+        "holdout_seeds_used": [9000],
+        "ler_holdout": 0.1,
+        "delta_ler_holdout": 0.02,
+        "ler_shuffled": 0.11,
+        "ler_holdout_ci": [0.08, 0.12],
+    }
+    replay = {
+        **original,
+        "ler_holdout": 0.2,
+    }
+
+    with pytest.raises(ValueError, match="ler_holdout"):
+        compare_verification_reports(original, replay, float_tol=1e-3)
+
+
+def test_compare_verification_reports_rejects_ci_value_drift_without_asserts() -> None:
+    from autoqec.tools.advisor_replay import compare_verification_reports
+
+    original = {
+        "verdict": "VERIFIED",
+        "holdout_seeds_used": [9000],
+        "ler_holdout": 0.1,
+        "delta_ler_holdout": 0.02,
+        "ler_shuffled": 0.11,
+        "ler_holdout_ci": [0.08, 0.12],
+    }
+    replay = {
+        **original,
+        "ler_holdout_ci": [0.08, 0.2],
+    }
+
+    with pytest.raises(ValueError, match=r"ler_holdout_ci\[1\]"):
         compare_verification_reports(original, replay, float_tol=1e-3)
 
 
@@ -517,3 +577,12 @@ def test_demo6_readme_documents_no_network_and_existing_demo_packaging() -> None
     assert "artifact_manifest.json" in readme
     assert "repo sha" in readme
     assert "stochastic" in readme
+
+
+def test_demo6_run_script_uses_portable_python_and_paths() -> None:
+    script = Path("demos/demo-6-advisor-replay/run.sh").read_text(encoding="utf-8")
+
+    assert 'PYTHON_BIN="${PYTHON_BIN:-python}"' in script
+    assert "/home/jinguxie" not in script
+    assert "/tmp/autoqec" not in script
+    assert "os.pathsep.join" in script

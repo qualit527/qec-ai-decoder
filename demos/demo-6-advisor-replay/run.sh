@@ -1,25 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -z "${PYTHON_BIN:-}" ]]; then
-  if [[ -x "./.venv/bin/python" ]]; then
-    PYTHON_BIN="./.venv/bin/python"
-  elif [[ -x "/home/jinguxie/qec-ai-decoder/.venv/bin/python" ]]; then
-    PYTHON_BIN="/home/jinguxie/qec-ai-decoder/.venv/bin/python"
-  else
-    PYTHON_BIN="python3"
-  fi
-fi
+PYTHON_BIN="${PYTHON_BIN:-python}"
 ENV_YAML=${ENV_YAML:-autoqec/envs/builtin/surface_d5_depol.yaml}
 PROFILE=${PROFILE:-dev}
 ROUNDS=${ROUNDS:-1}
 N_SHOTS=${N_SHOTS:-256}
 N_SEEDS=${N_SEEDS:-2}
 EXTRACT_ROOT=${EXTRACT_ROOT:-runs/demo-6-replay}
-MPLCONFIGDIR=${MPLCONFIGDIR:-/tmp/autoqec-mplconfig}
-export MPLCONFIGDIR
+if [[ -z "${MPLCONFIGDIR:-}" ]]; then
+  MPLCONFIGDIR="$(mktemp -d 2>/dev/null || "$PYTHON_BIN" - <<'PY'
+import tempfile
+
+print(tempfile.mkdtemp(prefix="autoqec-mplconfig-"))
+PY
+)"
+  export MPLCONFIGDIR
+fi
 mkdir -p "$MPLCONFIGDIR"
-export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
+PYTHONPATH=$(
+  REPO_ROOT="$PWD" EXISTING_PYTHONPATH="${PYTHONPATH:-}" "$PYTHON_BIN" - <<'PY'
+import os
+
+parts = [os.environ["REPO_ROOT"]]
+existing = os.environ.get("EXISTING_PYTHONPATH")
+if existing:
+    parts.append(existing)
+print(os.pathsep.join(parts))
+PY
+)
+export PYTHONPATH
 
 RUN_OUTPUT="$("$PYTHON_BIN" -m cli.autoqec run "$ENV_YAML" --rounds "$ROUNDS" --profile "$PROFILE" --no-llm)"
 printf '%s\n' "$RUN_OUTPUT"
