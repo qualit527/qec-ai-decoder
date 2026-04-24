@@ -39,3 +39,13 @@ def test_positive_delta_round_configs_compile() -> None:
         assert model.output_mode == "soft_priors"
         assert sum(parameter.numel() for parameter in model.parameters()) > 0
         assert cfg["training"]["epochs"] >= 3
+
+
+def test_positive_delta_readme_states_scope_and_reproduction_command() -> None:
+    readme = (REPO_ROOT / "experiments/bb72-positive-delta/README.md").read_text(encoding="utf-8")
+
+    assert "BB72/OSD" in readme
+    assert "benchmark evidence" in readme
+    assert "not a VERIFIED holdout claim" in readme
+    assert "python experiments/bb72-positive-delta/run.py" in readme
+    assert "surface_d5 + mwpm + soft_priors" in readme
