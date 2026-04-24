@@ -6,7 +6,10 @@ loads, RunnerConfig builds) are unit tests and run in CI without GPU.
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
+import sys
+import types
 
 import pytest
 
@@ -42,6 +45,57 @@ def test_build_runner_config_composes_env_and_stub(tmp_path: Path) -> None:
     # predecoder_config was parsed as a plain dict (Runner expects dict, not pydantic)
     assert cfg.predecoder_config["type"] == "gnn"
     assert cfg.predecoder_config["gnn"]["hidden_dim"] == 16
+
+
+def test_build_runner_config_min_steps_scales_dev_batch_budget(tmp_path: Path) -> None:
+    """The verification gate can request a taller train.log without making
+    the default handshake slow for normal smoke runs."""
+    from scripts.e2e_handshake import build_runner_config
+
+    cfg = build_runner_config(
+        env_yaml="autoqec/envs/builtin/surface_d5_depol.yaml",
+        stub_yaml="autoqec/example_db/handshake_stub.yaml",
+        round_dir=tmp_path / "round_0",
+        min_steps=100,
+    )
+
+    training = cfg.predecoder_config["training"]
+    assert cfg.training_profile == "dev"
+    assert training["profile"] == "dev"
+    assert training["epochs"] == 1
+    assert training["batch_size"] == 2
+
+
+def test_main_min_steps_invocation_writes_train_log_with_100_wc_lines(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unit-test the supported invocation's wc -l contract without importing torch."""
+    from autoqec.runner.schema import RoundMetrics
+    from scripts.e2e_handshake import main
+
+    def fake_run_round(config, env_spec):
+        round_dir = Path(config.round_dir)
+        round_dir.mkdir(parents=True, exist_ok=True)
+        n_shots_train = min(env_spec.eval_protocol.min_shots_train, 256)
+        epochs = min(int(config.predecoder_config["training"]["epochs"]), 1)
+        batch_size = int(config.predecoder_config["training"]["batch_size"])
+        rows = math.ceil(n_shots_train / batch_size) * epochs
+        train_log = round_dir / "train.log"
+        train_log.write_text(
+            "\n".join(f"{idx}\t0.1" for idx in range(rows)),
+            encoding="utf-8",
+        )
+        return RoundMetrics(status="ok", training_log_path=str(train_log))
+
+    fake_runner_module = types.ModuleType("autoqec.runner.runner")
+    fake_runner_module.run_round = fake_run_round
+    monkeypatch.setitem(sys.modules, "autoqec.runner.runner", fake_runner_module)
+
+    round_dir = tmp_path / "round_0"
+    main(round_dir=round_dir, seed=0, min_steps=100)
+
+    assert round_dir.joinpath("train.log").read_bytes().count(b"\n") >= 100
 
 
 @pytest.mark.integration
