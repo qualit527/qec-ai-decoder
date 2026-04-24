@@ -29,7 +29,7 @@ from pathlib import Path
 import yaml
 
 from autoqec.envs.schema import EnvSpec
-from autoqec.runner.manifest import write_artifact_manifest
+from autoqec.runner.artifact_manifest import write_artifact_manifest
 from autoqec.runner.schema import RoundMetrics, RunnerConfig
 
 log = logging.getLogger(__name__)
@@ -257,9 +257,15 @@ def run_round_in_subprocess(
             try:
                 write_artifact_manifest(
                     round_dir=Path(round_dir),
-                    env_yaml_path=env_file,
-                    dsl_config=cfg.predecoder_config,
-                    cmd_line=child_argv,
+                    config=cfg.model_copy(
+                        update={
+                            "env_yaml_path": str(env_file),
+                            "invocation_argv": child_argv,
+                        }
+                    ),
+                    checkpoint_path=Path(round_dir) / "checkpoint.pt",
+                    metrics_path=Path(round_dir) / "metrics.json",
+                    train_log_path=Path(round_dir) / "train.log",
                 )
             except Exception as exc:  # noqa: BLE001 - manifest failures must not mask a round.
                 round_path = Path(round_dir)

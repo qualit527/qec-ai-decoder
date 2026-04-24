@@ -101,6 +101,38 @@ def test_current_invocation_argv_handles_empty_orig_argv(monkeypatch) -> None:
     assert cli._current_invocation_argv() == []
 
 
+def test_current_invocation_argv_uses_basename_for_executable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli.sys,
+        "orig_argv",
+        ["/home/example/.venv/bin/python", "-m", "cli.autoqec", "run"],
+    )
+
+    assert cli._current_invocation_argv() == ["python", "-m", "cli.autoqec", "run"]
+
+
+def test_current_invocation_argv_relativizes_repo_paths(monkeypatch, tmp_path: Path) -> None:
+    repo_env = tmp_path / "autoqec" / "envs" / "builtin" / "surface.yaml"
+    repo_env.parent.mkdir(parents=True)
+    repo_env.write_text("name: surface\n", encoding="utf-8")
+    external = tmp_path.parent / "outside.yaml"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli.sys,
+        "orig_argv",
+        ["/opt/python/bin/python", "-m", "cli.autoqec", "run", str(repo_env), str(external)],
+    )
+
+    assert cli._current_invocation_argv() == [
+        "python",
+        "-m",
+        "cli.autoqec",
+        "run",
+        "autoqec/envs/builtin/surface.yaml",
+        str(external),
+    ]
+
+
 def test_read_text_if_exists_returns_empty_string_for_missing_file(tmp_path: Path) -> None:
     assert cli._read_text_if_exists(tmp_path / "missing.txt") == ""
 
@@ -144,13 +176,20 @@ def test_run_command_delegates_to_llm_loop(monkeypatch, tmp_path) -> None:
     env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "load_env_yaml", lambda _path: env)
+    monkeypatch.setattr(
+        cli.sys,
+        "orig_argv",
+        ["/home/example/.venv/bin/python", "-m", "cli.autoqec", "run", env.model_dump()["name"]],
+    )
 
     calls: dict = {}
 
-    def fake_run_llm_loop(*, env, rounds, profile):
+    def fake_run_llm_loop(*, env, rounds, profile, env_yaml_path, invocation_argv):
         calls["env_name"] = env.name
         calls["rounds"] = rounds
         calls["profile"] = profile
+        calls["env_yaml_path"] = env_yaml_path
+        calls["invocation_argv"] = invocation_argv
         run_dir = tmp_path / "fake_run"
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
@@ -162,7 +201,13 @@ def test_run_command_delegates_to_llm_loop(monkeypatch, tmp_path) -> None:
         cli.run, [env.model_dump()["name"], "--rounds", "2"], catch_exceptions=False
     )
     assert result.exit_code == 0, result.output
-    assert calls == {"env_name": env.name, "rounds": 2, "profile": "dev"}
+    assert calls == {
+        "env_name": env.name,
+        "rounds": 2,
+        "profile": "dev",
+        "env_yaml_path": env.model_dump()["name"],
+        "invocation_argv": ["python", "-m", "cli.autoqec", "run", env.model_dump()["name"]],
+    }
     assert cli.RESULT_PREFIX in result.output
 
 

@@ -89,16 +89,20 @@ def compare_verification_reports(
     float_tol: float = 1e-6,
 ) -> None:
     for key in ("verdict", "holdout_seeds_used", "paired_eval_bundle_id"):
-        assert original.get(key) == replay.get(key), f"{key} mismatch: {original.get(key)!r} != {replay.get(key)!r}"
+        if original.get(key) != replay.get(key):
+            raise ValueError(f"{key} mismatch: {original.get(key)!r} != {replay.get(key)!r}")
 
     for key in ("ler_holdout", "delta_ler_holdout", "ler_shuffled"):
-        assert abs(float(original[key]) - float(replay[key])) <= float_tol, f"{key} drift exceeds tolerance"
+        if abs(float(original[key]) - float(replay[key])) > float_tol:
+            raise ValueError(f"{key} drift exceeds tolerance")
 
     original_ci = list(original["ler_holdout_ci"])
     replay_ci = list(replay["ler_holdout_ci"])
-    assert len(original_ci) == len(replay_ci) == 2, "ler_holdout_ci must be length 2"
+    if len(original_ci) != 2 or len(replay_ci) != 2:
+        raise ValueError("ler_holdout_ci must be length 2")
     for idx, (expected, actual) in enumerate(zip(original_ci, replay_ci, strict=True)):
-        assert abs(float(expected) - float(actual)) <= float_tol, f"ler_holdout_ci[{idx}] drift exceeds tolerance"
+        if abs(float(expected) - float(actual)) > float_tol:
+            raise ValueError(f"ler_holdout_ci[{idx}] drift exceeds tolerance")
 
 
 def _write_no_network_sitecustomize(guard_root: Path) -> Path:

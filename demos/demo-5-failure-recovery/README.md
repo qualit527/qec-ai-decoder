@@ -24,7 +24,8 @@ bash demos/demo-5-failure-recovery/run.sh
 # Diagnose a specific round
 python -m cli.autoqec diagnose runs/demo-5/round_0
 
-# Skill-layer walkthrough
+# Optional skill-layer walkthrough command
+# The demo script prints this suggestion but does not invoke an LLM skill.
 /diagnose-failure runs/demo-5/round_0
 
 # Diagnose a run directory (auto-selects latest round, round_2)
@@ -39,7 +40,7 @@ python -m cli.autoqec diagnose runs/demo-5
 - [x] CLI `diagnose` outputs structured JSON with path, root_cause, signals, and artifact flags
 - [x] CLI `diagnose` identifies the latest round when passed a run directory
 - [x] CLI `diagnose` handles direct round-dir input
-- [x] `/diagnose-failure` skill contract is exercised against the synthetic run, and `diagnosis.md` is written per round with root cause, evidence citations, and patched YAML
+- [x] `run.sh` prints the `/diagnose-failure` skill command for manual follow-up and writes `diagnosis.md` per round with root cause, evidence citations, and patched YAML via the local generator
 - [x] Walkthrough states the system does not apply fixes automatically
 - [x] Covers three failure modes: compile error, NaN loss, OOM
 
