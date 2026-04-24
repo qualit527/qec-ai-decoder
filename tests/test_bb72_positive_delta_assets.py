@@ -50,3 +50,23 @@ def test_positive_delta_readme_states_scope_and_reproduction_command() -> None:
     assert "python experiments/bb72-positive-delta/run.py" in readme
     assert "runs/YYYYMMDDTHHMMSSZ-bb72-positive-delta/" in readme
     assert "surface_d5 + mwpm + soft_priors" in readme
+
+
+def test_positive_delta_expected_summary_schema() -> None:
+    import json
+
+    summary_path = REPO_ROOT / "experiments/bb72-positive-delta/expected_output/summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    assert summary["claim"] == "benchmark evidence, not a VERIFIED holdout claim"
+    assert summary["has_positive_delta"] is True
+    assert summary["best_delta_ler"] > 0
+    assert summary["improvement_vs_round_1"] > 0
+    assert summary["best_round"] in {2, 3}
+    assert len(summary["rounds"]) == 3
+    for row in summary["rounds"]:
+        assert row["status"] == "ok"
+        assert "delta_ler" in row
+        assert "best_delta_ler_so_far" in row
+        assert "ler_plain_classical" in row
+        assert "ler_predecoder" in row
