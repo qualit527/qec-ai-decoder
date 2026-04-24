@@ -1,0 +1,73 @@
+[
+  {
+    "name": "schema_version",
+    "patch": {
+      "schema_version": 2
+    },
+    "expected_error": "unsupported artifact manifest schema_version"
+  },
+  {
+    "name": "missing_packages_section",
+    "patch": {
+      "packages": null
+    },
+    "expected_error": "artifact manifest missing section: packages"
+  },
+  {
+    "name": "missing_commit_sha",
+    "patch": {
+      "repo": {
+        "commit_sha": ""
+      }
+    },
+    "expected_error": "artifact manifest missing repo.commit_sha"
+  },
+  {
+    "name": "missing_env_yaml_sha256",
+    "patch": {
+      "environment": {
+        "env_yaml_sha256": null
+      }
+    },
+    "expected_error": "artifact manifest missing environment.env_yaml_sha256"
+  },
+  {
+    "name": "missing_dsl_config_sha256",
+    "patch": {
+      "round": {
+        "dsl_config_sha256": null
+      }
+    },
+    "expected_error": "artifact manifest missing round.dsl_config_sha256"
+  },
+  {
+    "name": "non_string_command_line_item",
+    "patch": {
+      "round": {
+        "command_line": [
+          "python",
+          1
+        ]
+      }
+    },
+    "expected_error": "artifact manifest round.command_line must be a list of strings"
+  },
+  {
+    "name": "missing_config_yaml_artifact",
+    "patch": {
+      "artifacts": {
+        "config_yaml": ""
+      }
+    },
+    "expected_error": "artifact manifest missing artifacts.config_yaml"
+  },
+  {
+    "name": "unsafe_config_yaml_artifact",
+    "patch": {
+      "artifacts": {
+        "config_yaml": "../config.yaml"
+      }
+    },
+    "expected_error": "artifact manifest artifacts.config_yaml must be a safe relative path"
+  }
+]

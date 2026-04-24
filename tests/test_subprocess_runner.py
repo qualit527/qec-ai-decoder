@@ -19,9 +19,11 @@ import yaml
 
 from autoqec.envs.schema import load_env_yaml
 from autoqec.runner.schema import RunnerConfig
+from tests.fixture_utils import load_json_fixture
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
+ARTIFACT_MANIFEST_CONTRACTS = load_json_fixture("public_api", "artifact_manifest_output_contracts.json")
 
 
 def _init_git_repo(repo_root: Path) -> None:
@@ -375,6 +377,7 @@ def test_subprocess_runner_writes_and_commits_pointer(tmp_path):
 def test_subprocess_runner_writes_artifact_manifest(tmp_path):
     """Worktree rounds should leave a manifest next to metrics.json."""
     from autoqec.orchestration import subprocess_runner
+    contract = ARTIFACT_MANIFEST_CONTRACTS["subprocess_runner_worktree"]
 
     _init_git_repo(tmp_path)
     subprocess.check_call(
@@ -429,6 +432,12 @@ def test_subprocess_runner_writes_artifact_manifest(tmp_path):
     assert manifest["schema_version"] == 1
     assert manifest["repo"]["branch"] == "exp/test/09-manifest"
     assert manifest["repo"]["commit_sha"] == worktree_run_sha
+    for key in contract["required_environment_truthy_fields"]:
+        assert manifest["environment"][key]
+    for key in contract["required_round_truthy_fields"]:
+        assert manifest["round"][key]
+    assert manifest["round"]["command_line"] == contract["expected_round"]["command_line"]
+    assert manifest["artifacts"] == contract["expected_artifacts"]
     assert manifest["environment"]["env_yaml_sha256"]
     assert manifest["round"]["dsl_config_sha256"]
     assert manifest["round"]["command_line"] == [

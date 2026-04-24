@@ -1,0 +1,72 @@
+{
+  "runner_round_success": {
+    "stability": "contract",
+    "expected_environment": {
+      "env_yaml_path": "autoqec/envs/builtin/surface_d5_depol.yaml"
+    },
+    "expected_round": {
+      "round_dir": "round_success",
+      "round": null,
+      "command_line": [
+        "python",
+        "-m",
+        "cli.autoqec",
+        "run",
+        "toy.yaml",
+        "--no-llm"
+      ]
+    },
+    "expected_artifacts": {
+      "config_yaml": "config.yaml",
+      "checkpoint": "checkpoint.pt",
+      "metrics": "metrics.json",
+      "train_log": "train.log"
+    },
+    "required_repo_truthy_fields": [
+      "commit_sha"
+    ],
+    "required_repo_present_fields": [
+      "branch",
+      "dirty"
+    ],
+    "required_environment_truthy_fields": [
+      "env_yaml_sha256"
+    ],
+    "required_round_truthy_fields": [
+      "dsl_config_sha256"
+    ],
+    "required_package_truthy_fields": [
+      "python"
+    ],
+    "required_package_present_fields": [
+      "torch",
+      "cuda",
+      "stim",
+      "pymatching",
+      "ldpc"
+    ]
+  },
+  "subprocess_runner_worktree": {
+    "stability": "contract",
+    "expected_round": {
+      "command_line": [
+        "python",
+        "-m",
+        "cli.autoqec",
+        "run-round-internal"
+      ]
+    },
+    "expected_artifacts": {
+      "config_yaml": "config.yaml",
+      "checkpoint": "checkpoint.pt",
+      "metrics": "metrics.json",
+      "train_log": "train.log"
+    },
+    "required_environment_truthy_fields": [
+      "env_yaml_sha256"
+    ],
+    "required_round_truthy_fields": [
+      "dsl_config_sha256"
+    ]
+  }
+}

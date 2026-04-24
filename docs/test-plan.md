@@ -52,3 +52,15 @@ only reproduce in a full round execution path.
 - `Makefile` exposes `test-integration` as the canonical command
 - `README.md` points contributors here for integration guidance
 - `AGENTS.md` points coding agents here for the same contract
+
+## JSON fixture contracts
+
+Reusable JSON fixtures for public API verification live under
+`tests/fixtures/public_api/`.
+
+- `manifest.json` labels each fixture as either `contract` or `smoke`
+- `contract` fixtures pin stable schema/artifact interfaces
+- `smoke` fixtures pin discoverability-oriented CLI expectations without
+  freezing whole outputs
+- Keep fixtures small and human-reviewable, and wire each new fixture into
+  at least one consuming test in the same change

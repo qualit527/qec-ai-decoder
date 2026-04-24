@@ -1,0 +1,119 @@
+{
+  "SeedPolicy": [
+    "train",
+    "val",
+    "holdout"
+  ],
+  "NoiseSpec": [
+    "type",
+    "p",
+    "seed_policy"
+  ],
+  "CodeSpec": [
+    "type",
+    "source"
+  ],
+  "ConstraintsSpec": [
+    "latency_flops_budget",
+    "param_budget",
+    "target_ler",
+    "target_p"
+  ],
+  "EvalProtocol": [
+    "min_shots_train",
+    "min_shots_val",
+    "min_shots_verify",
+    "bootstrap_ci",
+    "osd_orders_reported",
+    "x_z_decoding"
+  ],
+  "EnvSpec": [
+    "name",
+    "code",
+    "noise",
+    "constraints",
+    "baseline_decoders",
+    "classical_backend",
+    "eval_protocol"
+  ],
+  "RunnerConfig": [
+    "env_name",
+    "predecoder_config",
+    "training_profile",
+    "seed",
+    "round_dir",
+    "code_cwd",
+    "branch",
+    "fork_from",
+    "fork_from_canonical",
+    "fork_from_ordered",
+    "compose_mode",
+    "round_attempt_id",
+    "commit_message",
+    "env_yaml_path",
+    "invocation_argv"
+  ],
+  "RoundMetrics": [
+    "status",
+    "status_reason",
+    "ler_plain_classical",
+    "ler_predecoder",
+    "delta_ler",
+    "delta_ler_ci_low",
+    "delta_ler_ci_high",
+    "flops_per_syndrome",
+    "n_params",
+    "train_wallclock_s",
+    "eval_wallclock_s",
+    "vram_peak_gb",
+    "checkpoint_path",
+    "training_log_path",
+    "round_attempt_id",
+    "reconcile_id",
+    "branch",
+    "commit_sha",
+    "fork_from",
+    "fork_from_canonical",
+    "fork_from_ordered",
+    "compose_mode",
+    "delta_vs_parent",
+    "parent_ler",
+    "conflicting_files",
+    "train_seed"
+  ],
+  "VerifyReport": [
+    "verdict",
+    "ler_holdout",
+    "ler_holdout_ci",
+    "delta_ler_holdout",
+    "ler_shuffled",
+    "ablation_sanity_ok",
+    "holdout_seeds_used",
+    "seed_leakage_check_ok",
+    "notes",
+    "branch",
+    "commit_sha",
+    "delta_vs_baseline_holdout",
+    "paired_eval_bundle_id"
+  ],
+  "IdeatorResponse": [
+    "hypothesis",
+    "expected_delta_ler",
+    "expected_cost_s",
+    "rationale",
+    "dsl_hint",
+    "fork_from",
+    "compose_mode"
+  ],
+  "CoderResponse": [
+    "tier",
+    "dsl_config",
+    "rationale",
+    "commit_message"
+  ],
+  "AnalystResponse": [
+    "summary_1line",
+    "verdict",
+    "next_hypothesis_seed"
+  ]
+}
