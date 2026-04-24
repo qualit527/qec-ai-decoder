@@ -242,9 +242,13 @@ def run_round_in_subprocess(
     try:
         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
         # Static child command only; all dynamic values go through validated env vars.
+        # ``sys.executable`` is passed un-resolved: ``Path.resolve()`` follows the
+        # venv's ``bin/python`` symlink back to the system interpreter, dropping
+        # the child out of the venv's site-packages (Linux/macOS venvs use
+        # symlinks). Keep the symlink so the child inherits the parent's venv.
         proc = subprocess.run(
             child_argv,
-            executable=str(Path(sys.executable).resolve()),
+            executable=sys.executable,
             cwd=code_cwd,
             env=child_env,
             shell=False,

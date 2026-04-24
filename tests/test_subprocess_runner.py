@@ -222,11 +222,71 @@ def test_subprocess_runner_uses_shell_false_and_resolved_cwd(tmp_path):
     assert captured["argv"] == ["python", "-m", "cli.autoqec", "run-round-internal"]
     assert captured["kwargs"]["shell"] is False
     assert captured["kwargs"]["cwd"] == str(tmp_path.resolve())
-    assert captured["kwargs"]["executable"] == str(Path(sys.executable).resolve())
+    # Must be sys.executable verbatim — resolving the symlink drops the child
+    # out of the parent's venv on Linux/macOS (PR #45 review, tengxianglin).
+    assert captured["kwargs"]["executable"] == sys.executable
     child_env = captured["kwargs"]["env"]
     assert child_env["AUTOQEC_CHILD_ROUND_DIR"] == str((tmp_path / "round_1").resolve())
     assert child_env["AUTOQEC_CHILD_BRANCH"] == "exp/foo/01-bar"
     assert child_env["AUTOQEC_CHILD_ROUND_ATTEMPT_ID"] == "u1"
+
+
+def test_subprocess_runner_preserves_venv_symlink(tmp_path, monkeypatch):
+    """Regression: PR #45 review (tengxianglin).
+
+    On Linux/macOS a venv's ``bin/python`` is a symlink into the system
+    interpreter. If ``subprocess_runner`` resolves that symlink before
+    spawning the child, the child starts from the system interpreter and
+    cannot import venv-only packages (``click``, ``torch``, ...). The fix
+    is to pass ``sys.executable`` verbatim so the child inherits the venv.
+
+    This test simulates the symlink by monkey-patching ``sys.executable``
+    to a path whose ``Path.resolve()`` gives a different value, then
+    asserts the subprocess call receives the un-resolved path.
+    """
+    from autoqec.orchestration import subprocess_runner
+
+    fake_venv = tmp_path / "venv_symlink_python"
+    # Point fake_venv at a real file so os.access sanity checks don't fail.
+    fake_venv.write_text("#!/usr/bin/env python\n")
+    monkeypatch.setattr(subprocess_runner.sys, "executable", str(fake_venv))
+
+    captured: dict = {}
+
+    class _FakeChild:
+        returncode = 0
+        stdout = '{"status": "ok", "commit_sha": "abc", "round_attempt_id": "u1"}'
+        stderr = ""
+
+    class _FakeGit:
+        returncode = 0
+        stdout = "deadbeef\n"
+        stderr = ""
+
+    def _fake_run(argv, **kwargs):
+        if "run-round-internal" in argv:
+            captured["executable"] = kwargs.get("executable")
+            return _FakeChild()
+        return _FakeGit()
+
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    cfg = RunnerConfig(
+        env_name=env.name,
+        predecoder_config={"type": "gnn", "output_mode": "soft_priors"},
+        training_profile="dev",
+        seed=0,
+        round_dir=str(tmp_path / "round_1"),
+        code_cwd=str(tmp_path),
+        branch="exp/foo/01-bar",
+    )
+
+    with patch.object(subprocess_runner.subprocess, "run", side_effect=_fake_run):
+        subprocess_runner.run_round_in_subprocess(cfg, env, round_attempt_id="u1")
+
+    assert captured["executable"] == str(fake_venv), (
+        "subprocess_runner must pass sys.executable verbatim — resolving the "
+        "venv's bin/python symlink drops the child out of the venv."
+    )
 
 
 # ─── M2: round_N_pointer.json writer ─────────────────────────────────────
