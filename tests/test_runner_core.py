@@ -39,6 +39,18 @@ class FakeNaNModel(nn.Module):
         return torch.full((batch, self.output_width), float("nan"), device=syndrome.device)
 
 
+class FakeNoGradModel(nn.Module):
+    def __init__(self, output_mode: str, output_width: int):
+        super().__init__()
+        self.output_mode = output_mode
+        self.output_width = output_width
+        self.weight = nn.Parameter(torch.tensor(0.0))
+
+    def forward(self, syndrome: torch.Tensor, ctx: dict) -> torch.Tensor:
+        batch = syndrome.shape[0]
+        return torch.zeros((batch, self.output_width), device=syndrome.device)
+
+
 def _parity_artifacts(n_var: int = 5, n_check: int = 3) -> CodeArtifacts:
     parity = np.zeros((n_check, n_var), dtype=np.uint8)
     edge_index = torch.tensor([[0, 1, 2], [0, 1, 2]], dtype=torch.long)
@@ -264,6 +276,36 @@ def test_run_round_returns_nan_rate_kill(monkeypatch, tmp_path) -> None:
     )
     assert metrics.status == "killed_by_safety"
     assert "NaN rate" in (metrics.status_reason or "")
+
+
+def test_run_round_converts_training_exceptions_into_train_error(monkeypatch, tmp_path) -> None:
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    cfg = RunnerConfig(
+        env_name=env.name,
+        predecoder_config={
+            "type": "gnn",
+            "output_mode": "soft_priors",
+            "training": {"learning_rate": 1e-3, "batch_size": 1, "epochs": 1},
+        },
+        training_profile="dev",
+        seed=0,
+        round_dir=str(tmp_path / "round_1"),
+    )
+    monkeypatch.setattr(runner, "load_code_artifacts", lambda _env: _stim_artifacts())
+    monkeypatch.setattr(runner, "compile_predecoder", lambda *_args, **_kwargs: FakeNoGradModel("soft_priors", 5))
+    monkeypatch.setattr(
+        runner,
+        "sample_syndromes",
+        lambda *_args, **_kwargs: (
+            torch.zeros((2, 3), dtype=torch.float32),
+            torch.zeros((2, 5), dtype=torch.float32),
+        ),
+    )
+    monkeypatch.setattr(runner.torch.cuda, "is_available", lambda: False)
+
+    metrics = runner.run_round(cfg, env, safety=RunnerSafety(VRAM_PRE_CHECK=False))
+    assert metrics.status == "train_error"
+    assert "does not require grad" in (metrics.status_reason or "")
 
 
 def test_run_round_success_soft_priors_parity_path(monkeypatch, tmp_path) -> None:

@@ -139,149 +139,160 @@ def run_round(
                 ),
             )
 
-    model = model.to(device)
-    train_syndrome, train_target = sample_syndromes(
-        env_spec,
-        artifacts,
-        env_spec.noise.seed_policy.train,
-        profile["n_shots_train"],
-    )
-    train_syndrome = train_syndrome.to(device)
-    train_target = train_target.to(device)
-
-    ctx = {
-        "edge_index": artifacts.edge_index.to(device),
-        "n_var": artifacts.n_var,
-        "n_check": artifacts.n_check,
-        "prior_p": artifacts.prior_p.to(device),
-    }
-    if artifacts.parity_check_matrix is not None:
-        ctx["parity_check_matrix"] = torch.from_numpy(artifacts.parity_check_matrix).to(device)
-
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=float(config.predecoder_config["training"]["learning_rate"]),
-    )
-    batch_size = int(config.predecoder_config["training"]["batch_size"])
-    epochs = min(int(config.predecoder_config["training"]["epochs"]), profile["epochs_cap"])
-    losses: list[float] = []
-
     train_start = time.time()
-    for _ in range(epochs):
-        for start in range(0, train_syndrome.shape[0], batch_size):
-            if time.time() - train_start > safety.WALL_CLOCK_HARD_CUTOFF_S:
-                return _write_metrics(
-                    round_dir,
-                    RoundMetrics(
-                        status="killed_by_safety",
-                        status_reason="wall_clock_cutoff during training",
-                        n_params=n_params,
-                        train_wallclock_s=time.time() - train_start,
-                    ),
-                )
-            batch_syndrome = train_syndrome[start : start + batch_size]
-            if artifacts.code_type == "stim_circuit":
-                target = batch_syndrome
-            elif model.output_mode == "soft_priors":
-                target = train_target[start : start + batch_size].float()
-            else:
-                target = batch_syndrome
+    try:
+        model = model.to(device)
+        train_syndrome, train_target = sample_syndromes(
+            env_spec,
+            artifacts,
+            env_spec.noise.seed_policy.train,
+            profile["n_shots_train"],
+        )
+        train_syndrome = train_syndrome.to(device)
+        train_target = train_target.to(device)
 
-            pred = model(batch_syndrome, ctx)
-            if model.output_mode == "soft_priors":
-                pred_slice = pred[:, : target.shape[1]].clamp(1e-5, 1 - 1e-5)
-                loss = F.binary_cross_entropy(pred_slice, target.float())
-            else:
-                loss = F.mse_loss(pred.float(), target.float())
+        ctx = {
+            "edge_index": artifacts.edge_index.to(device),
+            "n_var": artifacts.n_var,
+            "n_check": artifacts.n_check,
+            "prior_p": artifacts.prior_p.to(device),
+        }
+        if artifacts.parity_check_matrix is not None:
+            ctx["parity_check_matrix"] = torch.from_numpy(artifacts.parity_check_matrix).to(device)
 
-            if not torch.isfinite(loss):
-                losses.append(float("nan"))
-                if nan_rate(losses) > safety.MAX_NAN_RATE:
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=float(config.predecoder_config["training"]["learning_rate"]),
+        )
+        batch_size = int(config.predecoder_config["training"]["batch_size"])
+        epochs = min(int(config.predecoder_config["training"]["epochs"]), profile["epochs_cap"])
+        losses: list[float] = []
+
+        for _ in range(epochs):
+            for start in range(0, train_syndrome.shape[0], batch_size):
+                if time.time() - train_start > safety.WALL_CLOCK_HARD_CUTOFF_S:
                     return _write_metrics(
                         round_dir,
                         RoundMetrics(
                             status="killed_by_safety",
-                            status_reason=f"NaN rate {nan_rate(losses):.3f}",
+                            status_reason="wall_clock_cutoff during training",
                             n_params=n_params,
                             train_wallclock_s=time.time() - train_start,
                         ),
                     )
-                continue
+                batch_syndrome = train_syndrome[start : start + batch_size]
+                if artifacts.code_type == "stim_circuit":
+                    target = batch_syndrome
+                elif model.output_mode == "soft_priors":
+                    target = train_target[start : start + batch_size].float()
+                else:
+                    target = batch_syndrome
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            losses.append(float(loss.detach().cpu()))
+                pred = model(batch_syndrome, ctx)
+                if model.output_mode == "soft_priors":
+                    pred_slice = pred[:, : target.shape[1]].clamp(1e-5, 1 - 1e-5)
+                    loss = F.binary_cross_entropy(pred_slice, target.float())
+                else:
+                    loss = F.mse_loss(pred.float(), target.float())
 
-    train_wallclock = time.time() - train_start
-    train_log.write_text(
-        "\n".join(f"{idx}\t{loss:.6g}" for idx, loss in enumerate(losses)),
-        encoding="utf-8",
-    )
+                if not torch.isfinite(loss):
+                    losses.append(float("nan"))
+                    if nan_rate(losses) > safety.MAX_NAN_RATE:
+                        return _write_metrics(
+                            round_dir,
+                            RoundMetrics(
+                                status="killed_by_safety",
+                                status_reason=f"NaN rate {nan_rate(losses):.3f}",
+                                n_params=n_params,
+                                train_wallclock_s=time.time() - train_start,
+                            ),
+                        )
+                    continue
 
-    eval_start = time.time()
-    val_syndrome, val_target = sample_syndromes(
-        env_spec,
-        artifacts,
-        env_spec.noise.seed_policy.val,
-        profile["n_shots_val"],
-    )
-    syndrome_np = val_syndrome.numpy()
-    target_np = val_target.numpy()
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                losses.append(float(loss.detach().cpu()))
 
-    if env_spec.classical_backend == "mwpm":
-        baseline = PymatchingBaseline.from_circuit(artifacts.code_artifact)  # type: ignore[arg-type]
-        plain_pred = baseline.decode_batch(syndrome_np.astype(bool))
-    else:
-        uniform = np.full((syndrome_np.shape[0], artifacts.n_var), float(env_spec.noise.p[0]))
-        plain_pred = decode_with_predecoder(
-            uniform,
+        train_wallclock = time.time() - train_start
+        train_log.write_text(
+            "\n".join(f"{idx}\t{loss:.6g}" for idx, loss in enumerate(losses)),
+            encoding="utf-8",
+        )
+
+        eval_start = time.time()
+        val_syndrome, val_target = sample_syndromes(
+            env_spec,
+            artifacts,
+            env_spec.noise.seed_policy.val,
+            profile["n_shots_val"],
+        )
+        syndrome_np = val_syndrome.numpy()
+        target_np = val_target.numpy()
+
+        if env_spec.classical_backend == "mwpm":
+            baseline = PymatchingBaseline.from_circuit(artifacts.code_artifact)  # type: ignore[arg-type]
+            plain_pred = baseline.decode_batch(syndrome_np.astype(bool))
+        else:
+            uniform = np.full((syndrome_np.shape[0], artifacts.n_var), float(env_spec.noise.p[0]))
+            plain_pred = decode_with_predecoder(
+                uniform,
+                env_spec,
+                syndrome_np,
+                artifacts.code_artifact,
+                "soft_priors",
+            )
+        ler_plain = _failure_rate(env_spec, plain_pred, target_np)
+
+        model.eval()
+        with torch.no_grad():
+            pred_out = model(val_syndrome.to(device), ctx).cpu().numpy()
+        pred_labels = decode_with_predecoder(
+            pred_out,
             env_spec,
             syndrome_np,
             artifacts.code_artifact,
-            "soft_priors",
+            model.output_mode,
         )
-    ler_plain = _failure_rate(env_spec, plain_pred, target_np)
+        ler_predecoder = _failure_rate(env_spec, pred_labels, target_np)
+        delta_ler = ler_plain - ler_predecoder
 
-    model.eval()
-    with torch.no_grad():
-        pred_out = model(val_syndrome.to(device), ctx).cpu().numpy()
-    pred_labels = decode_with_predecoder(
-        pred_out,
-        env_spec,
-        syndrome_np,
-        artifacts.code_artifact,
-        model.output_mode,
-    )
-    ler_predecoder = _failure_rate(env_spec, pred_labels, target_np)
-    delta_ler = ler_plain - ler_predecoder
+        try:
+            flops = estimate_flops(model, (val_syndrome[:1].to(device), ctx))
+        except Exception:
+            flops = 2 * n_params
 
-    try:
-        flops = estimate_flops(model, (val_syndrome[:1].to(device), ctx))
-    except Exception:
-        flops = 2 * n_params
-
-    checkpoint_path = round_dir / "checkpoint.pt"
-    torch.save(
-        {
-            "class_name": type(model).__name__,
-            "state_dict": model.cpu().state_dict(),
-            "output_mode": model.output_mode,
-            "dsl_config": config.predecoder_config,
-        },
-        checkpoint_path,
-    )
-    metrics = RoundMetrics(
-        status="ok",
-        ler_plain_classical=ler_plain,
-        ler_predecoder=ler_predecoder,
-        delta_ler=delta_ler,
-        flops_per_syndrome=int(flops),
-        n_params=n_params,
-        train_wallclock_s=train_wallclock,
-        eval_wallclock_s=time.time() - eval_start,
-        vram_peak_gb=float(torch.cuda.max_memory_allocated() / 1e9) if torch.cuda.is_available() else 0.0,
-        checkpoint_path=str(checkpoint_path),
-        training_log_path=str(train_log),
-    )
-    return _finalize_success(round_dir, metrics, config=config)
+        checkpoint_path = round_dir / "checkpoint.pt"
+        torch.save(
+            {
+                "class_name": type(model).__name__,
+                "state_dict": model.cpu().state_dict(),
+                "output_mode": model.output_mode,
+                "dsl_config": config.predecoder_config,
+            },
+            checkpoint_path,
+        )
+        metrics = RoundMetrics(
+            status="ok",
+            ler_plain_classical=ler_plain,
+            ler_predecoder=ler_predecoder,
+            delta_ler=delta_ler,
+            flops_per_syndrome=int(flops),
+            n_params=n_params,
+            train_wallclock_s=train_wallclock,
+            eval_wallclock_s=time.time() - eval_start,
+            vram_peak_gb=float(torch.cuda.max_memory_allocated() / 1e9) if torch.cuda.is_available() else 0.0,
+            checkpoint_path=str(checkpoint_path),
+            training_log_path=str(train_log),
+        )
+        return _finalize_success(round_dir, metrics, config=config)
+    except Exception as exc:
+        return _write_metrics(
+            round_dir,
+            RoundMetrics(
+                status="train_error",
+                status_reason=str(exc),
+                n_params=n_params,
+                train_wallclock_s=max(0.0, time.time() - train_start),
+            ),
+        )
