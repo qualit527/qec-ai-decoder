@@ -1,0 +1,25 @@
+{
+  "run_dir": "runs/20260424-152254",
+  "command": "AUTOQEC_IDEATOR_BACKEND=github-models AUTOQEC_IDEATOR_MODEL=openai/gpt-4.1-mini AUTOQEC_CODER_BACKEND=github-models AUTOQEC_CODER_MODEL=openai/gpt-4.1-mini AUTOQEC_ANALYST_BACKEND=github-models AUTOQEC_ANALYST_MODEL=openai/gpt-4.1-mini python -m cli.autoqec run autoqec/envs/builtin/surface_d5_depol.yaml --rounds 3 --profile dev",
+  "backend_matrix": {
+    "ideator": {
+      "backend": "github-models",
+      "model": "openai/gpt-4.1-mini"
+    },
+    "coder": {
+      "backend": "github-models",
+      "model": "openai/gpt-4.1-mini"
+    },
+    "analyst": {
+      "backend": "github-models",
+      "model": "openai/gpt-4.1-mini"
+    }
+  },
+  "torch": {
+    "torch_version": "2.6.0+cu124",
+    "cuda_version": "12.4",
+    "cuda_available": true,
+    "device_count": 2,
+    "device_name_0": "NVIDIA GeForce RTX 4090"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "source_run_dir": "runs/20260424-152254",
+  "source_round": 3,
+  "source_config": "demos/demo-1-surface-d5/expected_output/live_llm_gpu_round3/round_3_config.yaml",
+  "gpu": {
+    "train_wallclock_s": 1.161912202835083,
+    "eval_wallclock_s": 0.20115923881530762,
+    "vram_peak_gb": 3.748271104,
+    "flops_per_syndrome": 724148544,
+    "n_params": 253377
+  },
+  "cpu": {
+    "train_wallclock_s": 29.410439491271973,
+    "eval_wallclock_s": 0.6929316520690918,
+    "vram_peak_gb": 0.0,
+    "flops_per_syndrome": 724148544,
+    "n_params": 253377
+  },
+  "train_speedup_x": 25.312101395880052
+}

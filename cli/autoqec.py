@@ -533,9 +533,16 @@ def run_round_internal_cmd() -> None:
 @click.option("--rounds", type=int, default=10)
 @click.option("--profile", type=click.Choice(["dev", "prod"]), default="dev")
 @click.option("--no-llm", is_flag=True, help="Pick random seed templates instead of calling subagents")
-def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
+@click.option(
+    "--template-name",
+    default=None,
+    help="Pinned bundled template name for --no-llm runs (for reproducible demo snapshots)",
+)
+def run(env_yaml: str, rounds: int, profile: str, no_llm: bool, template_name: str | None) -> None:
     env = load_env_yaml(env_yaml)
     if not no_llm:
+        if template_name is not None:
+            raise click.ClickException("--template-name is only supported together with --no-llm")
         # live LLM path — P0.1
         from autoqec.orchestration.llm_loop import run_llm_loop
         run_dir = run_llm_loop(
@@ -565,12 +572,19 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
         candidates = templates
         if profile == "dev":
             candidates = [item for item in templates if item[0] in dev_safe_templates]
+        if template_name is not None:
+            candidates = [item for item in candidates if item[0] == template_name]
         if not candidates:
+            if template_name is not None:
+                raise click.ClickException(
+                    f"Template {template_name!r} is not available for profile={profile!r}. "
+                    "Pick one of the bundled demo templates exposed by load_example_templates()."
+                )
             raise click.ClickException(
                 f"No bundled templates are available for profile={profile!r}. "
                 "This install is missing the expected demo template assets."
             )
-        _, cfg_dict = random.choice(candidates)
+        selected_name, cfg_dict = random.choice(candidates)
         cfg = RunnerConfig(
             env_name=env.name,
             predecoder_config=cfg_dict,
@@ -587,7 +601,9 @@ def run(env_yaml: str, rounds: int, profile: str, no_llm: bool) -> None:
         mem.append_round(record)
         mem.update_pareto(_candidate_pareto(history))
         refresh_fork_graph(mem)
-        click.echo(f"Round {round_idx}: {metrics.status} Δ={metrics.delta_ler}")
+        click.echo(
+            f"Round {round_idx}: {metrics.status} Δ={metrics.delta_ler} template={selected_name}"
+        )
     (run_dir / "history.json").write_text(
         json.dumps(history, indent=2),
         encoding="utf-8",

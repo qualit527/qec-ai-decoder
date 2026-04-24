@@ -17,8 +17,25 @@ def _stub_ideator(round_idx):
 def _stub_coder(round_idx):
     return {
         "dsl_config": {
-            "type": "gnn", "output_mode": "soft_priors",
-            "hidden_dim": 4, "n_layers": 1,
+            "type": "gnn",
+            "output_mode": "soft_priors",
+            "gnn": {
+                "layers": 1,
+                "hidden_dim": 16,
+                "message_fn": "mlp",
+                "aggregation": "sum",
+                "normalization": "layer",
+                "residual": False,
+                "edge_features": ["syndrome_bit"],
+            },
+            "head": "linear",
+            "training": {
+                "learning_rate": 1e-3,
+                "batch_size": 64,
+                "epochs": 3,
+                "loss": "bce",
+                "profile": "dev",
+            },
         },
         "tier": "1",
         "rationale": "small gnn",
@@ -117,3 +134,191 @@ def test_run_llm_loop_rejects_compose_rounds_until_p11(tmp_path, monkeypatch):
     with patch("autoqec.orchestration.llm_loop.invoke_subagent", side_effect=fake_invoke):
         with pytest.raises(NotImplementedError, match="compose"):
             run_llm_loop(env=env, rounds=1, profile="dev")
+
+
+def test_run_llm_loop_retries_coder_when_dsl_validation_fails(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    from autoqec.envs.schema import load_env_yaml
+    import pathlib
+
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    env = load_env_yaml(repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml")
+
+    stub_metrics = MagicMock(
+        status="ok",
+        delta_ler=0.0,
+        model_dump=MagicMock(return_value={"status": "ok", "delta_ler": 0.0}),
+    )
+    stub_report = MagicMock(
+        verdict="FAILED",
+        model_dump=MagicMock(return_value={"verdict": "FAILED"}),
+    )
+
+    coder_prompts = []
+
+    def fake_invoke(role, prompt, timeout=300.0):
+        if role == "ideator":
+            return _stub_ideator(1)
+        if role == "coder":
+            coder_prompts.append(prompt)
+            if len(coder_prompts) == 1:
+                return {
+                    "dsl_config": {
+                        "type": "gnn",
+                        "output_mode": "logits",
+                        "gnn": {"layers": 1, "message_fn": "mlp", "aggregation": "sum"},
+                        "head": "linear",
+                        "training": {"epochs": 3, "batch_size": 64},
+                    },
+                    "tier": "1",
+                    "rationale": "invalid first draft",
+                    "commit_message": "feat(round): invalid draft",
+                }
+            return {
+                "dsl_config": {
+                    "type": "gnn",
+                    "output_mode": "soft_priors",
+                    "gnn": {
+                        "layers": 1,
+                        "hidden_dim": 16,
+                        "message_fn": "mlp",
+                        "aggregation": "sum",
+                        "normalization": "layer",
+                        "residual": False,
+                        "edge_features": ["syndrome_bit"],
+                    },
+                    "head": "linear",
+                    "training": {
+                        "learning_rate": 1e-3,
+                        "batch_size": 64,
+                        "epochs": 3,
+                        "loss": "bce",
+                        "profile": "dev",
+                    },
+                },
+                "tier": "1",
+                "rationale": "fixed schema",
+                "commit_message": "feat(round): fixed draft",
+            }
+        return _stub_analyst(1)
+
+    captured_configs = []
+
+    def fake_run_round(cfg, env):
+        captured_configs.append(cfg)
+        return stub_metrics
+
+    with patch("autoqec.orchestration.llm_loop.invoke_subagent", side_effect=fake_invoke), \
+         patch("autoqec.orchestration.llm_loop.run_round", side_effect=fake_run_round), \
+         patch("autoqec.orchestration.llm_loop.independent_verify", return_value=stub_report):
+        run_llm_loop(
+            env=env,
+            rounds=1,
+            profile="dev",
+            env_yaml_path=repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml",
+        )
+
+    assert len(coder_prompts) == 2
+    assert "PredecoderDSL validation failed" in coder_prompts[1]
+    assert captured_configs[0].predecoder_config["output_mode"] == "soft_priors"
+
+
+def test_run_llm_loop_retries_coder_when_output_mode_is_not_trainable(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    from autoqec.envs.schema import load_env_yaml
+    import pathlib
+
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    env = load_env_yaml(repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml")
+
+    stub_metrics = MagicMock(
+        status="ok",
+        delta_ler=0.0,
+        model_dump=MagicMock(return_value={"status": "ok", "delta_ler": 0.0}),
+    )
+    stub_report = MagicMock(
+        verdict="FAILED",
+        model_dump=MagicMock(return_value={"verdict": "FAILED"}),
+    )
+
+    coder_prompts = []
+
+    def fake_invoke(role, prompt, timeout=300.0):
+        if role == "ideator":
+            return _stub_ideator(1)
+        if role == "coder":
+            coder_prompts.append(prompt)
+            if len(coder_prompts) == 1:
+                return {
+                    "dsl_config": {
+                        "type": "gnn",
+                        "output_mode": "hard_flip",
+                        "gnn": {
+                            "layers": 1,
+                            "hidden_dim": 16,
+                            "message_fn": "mlp",
+                            "aggregation": "sum",
+                            "normalization": "layer",
+                            "residual": False,
+                            "edge_features": ["syndrome_bit"],
+                        },
+                        "head": "linear",
+                        "training": {
+                            "learning_rate": 1e-3,
+                            "batch_size": 64,
+                            "epochs": 3,
+                            "loss": "bce",
+                            "profile": "dev",
+                        },
+                    },
+                    "tier": "1",
+                    "rationale": "non-trainable first draft",
+                    "commit_message": "feat(round): hard flip draft",
+                }
+            return {
+                "dsl_config": {
+                    "type": "gnn",
+                    "output_mode": "soft_priors",
+                    "gnn": {
+                        "layers": 1,
+                        "hidden_dim": 16,
+                        "message_fn": "mlp",
+                        "aggregation": "sum",
+                        "normalization": "layer",
+                        "residual": False,
+                        "edge_features": ["syndrome_bit"],
+                    },
+                    "head": "linear",
+                    "training": {
+                        "learning_rate": 1e-3,
+                        "batch_size": 64,
+                        "epochs": 3,
+                        "loss": "bce",
+                        "profile": "dev",
+                    },
+                },
+                "tier": "1",
+                "rationale": "fixed trainable draft",
+                "commit_message": "feat(round): soft priors draft",
+            }
+        return _stub_analyst(1)
+
+    captured_configs = []
+
+    def fake_run_round(cfg, env):
+        captured_configs.append(cfg)
+        return stub_metrics
+
+    with patch("autoqec.orchestration.llm_loop.invoke_subagent", side_effect=fake_invoke), \
+         patch("autoqec.orchestration.llm_loop.run_round", side_effect=fake_run_round), \
+         patch("autoqec.orchestration.llm_loop.independent_verify", return_value=stub_report):
+        run_llm_loop(
+            env=env,
+            rounds=1,
+            profile="dev",
+            env_yaml_path=repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml",
+        )
+
+    assert len(coder_prompts) == 2
+    assert "must use output_mode=soft_priors" in coder_prompts[1]
+    assert captured_configs[0].predecoder_config["output_mode"] == "soft_priors"
