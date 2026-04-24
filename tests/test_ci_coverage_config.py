@@ -33,6 +33,8 @@ def test_pytest_default_selection_is_configured_in_pyproject() -> None:
     pytest_config = PYPROJECT["tool"]["pytest"]["ini_options"]
     assert pytest_config["testpaths"] == ["tests"]
     assert pytest_config["addopts"] == '-m "not integration" -v'
+    assert any(marker.startswith("integration:") for marker in pytest_config["markers"])
+    assert any(marker.startswith("slow:") for marker in pytest_config["markers"])
 
 
 def test_coverage_settings_are_centralized_in_pyproject() -> None:

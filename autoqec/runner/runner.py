@@ -75,13 +75,19 @@ def _write_metrics(round_dir: Path, metrics: RoundMetrics) -> RoundMetrics:
     return metrics
 
 
+def _with_round_attempt_id(metrics: RoundMetrics, config: RunnerConfig) -> RoundMetrics:
+    if config.round_attempt_id is None or metrics.round_attempt_id is not None:
+        return metrics
+    return metrics.model_copy(update={"round_attempt_id": config.round_attempt_id})
+
+
 def _finalize_success(
     round_dir: Path,
     metrics: RoundMetrics,
     *,
     config: RunnerConfig,
 ) -> RoundMetrics:
-    written = _write_metrics(round_dir, metrics)
+    written = _write_metrics(round_dir, _with_round_attempt_id(metrics, config))
     write_artifact_manifest(
         round_dir,
         config=config,
@@ -121,7 +127,10 @@ def run_round(
     except Exception as exc:
         return _write_metrics(
             round_dir,
-            RoundMetrics(status="compile_error", status_reason=str(exc)),
+            _with_round_attempt_id(
+                RoundMetrics(status="compile_error", status_reason=str(exc)),
+                config,
+            ),
         )
 
     n_params = int(sum(parameter.numel() for parameter in model.parameters()))
@@ -138,10 +147,13 @@ def run_round(
         if vram_est > free_gb * 0.9:
             return _write_metrics(
                 round_dir,
-                RoundMetrics(
-                    status="killed_by_safety",
-                    status_reason=f"VRAM estimate {vram_est:.2f} > free {free_gb:.2f}",
-                    n_params=n_params,
+                _with_round_attempt_id(
+                    RoundMetrics(
+                        status="killed_by_safety",
+                        status_reason=f"VRAM estimate {vram_est:.2f} > free {free_gb:.2f}",
+                        n_params=n_params,
+                    ),
+                    config,
                 ),
             )
 
@@ -178,11 +190,14 @@ def run_round(
             if time.time() - train_start > safety.WALL_CLOCK_HARD_CUTOFF_S:
                 return _write_metrics(
                     round_dir,
-                    RoundMetrics(
-                        status="killed_by_safety",
-                        status_reason="wall_clock_cutoff during training",
-                        n_params=n_params,
-                        train_wallclock_s=time.time() - train_start,
+                    _with_round_attempt_id(
+                        RoundMetrics(
+                            status="killed_by_safety",
+                            status_reason="wall_clock_cutoff during training",
+                            n_params=n_params,
+                            train_wallclock_s=time.time() - train_start,
+                        ),
+                        config,
                     ),
                 )
             batch_syndrome = train_syndrome[start : start + batch_size]
@@ -205,11 +220,14 @@ def run_round(
                 if nan_rate(losses) > safety.MAX_NAN_RATE:
                     return _write_metrics(
                         round_dir,
-                        RoundMetrics(
-                            status="killed_by_safety",
-                            status_reason=f"NaN rate {nan_rate(losses):.3f}",
-                            n_params=n_params,
-                            train_wallclock_s=time.time() - train_start,
+                        _with_round_attempt_id(
+                            RoundMetrics(
+                                status="killed_by_safety",
+                                status_reason=f"NaN rate {nan_rate(losses):.3f}",
+                                n_params=n_params,
+                                train_wallclock_s=time.time() - train_start,
+                            ),
+                            config,
                         ),
                     )
                 continue

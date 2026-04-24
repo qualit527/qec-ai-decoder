@@ -1,4 +1,5 @@
-from unittest.mock import patch, MagicMock
+import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -322,3 +323,62 @@ def test_run_llm_loop_retries_coder_when_output_mode_is_not_trainable(tmp_path, 
     assert len(coder_prompts) == 2
     assert "must use output_mode=soft_priors" in coder_prompts[1]
     assert captured_configs[0].predecoder_config["output_mode"] == "soft_priors"
+
+
+def test_run_llm_loop_resume_skips_legacy_completed_round_without_metrics_attempt_id(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    from autoqec.envs.schema import load_env_yaml
+    import pathlib
+
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    env = load_env_yaml(repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml")
+    run_dir = tmp_path / "runs" / "resume-existing"
+    round_1_dir = run_dir / "round_1"
+    round_1_dir.mkdir(parents=True)
+    (run_dir / "history.jsonl").write_text(
+        json.dumps({"round": 1, "round_attempt_id": "legacy-attempt-1"}) + "\n",
+        encoding="utf-8",
+    )
+    (round_1_dir / "metrics.json").write_text(
+        json.dumps({"status": "ok", "delta_ler": 0.001}),
+        encoding="utf-8",
+    )
+
+    stub_metrics = MagicMock(
+        status="compile_error",
+        model_dump=MagicMock(return_value={"status": "compile_error", "status_reason": "stub"}),
+    )
+    executed_rounds = []
+
+    def fake_invoke(role, prompt, timeout=300.0):
+        assert role in {"ideator", "coder"}
+        return {
+            "ideator": _stub_ideator,
+            "coder": _stub_coder,
+        }[role](2)
+
+    def fake_run_round(cfg, env):
+        executed_rounds.append(cfg.seed)
+        return stub_metrics
+
+    with patch("autoqec.orchestration.llm_loop.invoke_subagent", side_effect=fake_invoke), \
+         patch("autoqec.orchestration.llm_loop.run_round", side_effect=fake_run_round):
+        run_llm_loop(
+            env=env,
+            rounds=2,
+            profile="dev",
+            run_dir=run_dir,
+            env_yaml_path=repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml",
+            invocation_argv=["python", "-m", "cli.autoqec", "run", "autoqec/envs/builtin/surface_d5_depol.yaml"],
+        )
+
+    assert executed_rounds == [2]
+    history_rows = [
+        json.loads(line)
+        for line in (run_dir / "history.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [row["round"] for row in history_rows] == [1, 2]
