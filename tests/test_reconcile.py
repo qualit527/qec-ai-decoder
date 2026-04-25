@@ -310,3 +310,45 @@ def test_branch_manually_deleted_is_idempotent(repo_with_run: tuple[Path, Path])
     ]
     deleted_rows = [r for r in rows if r.get("status") == "branch_manually_deleted"]
     assert len(deleted_rows) == 1
+
+
+def test_branch_manually_deleted_is_idempotent_across_restarts(
+    repo_with_run: tuple[Path, Path],
+) -> None:
+    from autoqec.orchestration.reconcile import reconcile_at_startup
+
+    repo, run_dir = repo_with_run
+    original_row = {
+        "status": "ok",
+        "branch": "exp/t/10-deleted-before-restart",
+        "round_attempt_id": "abc-restart-123",
+        "commit_sha": "deadbeef",
+    }
+    (run_dir / "history.jsonl").write_text(
+        json.dumps(original_row) + "\n",
+        encoding="utf-8",
+    )
+
+    first_startup_actions = reconcile_at_startup(repo_root=repo, run_id="t", run_dir=run_dir)
+    rows_after_first_startup = [
+        json.loads(line)
+        for line in (run_dir / "history.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    second_startup_actions = reconcile_at_startup(repo_root=repo, run_id="t", run_dir=run_dir)
+    rows_after_second_startup = [
+        json.loads(line)
+        for line in (run_dir / "history.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert [a for a in first_startup_actions if a["kind"] == "follow_up"] == [
+        {"kind": "follow_up", "branch": "exp/t/10-deleted-before-restart"}
+    ]
+    assert [a for a in second_startup_actions if a["kind"] == "follow_up"] == []
+    assert rows_after_second_startup == rows_after_first_startup
+    deleted_rows = [
+        row for row in rows_after_second_startup if row.get("status") == "branch_manually_deleted"
+    ]
+    assert len(deleted_rows) == 1

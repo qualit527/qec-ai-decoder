@@ -14,10 +14,10 @@ AutoQEC is an LLM-agent-driven auto-research harness for discovering **neural pr
 
 ## ⚡ Review in one prompt
 
-Clone the repo, open a Claude Code / Codex CLI in the project root, and paste the block below verbatim. The agent will install deps, run the four headline demos, and hand back a pass/fail table. Total wall-clock on CPU-only hardware: **~10–15 min** (skip step 0's unit suite if you're in a hurry — ~3 min off).
+Clone the repo, open a Claude Code / Codex CLI in the project root, and paste the block below verbatim. The agent will install deps, run the six headline demos, and hand back a pass/fail table. Total wall-clock on CPU-only hardware: **~15–20 min** (skip step 0's unit suite if you're in a hurry — ~3 min off).
 
 ````text
-Run the 4 demos below in order and report results. All commands run from the
+Run the 6 demos below in order and report results. All commands run from the
 repo root. First create and activate .venv (Windows: `.venv\Scripts\activate`,
 Unix: `source .venv/bin/activate`), then `pip install -e '.[dev]'`. Do NOT
 enter the live-LLM path (nested CLI sessions are unstable). For each step
@@ -43,15 +43,32 @@ criteria. At the end give one markdown summary table.
    the env config uses `classical_backend: osd` (prove the backend actually
    switched away from the surface-code MWPM path).
 
-3. Demo 4 — reward-hacking rejection (~1 min, memorizer must be rejected):
+3. Demo 3 — worktree branches-as-Pareto provenance (~30 s, no LLM):
+   `bash demos/demo-3-worktree-provenance/run.sh`
+   Pass criteria: three `run-round` invocations all exit 0; every
+   `metrics.json` has a non-empty `branch` and a real `commit_sha`; the
+   compose worktree contains both `round_1/round_1_pointer.json` and
+   `round_2/round_2_pointer.json` (proving both parents merged); the
+   deliberate-conflict step yields `status="compose_conflict"` with
+   `conflicting_files` populated.
+
+4. Demo 4 — reward-hacking rejection (~1 min, memorizer must be rejected):
    `bash demos/demo-4-reward-hacking/run.sh`
    Pass criteria: `runs/demo-4/round_0/verification_report.json.verdict` is in
    {SUSPICIOUS, FAILED} — never VERIFIED; script exits 0.
 
-4. Demo 5 — failure root-cause diagnosis (~5 s):
+5. Demo 5 — failure root-cause diagnosis (~5 s):
    `bash demos/demo-5-failure-recovery/run.sh`
    Pass criteria: stdout JSON contains `"status": "compile_error"` and a
    `status_reason` field.
+
+6. Demo 6 — advisor replay / offline reproducibility (~2 min):
+   `bash demos/demo-6-advisor-replay/run.sh`
+   Pass criteria: `cli.autoqec package-run` produces a `runs/<run_id>.tar.gz`
+   archive; `autoqec.tools.advisor_replay` extracts it under
+   `runs/demo-6-replay/` and re-runs `cli.autoqec verify` with all
+   `AUTOQEC_*_BACKEND` env vars unset and sockets blocked; the offline
+   replay verify exits 0.
 
 Summary table columns: demo | cmd | wall-clock | key artifact | pass/fail.
 Rules:
@@ -64,14 +81,16 @@ Rules:
   failed, end with "needs triage: <which step>".
 ````
 
-**What the four demos prove, in plain language:**
+**What the six demos prove, in plain language:**
 
 | Demo | Answer it gives the reviewer |
 |---|---|
 | 1 — `surface_d5` no-LLM smoke | The full round pipeline (DSL → train → eval → Pareto → `fork_graph.json`) actually writes every artifact, with `Δ_LER` reported on the surface-code path. |
 | 2 — `bb72` qLDPC | The same harness swaps MWPM → OSD cleanly; `(code, noise, constraints)` is really the only input knob. |
+| 3 — Worktree provenance | Branches-as-Pareto isn't paperware — every round commits its `round_<N>_pointer.json` into a real `exp/<run_id>/<NN>-<slug>` branch, compose rounds `git merge` two parents end-to-end, and conflict is recorded as `status="compose_conflict"` rather than thrown. |
 | 4 — Reward-hacking detection | A hand-built memorizer cheater gets **rejected** (`SUSPICIOUS` or `FAILED`), never admitted to Pareto — the independent verifier actually guards the front. |
 | 5 — Failure recovery | `cli.autoqec diagnose` takes a broken round dir and emits a machine-readable root cause (`compile_error` + reason), feeding the `/diagnose-failure` skill. |
+| 6 — Advisor replay | A run can be packaged (`cli.autoqec package-run` → `.tar.gz`) and replayed offline in a clean directory with all `AUTOQEC_*_BACKEND` env vars unset and sockets blocked — proving runs are network-free reproducible artifacts, not just local state. |
 
 > The live-LLM research loop (`/autoqec-run`) is intentionally out of the one-prompt flow — nesting Claude-Code-inside-Claude-Code is unstable. See [`docs/verification/human-verification-report-2026-04-24.md`](docs/verification/human-verification-report-2026-04-24.md) for the last end-to-end retest and [`.claude/skills/autoqec-run/SKILL.md`](.claude/skills/autoqec-run/SKILL.md) for the manual path.
 
@@ -86,6 +105,8 @@ Rules:
 - **Knowledge base**: `knowledge/` — 81-paper index + 3 synthesis documents (roadmap, strategic assessment, autoresearch patterns)
 
 ## Architecture at a glance
+
+The classical backend guarantees structural validity; the predecoder contributes `Δ_LER = LER(plain_classical) − LER(predecoder + classical)` — a single clean number per round.
 
 ```
 syndrome + code DEM
@@ -108,15 +129,63 @@ syndrome + code DEM
  logical correction
 ```
 
-The classical backend guarantees structural validity; the predecoder contributes `Δ_LER = LER(plain_classical) − LER(predecoder + classical)` — a single clean number per round.
+Each round is a 3-subagent DAG (+ optional Verifier). Roles are backend-pluggable via `AUTOQEC_{IDEATOR,CODER,ANALYST}_BACKEND`; the Runner is local-only and enforces a tool whitelist (`autoqec/runner/safety.py`) so reward-hacking paths to training-set syndromes are physically blocked.
 
-Per-round isolation and the Pareto-as-branches model are specified in
-[`spec §15`](docs/superpowers/specs/2026-04-20-autoqec-design.md#15-worktree-based-experiment-model).
-Each round runs on its own `exp/<run_id>/<NN>-<slug>` git branch inside a
-`.worktrees/` checkout, Pareto members are the complete non-dominated
-set of VERIFIED branches, and compose rounds test `git merge parent-A
-parent-B` as a first-class scientific probe. Startup reconciliation
-(§15.10) keeps `history.jsonl` and the live branch set in sync.
+```
+ round N dispatch · fork_graph + machine_state
+        ↓
+┌─────────────────────────────────────────┐
+│ Ideator                     (subagent)  │
+│   hypothesis + fork_from + compose_mode │
+└─────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────┐
+│ Coder                       (subagent)  │
+│   DSL config + commit_message           │
+│   Tier-1 canonical · Tier-2 custom_fn   │
+└─────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────┐
+│ Runner                       (script)   │
+│   train + eval → RoundMetrics           │
+└─────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────┐
+│ Analyst                     (subagent)  │
+│   verdict: candidate | ignore           │
+└─────────────────────────────────────────┘
+        ↓   (if candidate)
+┌─────────────────────────────────────────┐
+│ Verifier           (optional subagent)  │
+│   VERIFIED → Pareto admit               │
+│   SUSPICIOUS / FAILED → rejected        │
+└─────────────────────────────────────────┘
+```
+
+Each round runs on its own `exp/<run_id>/<NN>-<slug>` git branch inside a `.worktrees/` checkout, Pareto members are the complete non-dominated set of VERIFIED branches, and compose rounds test `git merge parent-A parent-B` as a first-class scientific probe. Startup reconciliation keeps `history.jsonl` and the live branch set in sync.
+
+```
+ main  (f51cfcf · run_id = demo38-…103750)
+   │
+   ├─ 01-idea-a           ★ Δ=+0.18  ──┐
+   │                                   │
+   ├─ 02-idea-b           ★ Δ=+0.12  ──┤   git merge   (compose_mode = merge)
+   │                                   │
+   ├─ 03-compose-ab       ★ Δ=+0.22  ──┘   dominates both parents
+   │
+   ├─ 04-idea-c           ignore          Analyst: Δ within bootstrap CI
+   │
+   ├─ 90-conflict-L       ◇ compose_conflict · branch=None · sha=None
+   ├─ 91-conflict-R       ◇ compose_conflict · merge refused · no worktree
+   │
+   └─ 07-orphan           ⊘ orphaned_branch  · healed by reconcile
+
+ ★ on non-dominated Pareto    ◇ merge refused    ⊘ orphan recovered on startup
+ each  exp/<run_id>/<NN>-<slug>  ≡ its own  .worktrees/exp-…/  checkout
+ runs/<run_id>/  stores   history.jsonl · pareto.json · fork_graph.json (this tree)
+```
+
+
 
 ## Deliverables
 
@@ -133,28 +202,31 @@ All six are present on `main`; the one-prompt flow above exercises F1–F6 end-t
 | **F5** | Pareto-front maintenance across (Δ_LER, FLOPs, n_params) with verify-admitted candidates | **implemented** | `autoqec/pareto/front.py` + `orchestration/round_recorder.py`; atomic `pareto.json` swap covered by `tests/test_pareto_atomic*.py` |
 | **F6** | Worktree-based experiment model (branches-as-Pareto; compose rounds; startup reconciliation; `fork_graph.json`) | **implemented** | `autoqec/orchestration/{worktree,subprocess_runner,reconcile,fork_graph}.py`; persistence proven by `tests/test_fork_graph_persist.py` |
 
-### 5 Demos (each produces a reproducible artifact)
+### 6 Demos (each produces a reproducible artifact)
 
-Four ship as runnable demos. The `/add-env` demo (D3) stays planned — the CLI subcommand exists (`python -m cli.autoqec add-env …`) but no packaged demo directory yet.
+All six ship as runnable demos. The `/add-env` onboarding flow stays a CLI-only subcommand for now (`python -m cli.autoqec add-env …`) and is tracked under Skills below rather than as a demo.
 
 | # | Demo | Proves | Priority | Status |
 |---|---|---|---|---|
 | **D1** | `surface_d5` full research run — `demos/demo-1-surface-d5/run_quick.sh` | End-to-end harness works | **P0** | **implemented** |
 | **D2** | `bb72` qLDPC research run — `demos/demo-2-bb72/run.sh` (fast/dev/prod modes) | Genericity across codes / classical backends (MWPM → OSD) | P1 | **implemented** |
-| **D3** | `/add-env` onboarding | Non-coder can add environments | P2 | planned (CLI ready, demo dir pending) |
+| **D3** | Worktree branches-as-Pareto provenance — `demos/demo-3-worktree-provenance/run.sh` | Every round runs in its own `exp/<run_id>/<NN>-<slug>` git worktree, commits a `round_<N>_pointer.json`, and `compose_conflict` is a recorded failure mode (issue #38) | P1 | **implemented** |
 | **D4** | Reward-hacking detection — `demos/demo-4-reward-hacking/run.sh` | Memorizer cheater gets `SUSPICIOUS` / `FAILED` verdict | **P0** | **implemented** |
 | **D5** | Failure recovery — `demos/demo-5-failure-recovery/run.sh` | `cli.autoqec diagnose` identifies `compile_error` root cause | P2 | **implemented** |
+| **D6** | Advisor replay / offline reproducibility — `demos/demo-6-advisor-replay/run.sh` | A packaged run replays under `runs/demo-6-replay/` with no LLM backends and no network — `cli.autoqec package-run` + `autoqec.tools.advisor_replay` | P2 | **implemented** |
 
 ### Skills (LLM-reasoning user surfaces, exposed as `/<name>`)
 
-All five skills under `.claude/skills/` are discoverable from Claude Code. `/add-env` remained a CLI-only subcommand; `/read-zulip` was added to recover off-repo hackathon context.
+All six skills under `.claude/skills/` are discoverable from Claude Code. `/add-env` remained a CLI-only subcommand; `/read-zulip` recovers off-repo hackathon context; `/review-framework` closes the autoresearch loop by feeding findings from a completed run back into the codebase.
 
 | Skill | Purpose | Status |
 |---|---|---|
 | `/autoqec-run` | Run the full research loop on an env YAML | **implemented** |
 | `/verify-decoder` | Audit a Pareto candidate against holdout seeds (wraps `cli.autoqec verify`) | **implemented** |
 | `/review-log` | Read an entire `runs/<id>/log.md`, flag stuck hypotheses / overfitting | **implemented** |
+| `/review-framework` | Read a completed run and propose framework improvements (DSL gaps, weak baselines, prompt drift, env limits, orchestration friction); advisory only, never edits framework code | **implemented** |
 | `/diagnose-failure` | Root-cause a broken or stalled round, recommend a fix (wraps `cli.autoqec diagnose`) | **implemented** |
+| `/demo-presenter` | Generate an evidence-backed walkthrough and live AI narration for the merged demos plus planned PR-only worktree demo | **implemented** |
 | `/read-zulip` | Pull Zulip stream/topic history for off-repo project context | **implemented** |
 | `/add-env` | Interactively create a new env YAML | planned (CLI only for now: `python -m cli.autoqec add-env`) |
 
@@ -176,8 +248,8 @@ qec-ai-decoder/
 ├── cli/autoqec.py                  # click CLI entry
 ├── .claude/
 │   ├── agents/                     # Subagent prompt files
-│   └── skills/                     # 5 user-facing skills
-├── demos/                          # 5 demos with run.sh + walkthrough.md
+│   └── skills/                     # 6 user-facing skills
+├── demos/                          # 6 demos with run.sh + (some) walkthrough.md
 ├── envs/                           # User-authored env YAMLs
 ├── circuits/                       # *.stim files
 ├── runs/                           # .gitignore'd; per-run outputs

@@ -9,11 +9,15 @@ For the authoritative design, see `docs/superpowers/specs/2026-04-20-autoqec-des
 ```bash
 ./.venv/bin/pip install -e '.[dev]'      # install in editable mode
 ./.venv/bin/pytest tests/ -m "not integration" -v    # unit tests (CPU)
+./.venv/bin/pytest tests/ -m "not integration" -v --run-slow  # include slow subprocess-heavy tests
 ./.venv/bin/pytest tests/ -m integration --run-integration --model-path ...  # GPU tests
 ./.venv/bin/pytest tests/test_round_recorder.py -v   # one file
 ./.venv/bin/pytest tests/ -k "pareto"                # by substring
 ./.venv/bin/ruff check autoqec cli tests scripts     # lint
 ```
+
+Tests marked `@pytest.mark.slow` are skipped unless `--run-slow` is passed,
+even if you explicitly invoke `pytest -m "not integration"`.
 
 Python ≥ 3.12, pydantic v2, torch ≥ 2.11, stim ≥ 1.15, pymatching ≥ 2.3, ldpc ≥ 2.4.
 
@@ -45,7 +49,7 @@ Agent backends are selected per-role via env vars: `AUTOQEC_{IDEATOR,CODER,ANALY
 | `autoqec.decoders` | `dsl_schema.py` — `PredecoderDSL` pydantic model (Tier 1 canonical). `dsl_compiler.py` — DSL → nn.Module. `custom_fn_validator.py` + `custom_fn_rules.py` — Tier-2 escape hatch AST + smoke guard. `backend_adapter.py` — MWPM/OSD classical backend glue. `baselines/`, `modules/` — reference predecoders. |
 | `autoqec.envs` | `schema.py` — `EnvSpec` (code + noise + constraints triple). `builtin/` — `surface_d5_depol.yaml`, `bb72_depol.yaml`. |
 | `autoqec.eval` | `schema.py` — `VerifyReport` (holdout verdict, `delta_vs_baseline_holdout`, `paired_eval_bundle_id`, `branch`, `commit_sha`). |
-| `autoqec.orchestration` | Research-loop driver. `memory.py` — `RunMemory` (L1/L2/L3). `loop.py` — `run_round_plan` assembles prompts. `round_recorder.py` — `record_round` + non-dominated Pareto filter. `worktree.py` — git-worktree CRUD. `subprocess_runner.py` — shell-out Runner for worktree mode. `fork_graph.py` — `build_fork_graph(history, pareto, run_id)` assembles the Ideator's branch-aware view. `reconcile.py` — startup `git branches ↔ history.jsonl` reconciliation per §15.10. |
+| `autoqec.orchestration` | Research-loop driver. `memory.py` — `RunMemory` (L1/L2/L3). `loop.py` — `run_round_plan` assembles prompts. `round_recorder.py` — `record_round` + non-dominated Pareto filter. `worktree.py` — git-worktree CRUD. `subprocess_runner.py` — shell-out Runner for worktree mode. `fork_graph.py` — `build_fork_graph(history, pareto, run_id)` assembles the Ideator's branch-aware view. `reconcile.py` — startup `git branches ↔ history.jsonl` reconciliation per §15.10. `trace.py` — append-only orchestrator narrative (`init_trace` + `append_section` + `append_note`) written to `runs/<run_id>/orchestrator_trace.md`. |
 | `autoqec.runner` | `runner.py` — `run_round(cfg)` train + eval entrypoint. `schema.py` — `RunnerConfig` + `RoundMetrics` pydantic models (with §15.7 worktree fields). `data.py` — syndrome sampling. `flops.py` — fvcore-based FLOP counting. `safety.py` — tool whitelisting. |
 | `autoqec.tools` | `machine_state.py` — LLM-callable tool returning GPU VRAM / recent-round timings / active worktrees. |
 
@@ -63,11 +67,13 @@ Agent backends are selected per-role via env vars: `AUTOQEC_{IDEATOR,CODER,ANALY
 - **`machine_state` as self-awareness**: `autoqec.tools.machine_state` is an LLM-callable tool that returns `{gpu_vram_gb, recent_round_wallclocks, params_vs_time_scatter, active_worktrees}`. The Ideator uses it to avoid proposing rounds that don't fit the remaining compute budget.
 - **Ideator's fork_graph view**: `l3_for_ideator(run_id=...)` returns a `fork_graph` dict with nodes `{branch, parent, delta_vs_parent, status, hypothesis_1line, on_pareto}`. Replaces the pre-§15 `last_5_hypotheses` shape. Fork decisions (`fork_from ∈ "baseline" | str | list[str]`) are explicit in `IdeatorResponse`.
 - **Contract files require owner sign-off**: edits to `docs/contracts/interfaces.md` or `docs/contracts/round_dir_layout.md` need 3-of-3 sign-off (Chen / Xie / Lin) — these freeze the cross-component boundary. Add the `contract-change` label on PRs that touch them.
+- **Orchestrator narrative trace** (`autoqec.orchestration.trace`): every `/autoqec-run` round writes a chat-level story — Ideator / Coder / Analyst prompts and responses, Runner metrics, Verifier reports, free-form orchestrator notes — to `runs/<run_id>/orchestrator_trace.md`. This is the human-readable counterpart to `history.jsonl` (machine-readable) and `log.md` (terse summary), and it survives outside the Claude-Code session JSONL so a run can be debugged / diffed / reviewed on a PR. `init_trace` is called once per run; `append_section` auto-emits a `## Round N` header the first time each round is seen; resumes against an existing file append a `_resumed at ..._` divider instead of truncating. The `/autoqec-run` SKILL threads these calls through every dispatch step; the in-process `run_llm_loop` does the same.
 
 ### Files Created Per Run (`runs/<run_id>/`)
 
 - `history.jsonl` — append-only, one superset-`RoundMetrics` line per round. Written by `RunMemory.append_round`.
 - `log.md` — human-readable narrative. Written by `RunMemory.append_log`.
+- `orchestrator_trace.md` — append-only chat-level trace of every main-agent action (subagent prompts + responses, Runner metrics, Verifier reports, free notes). Written by `autoqec.orchestration.trace` helpers (`init_trace`, `append_section`, `append_note`). Survives outside the Claude-Code session JSONL.
 - `pareto.json` — full non-dominated archive of VERIFIED branches. Replaced atomically by `RunMemory.update_pareto`.
 - `pareto_preview.json` — top-5 projection sorted by `-delta_vs_baseline_holdout`.
 - `round_<N>/config.yaml` — dump of `RunnerConfig.predecoder_config` (the DSL dict).
@@ -104,6 +110,10 @@ Orchestration writes **only** at the run root; the Runner writes **only** inside
 - `.claude/agents/autoqec-analyst.md` — Analyst subagent prompt (output echoes `branch` + `commit_sha` when present).
 
 When developing a new skill or subagent: put the `.md` alongside the existing ones; read from `memory.py::l3_for_<role>` for context assembly; use `autoqec.agents.dispatch.build_prompt` so the Tier-2 validator rules and schema constraints are surfaced to the model.
+
+## Code Review Output
+
+PR reviews (whether triggered by `/code-review`, `/codex-review`, or any other review skill) MUST be posted directly as a comment on the GitHub PR via `gh pr comment <N> --body-file <tmp>` (or `--body`). Do NOT leave local review markdown files in `.claude/PRPs/reviews/`, `docs/`, or anywhere else in the repo. If a skill defaults to writing a local file, write to a temp path, post it, and delete it. The PR thread is the single source of truth for review feedback.
 
 ## Commit Convention
 

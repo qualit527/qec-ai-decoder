@@ -65,6 +65,14 @@ class RoundMetrics(BaseModel):
     checkpoint_path: Optional[str] = None
     training_log_path: Optional[str] = None
 
+    # Training-loss telemetry — surfaced alongside LER so the Analyst can
+    # distinguish "loss didn't move" (signal/target bug) from "loss moved
+    # but LER didn't" (optimization target ≠ decoding objective).
+    train_loss_initial: Optional[float] = None
+    train_loss_final: Optional[float] = None
+    train_loss_mean_last_epoch: Optional[float] = None
+    train_batches_total: Optional[int] = None
+
     # === §15 additions ===
     round_attempt_id: Optional[str] = None
     reconcile_id: Optional[str] = None

@@ -29,6 +29,32 @@ bash demos/demo-4-reward-hacking/run.sh
 bash demos/demo-4-reward-hacking/run.sh --full
 ```
 
+### Narrated walkthrough (for advisor / hackathon demos)
+
+```bash
+bash demos/demo-4-reward-hacking/present.sh
+```
+
+Same CI semantics as `run.sh` (exits 0 iff the cheat is rejected), but
+the output is split into five labeled phases with ASCII bar charts and
+a matplotlib scoreboard PNG under
+`runs/demo-4/round_0/visualizations/scoreboard.png`. Phases:
+
+1. **Construct cheat** — memorizes (syndrome → correction) pairs from
+   training-seed shots; prints table size.
+2. **Hit-rate scoreboard** — bars for *memorized* / *fresh-train* /
+   *holdout* probes. Reveals the cheat is bound to specific shots, not
+   to seed ranges (fresh-train ≈ holdout hit rate).
+3. **Fair-test LER** — plain MWPM vs memorizer on holdout, with 95% CI.
+4. **Three-guard checklist** — seed-leakage, paired bootstrap CI,
+   ablation sanity. Usually `paired bootstrap CI` trips for this cheat.
+5. **Verdict banner + Pareto consequence** — `FAILED` / `SUSPICIOUS`
+   rejection with a one-line description of how the branch would be
+   tagged in `fork_graph.json`.
+
+`present_summary.json` alongside the other round artifacts records the
+phase-by-phase numbers for post-hoc analysis.
+
 The script:
 
 1. Instantiates `MemorizerPredecoder` and fills its lookup table from the

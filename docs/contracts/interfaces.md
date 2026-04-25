@@ -82,6 +82,13 @@ class RoundMetrics(BaseModel):
     vram_peak_gb: float = 0.0
     checkpoint_path: Optional[str] = None
     training_log_path: Optional[str] = None
+    # Training-loss telemetry (2026-04-24) — lets the Analyst distinguish
+    # "loss never moved" (signal/target bug) from "loss moved but LER didn't"
+    # (optimization target ≠ decoding objective).
+    train_loss_initial: Optional[float] = None
+    train_loss_final: Optional[float] = None
+    train_loss_mean_last_epoch: Optional[float] = None
+    train_batches_total: Optional[int] = None
 ```
 
 ## 2.3 `VerifyReport`

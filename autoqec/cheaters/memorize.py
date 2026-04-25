@@ -50,11 +50,15 @@ def train_memorizer(
     perfect corrections (error patterns)."""
     from autoqec.runner.data import sample_syndromes
 
-    syndrome, target = sample_syndromes(
+    batch = sample_syndromes(
         env_spec, artifacts, env_spec.noise.seed_policy.train, n_shots,
     )
     m = MemorizerPredecoder()
-    m.memorize(syndrome.numpy(), target.numpy())
+    # Match the prior semantics — memorize the (syndrome -> observable)
+    # pair so behaviour is identical to the pre-SampleBatch code. The
+    # memorizer is a reward-hacking trap; `observables` here is whatever
+    # the eval compares against.
+    m.memorize(batch.syndrome.numpy(), batch.observables.numpy())
     return m
 
 

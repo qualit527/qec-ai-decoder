@@ -8,6 +8,7 @@ repository. For project overview, goals, and demos, see `README.md`.
 ```bash
 pip install -e '.[dev]'                     # install with dev deps
 python -m pytest tests/ -m "not integration" -v   # unit tests (CI uses this)
+python -m pytest tests/ -m "not integration" -v --run-slow  # include slow subprocess-heavy tests
 python -m pytest tests/ -m "integration" -v --run-integration  # integration tests (manual entry)
 python -m pytest tests/test_bootstrap.py -v        # single test file
 python -m pytest tests/test_bootstrap.py::test_bootstrap_ci_basic -v  # single test
@@ -86,8 +87,8 @@ from a specific env/config/round-dir tuple.
 - Lint: `ruff`
 - Coverage config lives in `pyproject.toml`
 - Prefer `make` targets over handwritten command variants when both exist
-- Default test path is non-integration only; integration tests require
-  `--run-integration`
+- Default test path skips `integration` and `slow`; integration tests require
+  `--run-integration`, and wall-clock-heavy tests require `--run-slow`
 
 ## Files Created at Runtime
 

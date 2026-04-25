@@ -62,6 +62,52 @@ def test_run_round_plan_threads_fork_from(tmp_path: Path) -> None:
     assert plan["fork_from"] == "exp/t/02-a"
 
 
+def test_build_coder_prompt_falls_back_to_history_when_pareto_empty(tmp_path: Path) -> None:
+    """Regression (2026-04-24): cold-start Pareto trap.
+
+    Before a VERIFIED round exists `pareto.json` is `[]`, so the Coder
+    previously saw `best_so_far: []` and had no reference configs to
+    mutate from. We fall back to the top-3 `status=ok` history rows by
+    `delta_ler` so the Coder always has *something* to steer off of.
+    """
+    from autoqec.orchestration.loop import build_coder_prompt
+    from autoqec.orchestration.memory import RunMemory
+
+    mem = RunMemory(tmp_path / "run")
+    # history has 3 ok rounds — none verified (pareto stays []).
+    history_rows = [
+        {"round": 1, "status": "ok", "delta_ler": -1e-4, "flops_per_syndrome": 1000, "n_params": 100,
+         "train_loss_final": 0.01, "checkpoint_path": "r1.pt"},
+        {"round": 2, "status": "ok", "delta_ler": 3e-5, "flops_per_syndrome": 2000, "n_params": 200,
+         "train_loss_final": 0.008, "checkpoint_path": "r2.pt"},
+        {"round": 3, "status": "ok", "delta_ler": 1e-5, "flops_per_syndrome": 1500, "n_params": 150,
+         "train_loss_final": 0.007, "checkpoint_path": "r3.pt"},
+    ]
+    with (mem.run_dir / "history.jsonl").open("w", encoding="utf-8") as f:
+        for row in history_rows:
+            f.write(json.dumps(row) + "\n")
+
+    hypothesis = {
+        "hypothesis": "try a bigger GNN",
+        "expected_delta_ler": 5e-5,
+        "expected_cost_s": 120,
+        "rationale": "empty pareto — lean on history",
+    }
+    prompt = build_coder_prompt(hypothesis=hypothesis, mem=mem, dsl_schema_md="")
+
+    # The fallback should surface round 2 (best delta) as the top
+    # reference, and the cold-start flag should be visible to the Coder
+    # so it knows these rows are NOT VERIFIED.
+    payload_start = prompt.index("{")
+    payload = json.loads(prompt[payload_start : prompt.rindex("}") + 1])
+    best = payload["best_so_far"]
+    assert best, "best_so_far must not be empty when ok-history exists"
+    assert best[0].get("round") == 2, f"expected round 2 (best delta) first, got {best[0]}"
+    assert best[0].get("cold_start_fallback") is True, (
+        "each fallback entry must be flagged as not VERIFIED"
+    )
+
+
 def test_build_analyst_prompt_has_absolute_metrics_path(tmp_path: Path) -> None:
     from autoqec.orchestration.loop import build_analyst_prompt
     from autoqec.orchestration.memory import RunMemory

@@ -68,6 +68,53 @@ def test_machine_state_gpu_section_is_present_even_without_cuda(tmp_path: Path) 
     assert isinstance(state["gpu"], dict)
 
 
+def test_machine_state_exposes_loss_and_delta_trajectories(tmp_path: Path) -> None:
+    """Regression (2026-04-24): the Ideator must see per-round
+    training-loss and Δ_LER trajectories so it can distinguish
+    "architecture bad" from "harness broken for 3 rounds." Previously
+    `machine_state` only surfaced wall-clocks.
+    """
+    from autoqec.tools.machine_state import machine_state
+
+    _write_history(
+        tmp_path / "run",
+        rounds=[
+            {
+                "round": 1, "status": "ok",
+                "train_wallclock_s": 10.0, "eval_wallclock_s": 2.0,
+                "n_params": 5000, "delta_ler": 5e-5,
+                "delta_ler_ci_low": -1e-5, "delta_ler_ci_high": 1.1e-4,
+                "train_loss_initial": 0.7, "train_loss_final": 0.2,
+                "train_loss_mean_last_epoch": 0.22,
+            },
+            {
+                "round": 2, "status": "ok",
+                "train_wallclock_s": 12.0, "eval_wallclock_s": 3.0,
+                "n_params": 8000, "delta_ler": 0.0,
+                "delta_ler_ci_low": -2e-4, "delta_ler_ci_high": 2e-4,
+                "train_loss_initial": 0.68, "train_loss_final": 0.005,
+                "train_loss_mean_last_epoch": 0.006,
+            },
+            {
+                "round": 3, "status": "killed_by_safety",
+                "train_wallclock_s": 3.0, "eval_wallclock_s": 0.0,
+                "n_params": 50000,
+            },
+        ],
+    )
+    state = machine_state(tmp_path / "run")
+    loss_hist = state["history_timings"]["loss_trajectory"]
+    delta_hist = state["history_timings"]["delta_ler_trajectory"]
+    assert loss_hist == [
+        {"round": 1, "initial": 0.7, "final": 0.2, "mean_last_epoch": 0.22},
+        {"round": 2, "initial": 0.68, "final": 0.005, "mean_last_epoch": 0.006},
+    ], "killed rounds should be excluded since they have no meaningful loss curve"
+    assert delta_hist == [
+        {"round": 1, "delta_ler": 5e-5, "ci": [-1e-5, 1.1e-4]},
+        {"round": 2, "delta_ler": 0.0, "ci": [-2e-4, 2e-4]},
+    ]
+
+
 def test_gpu_snapshot_swallows_driver_errors_from_is_available(monkeypatch) -> None:
     """Codex review (medium): the docstring promises *any* failure returns {};
     the original code only guarded `import torch`, so `is_available()` raising

@@ -1,4 +1,5 @@
-from unittest.mock import patch, MagicMock
+import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -129,6 +130,21 @@ def test_run_llm_loop_happy_path(tmp_path, monkeypatch):
         "python", "-m", "cli.autoqec", "run", "autoqec/envs/builtin/surface_d5_depol.yaml",
     ]
 
+    # Trace file captures the chat-level narrative (C route).
+    trace = (run_dir / "orchestrator_trace.md")
+    assert trace.exists()
+    text = trace.read_text(encoding="utf-8")
+    assert "# Orchestrator trace" in text
+    assert "## Round 1" in text
+    assert "## Round 2" in text
+    # At least one of each subagent/runner/verifier section per round.
+    assert text.count("ideator prompt") == 2
+    assert text.count("ideator response") == 2
+    assert text.count("coder response") == 2
+    assert text.count("runner metrics") == 2
+    assert text.count("analyst response") == 2
+    assert "run complete" in text
+
 
 def test_run_llm_loop_rejects_compose_rounds_until_p11(tmp_path, monkeypatch):
     """P0.1 ships without compose support; Ideator emitting list fork_from should error clearly."""
@@ -159,7 +175,6 @@ def test_run_llm_loop_rejects_compose_rounds_until_p11(tmp_path, monkeypatch):
 def test_run_llm_loop_uses_worktree_rounds_and_persists_live_evidence(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     from autoqec.envs.schema import load_env_yaml
-    import json
     import pathlib
 
     repo_root = pathlib.Path(__file__).resolve().parents[1]
@@ -277,7 +292,13 @@ def test_run_llm_loop_uses_worktree_rounds_and_persists_live_evidence(tmp_path, 
             rounds=1,
             profile="dev",
             env_yaml_path=repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml",
-            invocation_argv=["python", "-m", "cli.autoqec", "run", "autoqec/envs/builtin/surface_d5_depol.yaml"],
+            invocation_argv=[
+                "python",
+                "-m",
+                "cli.autoqec",
+                "run",
+                "autoqec/envs/builtin/surface_d5_depol.yaml",
+            ],
         )
 
     assert created[0]["fork_from"] == "HEAD"
@@ -298,7 +319,100 @@ def test_run_llm_loop_uses_worktree_rounds_and_persists_live_evidence(tmp_path, 
 
     log_text = (run_dir / "log.md").read_text(encoding="utf-8")
     assert '"tool_call": "machine_state"' in log_text
+    trace_text = (run_dir / "orchestrator_trace.md").read_text(encoding="utf-8")
+    assert "coder response" in trace_text
+    assert "runner metrics" in trace_text
 
+
+def test_run_llm_loop_resume_skips_legacy_completed_round_without_metrics_attempt_id(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    from autoqec.envs.schema import load_env_yaml
+    import pathlib
+
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    env = load_env_yaml(repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml")
+    run_dir = tmp_path / "runs" / "resume-existing"
+    round_1_dir = run_dir / "round_1"
+    round_1_dir.mkdir(parents=True)
+    (run_dir / "history.jsonl").write_text(
+        json.dumps({"round": 1, "round_attempt_id": "legacy-attempt-1"}) + "\n",
+        encoding="utf-8",
+    )
+    (round_1_dir / "metrics.json").write_text(
+        json.dumps({"status": "ok", "delta_ler": 0.001}),
+        encoding="utf-8",
+    )
+
+    executed_rounds = []
+
+    def fake_invoke(role, prompt, timeout=300.0, cwd=None):
+        assert role in {"ideator", "coder"}
+        payload = {
+            "ideator": _stub_ideator,
+            "coder": _stub_coder,
+        }[role](2)
+        return payload, {"usage": {"input_tokens": 1, "output_tokens": 1}}
+
+    def fake_create_round_worktree(repo_root, run_id, round_idx, slug, fork_from):
+        worktree_dir = tmp_path / ".worktrees" / f"exp-{run_id}-{round_idx:02d}-{slug}"
+        worktree_dir.mkdir(parents=True, exist_ok=True)
+        return {
+            "run_id": run_id,
+            "round_idx": round_idx,
+            "slug": slug,
+            "fork_from": fork_from,
+            "worktree_dir": str(worktree_dir),
+            "branch": f"exp/{run_id}/{round_idx:02d}-{slug}",
+        }
+
+    def fake_run_round(cfg, env, round_attempt_id=None):
+        executed_rounds.append(cfg.seed)
+        return RoundMetrics(
+            status="compile_error",
+            status_reason="stub",
+            round_attempt_id=round_attempt_id,
+            branch=cfg.branch,
+            commit_sha="deadbeef-resume",
+            fork_from=cfg.fork_from,
+        )
+
+    with patch(
+        "autoqec.orchestration.llm_loop.invoke_subagent_with_metadata",
+        side_effect=fake_invoke,
+    ), patch(
+        "autoqec.orchestration.llm_loop.create_round_worktree",
+        side_effect=fake_create_round_worktree,
+    ), patch(
+        "autoqec.orchestration.llm_loop.cleanup_round_worktree",
+    ), patch(
+        "autoqec.orchestration.llm_loop.run_round_in_subprocess",
+        side_effect=fake_run_round,
+    ):
+        run_llm_loop(
+            env=env,
+            rounds=2,
+            profile="dev",
+            run_dir=run_dir,
+            env_yaml_path=repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml",
+            invocation_argv=[
+                "python",
+                "-m",
+                "cli.autoqec",
+                "run",
+                "autoqec/envs/builtin/surface_d5_depol.yaml",
+            ],
+        )
+
+    assert executed_rounds == [2]
+    history_rows = [
+        json.loads(line)
+        for line in (run_dir / "history.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [row["round"] for row in history_rows] == [1, 2]
 
 def test_run_llm_loop_warns_when_all_rounds_stay_on_baseline(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)

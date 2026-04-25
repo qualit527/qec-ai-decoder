@@ -1,0 +1,177 @@
+
+======================================================================
+Step 0 — Setup
+======================================================================
+run_id    = demo38-sample
+fork_from = feat/issue-38-worktree-demo  (this is 'baseline' in Ideator terminology)
+round_attempt_ids = {1: 'f7de78a0-56d1-4d71-bde0-a0650f433cbb', 2: '902000c8-a795-4487-8eea-f24cf1d86c95', 3: '88cebbed-73b5-490e-b0b4-4e1e5cef2b13'}
+
+======================================================================
+Step 1 — Round 1: Idea A (create_round_worktree, fork baseline)
+======================================================================
+  branch       = exp/demo38-sample/01-idea-a
+  worktree_dir = <REPO_ROOT>\.worktrees\exp-demo38-sample-01-idea-a
+
+  The worktree is a real, separate checkout (pre-run):
+  [before run-round]
+  $ ls exp-demo38-sample-01-idea-a/
+    AGENTS.md
+    autoqec/
+    circuits/
+    CLAUDE.md
+    cli/
+    demos/
+    design.md
+    docs/
+    knowledge/
+    Makefile
+    mkdocs.yml
+    pyproject.toml
+    README.md
+    scripts/
+    tests/
+  $ git -C exp-demo38-sample-01-idea-a log --oneline -n 3
+    c380959 feat(demos): show worktree contents + compose merge + conflict probe
+    a1881a1 feat(demos): add demo-3-worktree-provenance for issue #38
+    8f104e9 ci: isolate docs workflow concurrency
+
+  Now run the actual Runner inside that worktree:
+  $ python -m cli.autoqec run-round ... --code-cwd .worktrees/exp-demo38-sample-01-idea-a --branch exp/demo38-sample/01-idea-a --fork-from feat/issue-38-worktree-demo
+    status=ok  branch=exp/demo38-sample/01-idea-a  commit=be40742f1d96
+
+  Post-run contents — notice the new round_1/ + pointer commit:
+  [after run-round]
+  $ ls exp-demo38-sample-01-idea-a/
+    AGENTS.md
+    autoqec/
+    circuits/
+    CLAUDE.md
+    cli/
+    demos/
+    design.md
+    docs/
+    knowledge/
+    Makefile
+    mkdocs.yml
+    pyproject.toml
+    README.md
+    round_1/    <-- §15 round provenance
+    scripts/
+    tests/
+  $ ls exp-demo38-sample-01-idea-a/round_1/
+    round_1_pointer.json
+  $ git -C exp-demo38-sample-01-idea-a log --oneline -n 3
+    be40742 round 1: pointer for attempt f7de78a0-56d1-4d71-bde0-a0650f433cbb
+    c380959 feat(demos): show worktree contents + compose merge + conflict probe
+    a1881a1 feat(demos): add demo-3-worktree-provenance for issue #38
+
+  cleanup_round_worktree(...) done — checkout gone, branch kept: 'exp/demo38-sample/01-idea-a'
+
+======================================================================
+Step 2 — Round 2: Idea B (independent fork from baseline)
+======================================================================
+  branch = exp/demo38-sample/02-idea-b
+  $ python -m cli.autoqec run-round ... --code-cwd .worktrees/exp-demo38-sample-02-idea-b --branch exp/demo38-sample/02-idea-b --fork-from feat/issue-38-worktree-demo
+    status=ok  branch=exp/demo38-sample/02-idea-b  commit=07aef394ad1d
+
+======================================================================
+Step 3 — Two independent experiment branches now in git
+======================================================================
+  exp/demo38-sample/01-idea-a
+  exp/demo38-sample/02-idea-b
+
+======================================================================
+Step 4 — Round 3: Compose merge of Idea A ⊕ Idea B
+======================================================================
+  create_compose_worktree(parents=[A.branch, B.branch])
+  status             = ok  (merge OK)
+  branch             = exp/demo38-sample/03-compose-ab
+  parents (ordered)  = ['exp/demo38-sample/01-idea-a', 'exp/demo38-sample/02-idea-b']
+  canonical key      = 'exp/demo38-sample/01-idea-a|exp/demo38-sample/02-idea-b'
+
+  git log --graph --oneline (merge commit as a diamond;
+  scope limited to commits after fork point 'feat/issue-38-worktree-demo'):
+    *   360c0da (HEAD -> exp/demo38-sample/03-compose-ab) Merge branch 'exp/demo38-sample/02-idea-b' into exp/demo38-sample/03-compose-ab
+    |\
+    | * 07aef39 (exp/demo38-sample/02-idea-b) round 2: pointer for attempt 902000c8-a795-4487-8eea-f24cf1d86c95
+    * be40742 (exp/demo38-sample/01-idea-a) round 1: pointer for attempt f7de78a0-56d1-4d71-bde0-a0650f433cbb
+
+  Post-merge worktree contents — both round_1/ and round_2/ pointer files are present, proving the merge really combined both parents:
+  [after compose merge]
+  $ ls exp-demo38-sample-03-compose-ab/
+    AGENTS.md
+    autoqec/
+    circuits/
+    CLAUDE.md
+    cli/
+    demos/
+    design.md
+    docs/
+    knowledge/
+    Makefile
+    mkdocs.yml
+    pyproject.toml
+    README.md
+    round_1/    <-- §15 round provenance
+    round_2/    <-- §15 round provenance
+    scripts/
+    tests/
+  $ ls exp-demo38-sample-03-compose-ab/round_1/
+    round_1_pointer.json
+  $ ls exp-demo38-sample-03-compose-ab/round_2/
+    round_2_pointer.json
+  $ git -C exp-demo38-sample-03-compose-ab log --oneline -n 3
+    360c0da Merge branch 'exp/demo38-sample/02-idea-b' into exp/demo38-sample/03-compose-ab
+    07aef39 round 2: pointer for attempt 902000c8-a795-4487-8eea-f24cf1d86c95
+    be40742 round 1: pointer for attempt f7de78a0-56d1-4d71-bde0-a0650f433cbb
+
+  Now train a compose-round on the merged checkout:
+  $ python -m cli.autoqec run-round ... --code-cwd .worktrees/exp-demo38-sample-03-compose-ab --branch exp/demo38-sample/03-compose-ab --fork-from ["exp/demo38-sample/01-idea-a", "exp/demo38-sample/02-idea-b"]
+    status=ok  branch=exp/demo38-sample/03-compose-ab  commit=719fcba684e9
+
+======================================================================
+Step 5 — Compose-conflict probe (§15.6.3)
+======================================================================
+  Build two branches that both write CONFLICT_MARKER.tmp with different payloads, then attempt to merge them:
+    exp/demo38-sample/90-conflict-left  <- variant=left
+    exp/demo38-sample/91-conflict-right  <- variant=right
+  status            = 'compose_conflict'
+  conflicting_files = ['CONFLICT_MARKER.tmp']
+  — per §15.6.3 the orchestrator writes a row with
+    status='compose_conflict', branch=None, commit_sha=None
+    and does NOT retry. The worktree + branch are both removed by create_compose_worktree on conflict.
+
+======================================================================
+Step 6 — Final fork graph across exp/demo38-sample/*
+======================================================================
+  5 branch(es) alive:
+    exp/demo38-sample/01-idea-a
+    exp/demo38-sample/02-idea-b
+    exp/demo38-sample/03-compose-ab
+    exp/demo38-sample/90-conflict-left
+    exp/demo38-sample/91-conflict-right
+
+  git log --graph across all of them (scoped to commits after fork point 'feat/issue-38-worktree-demo',
+  so unrelated mainline history is filtered out):
+    * 4b42666 (exp/demo38-sample/91-conflict-right) demo: conflict variant right
+    * fdac844 (exp/demo38-sample/90-conflict-left) demo: conflict variant left
+    * 719fcba (exp/demo38-sample/03-compose-ab) round 3: pointer for attempt 88cebbed-73b5-490e-b0b4-4e1e5cef2b13
+    *   360c0da Merge branch 'exp/demo38-sample/02-idea-b' into exp/demo38-sample/03-compose-ab
+    |\
+    | * 07aef39 (exp/demo38-sample/02-idea-b) round 2: pointer for attempt 902000c8-a795-4487-8eea-f24cf1d86c95
+    * be40742 (exp/demo38-sample/01-idea-a) round 1: pointer for attempt f7de78a0-56d1-4d71-bde0-a0650f433cbb
+
+======================================================================
+Step 7 — reconcile_at_startup contract
+======================================================================
+  For each exp/<run_id>/* branch, reconcile would:
+    git show <branch>:round_<NN>/round_<NN>_pointer.json
+      -> recoverable round_attempt_id  => auto-heal orphan row
+      -> missing/malformed             => pause for human review
+  See tests/test_reconcile.py::test_orphaned_branch_with_pointer_autoheals
+
+======================================================================
+Demo complete — cleanup
+======================================================================
+  bash demos/demo-3-worktree-provenance/cleanup.sh
+  # removes .worktrees/exp-demo38-sample-* and deletes exp/demo38-sample/* branches

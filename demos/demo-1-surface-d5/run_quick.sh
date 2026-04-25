@@ -6,11 +6,17 @@
 # a Claude Code session. See demos/demo-1-surface-d5/README.md.
 set -euo pipefail
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+# shellcheck disable=SC1091
+source "$REPO_ROOT/demos/_lib/python_bin.sh"
+PY="${PYTHON:-$(discover_demo_python "$REPO_ROOT")}"
+
 ROUNDS="${ROUNDS:-3}"
 PROFILE="${PROFILE:-dev}"
 ENV_YAML="${ENV_YAML:-autoqec/envs/builtin/surface_d5_depol.yaml}"
 
-python -m cli.autoqec run "$ENV_YAML" \
+"$PY" -m cli.autoqec run "$ENV_YAML" \
     --rounds "$ROUNDS" \
     --profile "$PROFILE" \
     --no-llm

@@ -7,6 +7,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+import pytest
+
 import cli.autoqec as autoqec_cli
 
 from autoqec.envs.schema import load_env_yaml
@@ -95,6 +97,7 @@ def test_load_env_yaml_resolves_code_source_via_repo_root_fallback() -> None:
     assert env.code.source == str((repo_root / "circuits/surface_d5.stim").resolve())
 
 
+@pytest.mark.slow
 def test_run_cli_works_from_foreign_cwd_and_writes_candidate_pareto(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     env_yaml = repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml"
@@ -143,6 +146,7 @@ def test_run_cli_works_from_foreign_cwd_and_writes_candidate_pareto(tmp_path: Pa
     assert payload["candidate_pareto_path"].endswith("candidate_pareto.json")
 
 
+@pytest.mark.slow
 def test_run_cli_no_llm_appends_one_history_row_per_round(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     env_yaml = repo_root / "autoqec/envs/builtin/surface_d5_depol.yaml"

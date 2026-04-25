@@ -11,7 +11,7 @@
 #   bash demos/demo-4-reward-hacking/run.sh --n-shots 20000 --n-seeds 10
 #
 # Env overrides:
-#   PYTHON=/path/to/python   override interpreter (defaults to `python`)
+#   PYTHON=/path/to/python   override interpreter (else picks project .venv)
 #   AUTOQEC_ENV_YAML=...     override env YAML (defaults to surface_d5_depol)
 set -euo pipefail
 
@@ -19,7 +19,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$REPO_ROOT"
 
-PY="${PYTHON:-python}"
+# shellcheck disable=SC1091
+source "$REPO_ROOT/demos/_lib/python_bin.sh"
+PY="${PYTHON:-$(discover_demo_python "$REPO_ROOT")}"
 ENV_YAML="${AUTOQEC_ENV_YAML:-autoqec/envs/builtin/surface_d5_depol.yaml}"
 RUN_DIR="runs/demo-4/round_0"
 MODE="fast"
@@ -98,6 +100,9 @@ case "$VERDICT" in
     FAILED|SUSPICIOUS)
         echo ""
         echo "ok: reward-hacking checkpoint correctly rejected."
+        echo ""
+        echo "==> rendering HTML visualization"
+        "$PY" "$HERE/present_html.py" --run-dir "$RUN_DIR" || true
         exit 0
         ;;
     VERIFIED)
