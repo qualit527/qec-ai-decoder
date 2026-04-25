@@ -47,3 +47,58 @@ python -m cli.autoqec diagnose runs/demo-5
 ## Runtime
 
 ~30 seconds (no training, no GPU, no LLM calls).
+
+## Visual Showcase
+
+Run the standalone visual showcase to generate a browser-friendly evidence
+dashboard for Demo 5 only:
+
+```bash
+bash demos/demo-5-failure-recovery/showcase/run.sh
+```
+
+Outputs:
+
+- `runs/demo-5-showcase/report.html`
+- `runs/demo-5-showcase/report.md`
+- `runs/demo-5-showcase/summary.json`
+
+### Copy-paste Agent Prompt
+
+Paste this prompt into Codex CLI / Claude Code from the repository root:
+
+```text
+Please run the Demo 5 visual showcase only.
+
+Requirements:
+- Do not call an LLM.
+- Do not use the network.
+- Do not modify source files.
+- Use Python: ./.venv/bin/python (auto-discovered by the script)
+
+Command:
+bash demos/demo-5-failure-recovery/showcase/run.sh
+
+After it finishes, tell me:
+1. whether Demo 5 passed,
+2. the status from runs/demo-5-showcase/summary.json,
+3. the absolute path to report.html,
+4. the file:// link for report.html,
+5. if artifact links do not open, the repo-root http://127.0.0.1 server command and report URL.
+
+If all checks pass, end with:
+demo5 showcase healthy
+```
+
+If `file://` links are not accessible from your browser, start a read-only
+server from the repo root:
+
+```bash
+python -m http.server 8767 --bind 127.0.0.1
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8767/runs/demo-5-showcase/report.html
+```
