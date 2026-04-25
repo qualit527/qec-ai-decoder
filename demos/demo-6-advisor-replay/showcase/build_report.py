@@ -3,13 +3,16 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import math
 from pathlib import Path
 import platform
 import subprocess
 from typing import Any
 
+from autoqec.eval.schema import VerifyReport
 
-FLOAT_TOL = 1e-3
+FLOAT_ABS_TOL = 1e-6
+FLOAT_REL_TOL = 1e-6
 
 
 def _read_json(path: Path | None) -> dict[str, Any] | None:
@@ -48,38 +51,44 @@ def _latest(paths: list[Path]) -> Path | None:
 
 
 def _same(expected: Any, actual: Any) -> bool:
+    if isinstance(expected, bool) or isinstance(actual, bool):
+        return expected is actual
     if isinstance(expected, int | float) and isinstance(actual, int | float):
-        return abs(float(expected) - float(actual)) <= FLOAT_TOL
+        return math.isclose(float(expected), float(actual), rel_tol=FLOAT_REL_TOL, abs_tol=FLOAT_ABS_TOL)
     if isinstance(expected, list) and isinstance(actual, list):
         return len(expected) == len(actual) and all(_same(left, right) for left, right in zip(expected, actual, strict=True))
     return expected == actual
 
 
+def _comparison_fields() -> list[str]:
+    return list(VerifyReport.model_fields)
+
+
 def _comparison(original: dict[str, Any] | None, replay: dict[str, Any] | None) -> tuple[bool, list[dict[str, Any]]]:
     if original is None or replay is None:
         return False, []
-    fields = [
-        "verdict",
-        "holdout_seeds_used",
-        "paired_eval_bundle_id",
-        "ler_holdout",
-        "delta_ler_holdout",
-        "ler_shuffled",
-        "ler_holdout_ci",
-    ]
     rows = [
         {"field": field, "original": original.get(field), "replay": replay.get(field), "match": _same(original.get(field), replay.get(field))}
-        for field in fields
+        for field in _comparison_fields()
     ]
     return all(row["match"] for row in rows), rows
 
 
+def _package_for_round(root: Path, round_dir: Path | None) -> Path | None:
+    if round_dir is None:
+        return None
+    run_id = round_dir.parent.name
+    package_path = root / "runs" / f"{run_id}.tar.gz"
+    return package_path if package_path.exists() else None
+
+
 def _collect_replay(root: Path) -> dict[str, Any]:
-    original_path = _latest(list((root / "runs").glob("**/verification_report.original.json")))
-    replay_path = original_path.with_name("verification_report.json") if original_path is not None else _latest(list((root / "runs").glob("**/verification_report.json")))
+    replay_root = root / "runs" / "demo-6-replay"
+    original_path = _latest(list(replay_root.glob("**/verification_report.original.json")))
+    replay_path = original_path.with_name("verification_report.json") if original_path is not None else None
     round_dir = replay_path.parent if replay_path is not None else None
     manifest_path = round_dir / "artifact_manifest.json" if round_dir is not None else None
-    package_path = _latest(list((root / "runs").glob("*.tar.gz")))
+    package_path = _package_for_round(root, round_dir)
     original = _read_json(original_path)
     replay = _read_json(replay_path)
     reports_match, rows = _comparison(original, replay)

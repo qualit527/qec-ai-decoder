@@ -54,6 +54,36 @@ def _materialize_replay(root: Path) -> None:
     (root / "runs" / "demo-run.tar.gz").write_text("tarball", encoding="utf-8")
 
 
+def test_demo6_collect_replay_scopes_artifacts_to_demo6_replay(tmp_path: Path) -> None:
+    build_report = _load_build_report_module()
+    _materialize_replay(tmp_path)
+
+    stale_round = tmp_path / "runs" / "other-demo" / "round_1"
+    stale_round.mkdir(parents=True)
+    _write_json(stale_round / "verification_report.original.json", {"verdict": "FAILED"})
+    _write_json(stale_round / "verification_report.json", {"verdict": "FAILED"})
+    stale_package = tmp_path / "runs" / "zz-stale.tar.gz"
+    stale_package.write_text("stale", encoding="utf-8")
+
+    summary = build_report.build_summary(tmp_path, tmp_path / "runs" / "demo-6-showcase", [])
+
+    assert summary["round_dir"] == "runs/demo-6-replay/demo-run/round_1"
+    assert summary["package"] == "runs/demo-run.tar.gz"
+    assert summary["verdict"] == "VERIFIED"
+
+
+def test_demo6_comparison_uses_verify_report_schema_and_strict_bool_float_matching() -> None:
+    build_report = _load_build_report_module()
+
+    fields = build_report._comparison_fields()
+    assert "ablation_sanity_ok" in fields
+    assert "seed_leakage_check_ok" in fields
+    assert "notes" in fields
+    assert build_report._same(True, 1) is False
+    assert build_report._same(0.1, 0.1000000001) is True
+    assert build_report._same(0.1, 0.101) is False
+
+
 def test_demo6_visual_report_explains_offline_replay_evidence(tmp_path: Path) -> None:
     build_report = _load_build_report_module()
     _materialize_replay(tmp_path)
@@ -76,8 +106,10 @@ def test_demo6_visual_report_explains_offline_replay_evidence(tmp_path: Path) ->
     assert "artifact_manifest.json" in html
     assert "verification_report.original.json" in html
     assert "verification_report.json" in html
-    assert "Compared 7 verifier fields from verification_report.original.json and verification_report.json." in html
-    assert "7 / 7 fields match" in html
+    comparison_total = payload["comparison_total"]
+    assert comparison_total == len(build_report._comparison_fields())
+    assert f"Compared {comparison_total} verifier fields from verification_report.original.json and verification_report.json." in html
+    assert f"{comparison_total} / {comparison_total} fields match" in html
     assert "reports_match=true" in html
     assert "exists=true" in html
     assert "Offline replay proof for advisor-facing reproducibility" not in html
@@ -105,6 +137,8 @@ def test_demo6_visual_report_does_not_invent_empty_comparison_copy(tmp_path: Pat
 def test_demo6_showcase_run_script_is_standalone_and_portable() -> None:
     script = (SHOWCASE_DIR / "run.sh").read_text(encoding="utf-8")
     assert 'if [[ -z "${PYTHON_BIN:-}" ]]; then' in script
+    assert "refusing unsafe OUTPUT_DIR" in script
+    assert "-s \"$PHASE_JSON\"" in script
     assert "PYTHONPATH" in script
     assert "demos/demo-6-advisor-replay/run.sh" in script
     assert "build_report.py" in script
@@ -121,4 +155,7 @@ def test_demo6_readme_contains_copy_paste_agent_prompt() -> None:
     assert "reports_match value" in readme
     assert "comparison_matches / comparison_total" in readme
     assert "offline replay proof" not in readme.lower()
+    assert "/home/jinguxie/qec-ai-decoder/.venv/bin/python" not in readme
+    assert "PYTHON_BIN=/home/jinguxie" not in readme
+    assert "Use Python: ./.venv/bin/python" in readme
     assert "http://127.0.0.1" in readme

@@ -45,18 +45,18 @@ If you already have a completed run from Demo 1 or Demo 2, you do not need
 to regenerate it. First package the run directory:
 
 ```bash
-/home/jinguxie/qec-ai-decoder/.venv/bin/python -m cli.autoqec package-run runs/<run_id>
+./.venv/bin/python -m cli.autoqec package-run runs/<run_id>
 ```
 
 Then point the replay helper at that existing `run_dir` and package:
 
 ```bash
 PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}" \
-/home/jinguxie/qec-ai-decoder/.venv/bin/python -m autoqec.tools.advisor_replay \
+./.venv/bin/python -m autoqec.tools.advisor_replay \
   --run-dir runs/<run_id> \
   --package-path runs/<run_id>.tar.gz \
   --env autoqec/envs/builtin/surface_d5_depol.yaml \
-  --python-bin /home/jinguxie/qec-ai-decoder/.venv/bin/python \
+  --python-bin ./.venv/bin/python \
   --n-shots 256 \
   --n-seeds 2 \
   --extract-root runs/demo-6-replay
@@ -140,10 +140,10 @@ Requirements:
 - Do not call an LLM.
 - Do not use the network during the replay step.
 - Do not modify source files.
-- Use Python: /home/jinguxie/qec-ai-decoder/.venv/bin/python
+- Use Python: ./.venv/bin/python (auto-discovered by the script)
 
 Command:
-PYTHON_BIN=/home/jinguxie/qec-ai-decoder/.venv/bin/python bash demos/demo-6-advisor-replay/showcase/run.sh
+bash demos/demo-6-advisor-replay/showcase/run.sh
 
 After it finishes, tell me:
 1. whether Demo 6 passed,
