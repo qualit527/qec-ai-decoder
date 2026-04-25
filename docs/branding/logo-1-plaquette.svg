@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>AutoQEC — Auto-Ket |ψ⟩ (refined)</title>
+  <desc>A dominant 300° refresh-style auto-loop frames the Dirac ket |ψ⟩. The ψ inside is simultaneously the Greek letter and a 3-input → hub → output neural graph. Clean, minimal, strongly auto-coded.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0a0f24"/>
+      <stop offset="1" stop-color="#121c3d"/>
+    </linearGradient>
+    <linearGradient id="loopGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#22d3ee"/>
+      <stop offset="0.55" stop-color="#60a5fa"/>
+      <stop offset="1"   stop-color="#e879f9"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="40" fill="url(#bg)"/>
+
+  <!-- Motion trail: faint dashed continuation just past the loop's starting point,
+       suggesting the cycle keeps going -->
+  <path d="M 176 45 A 96 96 0 0 1 210 78"
+        fill="none" stroke="#22d3ee" stroke-width="3"
+        stroke-linecap="round" stroke-dasharray="1 9" opacity="0.55"/>
+
+  <!-- THE AUTO-LOOP (dominant element) -->
+  <path d="M 176 45 A 96 96 0 1 1 80 45"
+        fill="none" stroke="url(#loopGrad)" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- Prominent arrowhead at the end of the loop (points clockwise-forward, upper-right) -->
+  <polygon points="80,45 72,59 64,45" fill="#e879f9"/>
+  <!-- Highlight dot just inside the arrowhead for a more finished look -->
+  <circle cx="72" cy="48.5" r="1.4" fill="#0a0f24" opacity="0.5"/>
+
+  <!-- AUTO wordmark sitting in the gap at top -->
+  <text x="128" y="40" text-anchor="middle"
+        font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI'"
+        font-size="12" font-weight="800" letter-spacing="4"
+        fill="#e879f9">AUTO</text>
+
+  <!-- Ket bracket | (left) -->
+  <line x1="82" y1="88" x2="82" y2="172"
+        stroke="#f0f9ff" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- Ket bracket ⟩ (right angle) -->
+  <polyline points="170,88 190,130 170,172"
+            fill="none" stroke="#f0f9ff" stroke-width="5"
+            stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- ψ strokes: central stem + two curved prongs (also = 3-in neural to hub → out) -->
+  <g fill="none" stroke="#67e8f9" stroke-width="2.8"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- Central vertical stem of ψ -->
+    <line x1="128" y1="94" x2="128" y2="160"/>
+    <!-- Left prong -->
+    <path d="M 128 130 Q 110 116 108 100"/>
+    <!-- Right prong -->
+    <path d="M 128 130 Q 146 116 148 100"/>
+  </g>
+
+  <!-- Neural-network nodes on the ψ (3 inputs at top, 1 hub at junction, 1 output at bottom) -->
+  <!-- Inputs: soft cyan -->
+  <circle cx="108" cy="100" r="4.5" fill="#22d3ee"/>
+  <circle cx="128" cy="94"  r="4.5" fill="#22d3ee"/>
+  <circle cx="148" cy="100" r="4.5" fill="#22d3ee"/>
+  <!-- Hub: the decoder (magenta, larger, with subtle ring) -->
+  <circle cx="128" cy="130" r="8.5" fill="#e879f9"/>
+  <circle cx="128" cy="130" r="3"   fill="#fff"/>
+  <!-- Output: warm yellow -->
+  <circle cx="128" cy="160" r="5" fill="#fde68a"/>
+</svg>

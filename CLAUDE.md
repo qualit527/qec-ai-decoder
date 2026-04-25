@@ -111,6 +111,10 @@ Orchestration writes **only** at the run root; the Runner writes **only** inside
 
 When developing a new skill or subagent: put the `.md` alongside the existing ones; read from `memory.py::l3_for_<role>` for context assembly; use `autoqec.agents.dispatch.build_prompt` so the Tier-2 validator rules and schema constraints are surfaced to the model.
 
+## Code Review Output
+
+PR reviews (whether triggered by `/code-review`, `/codex-review`, or any other review skill) MUST be posted directly as a comment on the GitHub PR via `gh pr comment <N> --body-file <tmp>` (or `--body`). Do NOT leave local review markdown files in `.claude/PRPs/reviews/`, `docs/`, or anywhere else in the repo. If a skill defaults to writing a local file, write to a temp path, post it, and delete it. The PR thread is the single source of truth for review feedback.
+
 ## Commit Convention
 
 Conventional commits: `feat:`, `fix:`, `docs:`, `test:`, `chore:`, `refactor:`, `perf:`, `ci:`.

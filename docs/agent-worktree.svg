@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 820" font-family="ui-sans-serif, -apple-system, Segoe UI, sans-serif">
+  <defs>
+    <!-- Arrowheads -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrowMerge" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowFail" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b91c1c"/>
+    </marker>
+    <marker id="arrowLight" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+
+    <!-- Card gradient -->
+    <linearGradient id="cardBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f8fafc"/>
+    </linearGradient>
+    <linearGradient id="paretoGlow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fef3c7"/>
+      <stop offset="100%" stop-color="#fde68a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1240" height="820" fill="#f1f5f9"/>
+
+  <!-- Title bar -->
+  <text x="40" y="44" font-size="22" font-weight="700" fill="#0f172a">AutoQEC agent worktree model</text>
+  <text x="40" y="66" font-size="13" fill="#475569">run_id = <tspan font-family="ui-monospace, Menlo, monospace" fill="#0f172a">demo38-20260423-103750</tspan>  ·  one branch + one checkout per round  ·  subagent DAG runs inside the checkout</text>
+
+  <!-- ============================================================ -->
+  <!-- LEFT PANEL: repo + worktree filesystem                         -->
+  <!-- ============================================================ -->
+  <g transform="translate(40, 100)">
+    <rect x="0" y="0" width="480" height="680" rx="12" fill="url(#cardBg)" stroke="#cbd5e1"/>
+    <text x="20" y="28" font-size="14" font-weight="700" fill="#0f172a">Filesystem &amp; branches</text>
+    <text x="20" y="48" font-size="11" fill="#64748b">main repo (HEAD = main) plus one git-worktree checkout per experiment branch</text>
+
+    <!-- Main repo node -->
+    <g transform="translate(30, 80)">
+      <rect width="420" height="64" rx="8" fill="#0f172a"/>
+      <text x="18" y="26" font-size="13" font-weight="700" fill="#f8fafc">qec-ai-decoder/</text>
+      <text x="18" y="44" font-size="11" font-family="ui-monospace, Menlo, monospace" fill="#cbd5e1">HEAD → main  ·  f51cfcf</text>
+      <text x="18" y="58" font-size="11" fill="#94a3b8">orchestrator cwd · reads/writes runs/&lt;run_id&gt;/</text>
+    </g>
+
+    <!-- Connector lines from repo to each worktree -->
+    <path d="M 240 144 L 240 188" stroke="#94a3b8" stroke-width="1.5" fill="none"/>
+    <path d="M 240 188 L 90 188"  stroke="#94a3b8" stroke-width="1.5" fill="none"/>
+    <path d="M 240 188 L 390 188" stroke="#94a3b8" stroke-width="1.5" fill="none"/>
+    <text x="248" y="182" font-size="10" fill="#64748b" font-style="italic">git worktree add</text>
+
+    <!-- Worktree row 1: idea-a and idea-b -->
+    <g transform="translate(30, 200)">
+      <rect width="195" height="92" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="1.5"/>
+      <rect x="0" y="0" width="195" height="20" rx="8" fill="#22c55e"/>
+      <rect x="0" y="10" width="195" height="10" fill="#22c55e"/>
+      <text x="10" y="14" font-size="10" font-weight="700" fill="#ffffff">VERIFIED · on Pareto</text>
+      <text x="10" y="38" font-size="11" font-family="ui-monospace, Menlo, monospace" fill="#0f172a">.worktrees/…/01-idea-a/</text>
+      <text x="10" y="54" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#334155">exp/…/01-idea-a</text>
+      <text x="10" y="72" font-size="10" fill="#64748b">round_1 · GNN 2-layer</text>
+      <text x="10" y="86" font-size="10" fill="#16a34a">Δ = +0.18 · 18M flops</text>
+    </g>
+    <g transform="translate(255, 200)">
+      <rect width="195" height="92" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="1.5"/>
+      <rect x="0" y="0" width="195" height="20" rx="8" fill="#22c55e"/>
+      <rect x="0" y="10" width="195" height="10" fill="#22c55e"/>
+      <text x="10" y="14" font-size="10" font-weight="700" fill="#ffffff">VERIFIED · on Pareto</text>
+      <text x="10" y="38" font-size="11" font-family="ui-monospace, Menlo, monospace" fill="#0f172a">.worktrees/…/02-idea-b/</text>
+      <text x="10" y="54" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#334155">exp/…/02-idea-b</text>
+      <text x="10" y="72" font-size="10" fill="#64748b">round_2 · neural-BP 4 iter</text>
+      <text x="10" y="86" font-size="10" fill="#16a34a">Δ = +0.12 · 7M flops</text>
+    </g>
+
+    <!-- Worktree row 2: compose + conflict left/right -->
+    <g transform="translate(30, 308)">
+      <rect width="420" height="92" rx="8" fill="url(#paretoGlow)" stroke="#d97706" stroke-width="1.5"/>
+      <rect x="0" y="0" width="420" height="20" rx="8" fill="#d97706"/>
+      <rect x="0" y="10" width="420" height="10" fill="#d97706"/>
+      <text x="10" y="14" font-size="10" font-weight="700" fill="#ffffff">VERIFIED · compose merge (parents 01, 02)</text>
+      <text x="10" y="38" font-size="11" font-family="ui-monospace, Menlo, monospace" fill="#0f172a">.worktrees/…/03-compose-ab/</text>
+      <text x="10" y="54" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#334155">exp/…/03-compose-ab  (git merge 01-idea-a 02-idea-b)</text>
+      <text x="10" y="72" font-size="10" fill="#64748b">round_3 · GNN 2-layer + neural-BP post-pass</text>
+      <text x="10" y="86" font-size="10" fill="#b45309">Δ = +0.22 · 24M flops · dominates both parents</text>
+    </g>
+
+    <g transform="translate(30, 416)">
+      <rect width="195" height="92" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-dasharray="4,3" stroke-width="1.5"/>
+      <rect x="0" y="0" width="195" height="20" rx="8" fill="#64748b"/>
+      <rect x="0" y="10" width="195" height="10" fill="#64748b"/>
+      <text x="10" y="14" font-size="10" font-weight="700" fill="#ffffff">compose_conflict · no checkout</text>
+      <text x="10" y="38" font-size="11" font-family="ui-monospace, Menlo, monospace" fill="#0f172a">(no worktree — merge failed)</text>
+      <text x="10" y="54" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#334155">exp/…/90-conflict-left</text>
+      <text x="10" y="72" font-size="10" fill="#64748b">row written with branch=None</text>
+      <text x="10" y="86" font-size="10" fill="#64748b">commit_sha=None · status recorded</text>
+    </g>
+    <g transform="translate(255, 416)">
+      <rect width="195" height="92" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-dasharray="4,3" stroke-width="1.5"/>
+      <rect x="0" y="0" width="195" height="20" rx="8" fill="#64748b"/>
+      <rect x="0" y="10" width="195" height="10" fill="#64748b"/>
+      <text x="10" y="14" font-size="10" font-weight="700" fill="#ffffff">compose_conflict · no checkout</text>
+      <text x="10" y="38" font-size="11" font-family="ui-monospace, Menlo, monospace" fill="#0f172a">(no worktree — merge failed)</text>
+      <text x="10" y="54" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#334155">exp/…/91-conflict-right</text>
+      <text x="10" y="72" font-size="10" fill="#64748b">Ideator learns conflict signal</text>
+      <text x="10" y="86" font-size="10" fill="#64748b">via fork_graph on next round</text>
+    </g>
+
+    <!-- Extra connector stubs -->
+    <path d="M 128 144 L 128 200"  stroke="#94a3b8" stroke-width="1.5" fill="none"/>
+    <path d="M 352 144 L 352 200"  stroke="#94a3b8" stroke-width="1.5" fill="none"/>
+    <path d="M 240 144 L 240 308"  stroke="#94a3b8" stroke-width="1.5" fill="none" stroke-dasharray="2,2"/>
+    <path d="M 128 188 L 128 416"  stroke="#94a3b8" stroke-width="1" fill="none" stroke-dasharray="2,2" opacity="0.5"/>
+    <path d="M 352 188 L 352 416"  stroke="#94a3b8" stroke-width="1" fill="none" stroke-dasharray="2,2" opacity="0.5"/>
+
+    <!-- Footer: per-round artefacts -->
+    <g transform="translate(30, 532)">
+      <rect width="420" height="128" rx="8" fill="#0f172a"/>
+      <text x="14" y="22" font-size="12" font-weight="700" fill="#f8fafc">Written inside each worktree (round_&lt;N&gt;/ only):</text>
+      <text x="14" y="42" font-size="10.5" font-family="ui-monospace, Menlo, monospace" fill="#cbd5e1">  config.yaml      ← DSL dict</text>
+      <text x="14" y="58" font-size="10.5" font-family="ui-monospace, Menlo, monospace" fill="#cbd5e1">  checkpoint.pt    ← {class_name, state_dict, …}</text>
+      <text x="14" y="74" font-size="10.5" font-family="ui-monospace, Menlo, monospace" fill="#cbd5e1">  metrics.json     ← RoundMetrics (§2.2)</text>
+      <text x="14" y="90" font-size="10.5" font-family="ui-monospace, Menlo, monospace" fill="#cbd5e1">  train.log        ← &lt;step&gt;\t&lt;loss&gt;</text>
+      <text x="14" y="106" font-size="10.5" font-family="ui-monospace, Menlo, monospace" fill="#cbd5e1">  round_N_pointer.json ← provenance (read by reconcile)</text>
+      <text x="14" y="122" font-size="10" fill="#64748b" font-style="italic">orchestrator writes only at run root — never races the Runner</text>
+    </g>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- RIGHT PANEL: fork graph DAG                                    -->
+  <!-- ============================================================ -->
+  <g transform="translate(550, 100)">
+    <rect x="0" y="0" width="650" height="680" rx="12" fill="url(#cardBg)" stroke="#cbd5e1"/>
+    <text x="20" y="28" font-size="14" font-weight="700" fill="#0f172a">Fork graph · what the Ideator sees</text>
+    <text x="20" y="48" font-size="11" fill="#64748b">l3_for_ideator(run_id).fork_graph — nodes annotated with Δ_LER, FLOPs, Pareto flag</text>
+
+    <!-- Baseline -->
+    <g transform="translate(270, 80)">
+      <rect width="120" height="48" rx="8" fill="#1e293b"/>
+      <text x="60" y="20" font-size="12" font-weight="700" fill="#f8fafc" text-anchor="middle">baseline</text>
+      <text x="60" y="38" font-size="10" fill="#94a3b8" text-anchor="middle">MWPM · Δ = 0</text>
+    </g>
+
+    <!-- idea-a (round 1) -->
+    <g transform="translate(80, 180)">
+      <rect width="160" height="74" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+      <text x="12" y="20" font-size="11" font-weight="700" fill="#166534">round_1 · 01-idea-a</text>
+      <text x="12" y="36" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#14532d">parent = baseline</text>
+      <text x="12" y="52" font-size="10" fill="#16a34a">Δ = +0.18 · 18M flops</text>
+      <circle cx="148" cy="14" r="6" fill="#facc15" stroke="#a16207"/>
+      <text x="148" y="18" font-size="9" font-weight="700" fill="#713f12" text-anchor="middle">P</text>
+      <text x="12" y="66" font-size="9" fill="#475569" font-style="italic">"shallow GNN on syndrome graph"</text>
+    </g>
+
+    <!-- idea-b (round 2) -->
+    <g transform="translate(420, 180)">
+      <rect width="160" height="74" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+      <text x="12" y="20" font-size="11" font-weight="700" fill="#166534">round_2 · 02-idea-b</text>
+      <text x="12" y="36" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#14532d">parent = baseline</text>
+      <text x="12" y="52" font-size="10" fill="#16a34a">Δ = +0.12 · 7M flops</text>
+      <circle cx="148" cy="14" r="6" fill="#facc15" stroke="#a16207"/>
+      <text x="148" y="18" font-size="9" font-weight="700" fill="#713f12" text-anchor="middle">P</text>
+      <text x="12" y="66" font-size="9" fill="#475569" font-style="italic">"neural-BP, 4 message-pass iters"</text>
+    </g>
+
+    <!-- Edges baseline → round_1, round_2 -->
+    <path d="M 305 128 L 160 180" stroke="#334155" stroke-width="1.7" fill="none" marker-end="url(#arrow)"/>
+    <path d="M 355 128 L 500 180" stroke="#334155" stroke-width="1.7" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- compose round 3 -->
+    <g transform="translate(240, 320)">
+      <rect width="180" height="88" rx="8" fill="url(#paretoGlow)" stroke="#d97706" stroke-width="2"/>
+      <text x="12" y="22" font-size="11" font-weight="700" fill="#92400e">round_3 · 03-compose-ab</text>
+      <text x="12" y="40" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#7c2d12">compose_mode = merge</text>
+      <text x="12" y="55" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#7c2d12">fork_from = [01, 02]</text>
+      <text x="12" y="72" font-size="10" font-weight="600" fill="#b45309">Δ = +0.22 · 24M flops</text>
+      <text x="12" y="84" font-size="9" fill="#7c2d12" font-style="italic">dominates both parents</text>
+      <circle cx="168" cy="14" r="6" fill="#facc15" stroke="#a16207"/>
+      <text x="168" y="18" font-size="9" font-weight="700" fill="#713f12" text-anchor="middle">P</text>
+    </g>
+
+    <!-- compose edges from round_1, round_2 -->
+    <path d="M 160 254 L 300 320" stroke="#2563eb" stroke-width="1.7" fill="none" marker-end="url(#arrowMerge)"/>
+    <path d="M 500 254 L 360 320" stroke="#2563eb" stroke-width="1.7" fill="none" marker-end="url(#arrowMerge)"/>
+    <text x="225" y="295" font-size="10" fill="#2563eb" font-style="italic">git merge</text>
+    <text x="420" y="295" font-size="10" fill="#2563eb" font-style="italic">git merge</text>
+
+    <!-- conflict rounds 90, 91 -->
+    <g transform="translate(40, 470)">
+      <rect width="200" height="80" rx="8" fill="#fef2f2" stroke="#b91c1c" stroke-dasharray="5,3" stroke-width="1.5"/>
+      <text x="12" y="22" font-size="11" font-weight="700" fill="#7f1d1d">round_90 · 90-conflict-left</text>
+      <text x="12" y="40" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#991b1b">status = compose_conflict</text>
+      <text x="12" y="56" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#991b1b">branch = None · sha = None</text>
+      <text x="12" y="72" font-size="9" fill="#991b1b" font-style="italic">merge refused — path overlap</text>
+    </g>
+    <g transform="translate(420, 470)">
+      <rect width="200" height="80" rx="8" fill="#fef2f2" stroke="#b91c1c" stroke-dasharray="5,3" stroke-width="1.5"/>
+      <text x="12" y="22" font-size="11" font-weight="700" fill="#7f1d1d">round_91 · 91-conflict-right</text>
+      <text x="12" y="40" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#991b1b">status = compose_conflict</text>
+      <text x="12" y="56" font-size="10" font-family="ui-monospace, Menlo, monospace" fill="#991b1b">branch = None · sha = None</text>
+      <text x="12" y="72" font-size="9" fill="#991b1b" font-style="italic">row still appended to history</text>
+    </g>
+    <path d="M 330 408 L 140 470" stroke="#b91c1c" stroke-width="1.3" fill="none" stroke-dasharray="3,3" marker-end="url(#arrowFail)"/>
+    <path d="M 330 408 L 520 470" stroke="#b91c1c" stroke-width="1.3" fill="none" stroke-dasharray="3,3" marker-end="url(#arrowFail)"/>
+
+    <!-- subagent DAG (inside box) -->
+    <g transform="translate(20, 580)">
+      <rect width="610" height="82" rx="8" fill="#0f172a"/>
+      <text x="14" y="22" font-size="12" font-weight="700" fill="#f8fafc">What runs inside each worktree (per round)</text>
+
+      <!-- pipeline nodes -->
+      <g transform="translate(20, 40)">
+        <rect width="96" height="30" rx="6" fill="#7c3aed"/>
+        <text x="48" y="20" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">Ideator</text>
+      </g>
+      <g transform="translate(140, 40)">
+        <rect width="96" height="30" rx="6" fill="#0ea5e9"/>
+        <text x="48" y="20" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">Coder</text>
+      </g>
+      <g transform="translate(260, 40)">
+        <rect width="96" height="30" rx="6" fill="#f97316"/>
+        <text x="48" y="20" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">Runner</text>
+      </g>
+      <g transform="translate(380, 40)">
+        <rect width="96" height="30" rx="6" fill="#eab308"/>
+        <text x="48" y="20" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">Analyst</text>
+      </g>
+      <g transform="translate(500, 40)">
+        <rect width="96" height="30" rx="6" fill="#22c55e"/>
+        <text x="48" y="20" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">Verifier*</text>
+      </g>
+
+      <!-- pipeline arrows -->
+      <path d="M 116 55 L 140 55" stroke="#f8fafc" stroke-width="1.5" fill="none" marker-end="url(#arrowLight)"/>
+      <path d="M 236 55 L 260 55" stroke="#f8fafc" stroke-width="1.5" fill="none" marker-end="url(#arrowLight)"/>
+      <path d="M 356 55 L 380 55" stroke="#f8fafc" stroke-width="1.5" fill="none" marker-end="url(#arrowLight)"/>
+      <path d="M 476 55 L 500 55" stroke="#f8fafc" stroke-width="1.5" fill="none" marker-end="url(#arrowLight)" stroke-dasharray="3,2"/>
+
+      <text x="20" y="80" font-size="10" fill="#94a3b8">hypothesis → DSL → train+eval → verdict → (if candidate) holdout audit  ·  3-of-3 sign-off gates Pareto admit</text>
+    </g>
+  </g>
+
+  <!-- Legend footer -->
+  <g transform="translate(40, 790)">
+    <text x="0" y="0" font-size="11" fill="#475569">
+      <tspan font-weight="700" fill="#0f172a">Legend:</tspan>
+      <tspan dx="8" fill="#16a34a">■</tspan> VERIFIED &amp; Pareto
+      <tspan dx="18" fill="#d97706">■</tspan> compose merge (on Pareto)
+      <tspan dx="18" fill="#b91c1c">■</tspan> compose_conflict (no worktree)
+      <tspan dx="18" fill="#64748b">■</tspan> orphaned / reconciled
+      <tspan dx="18">·</tspan>
+      <tspan font-weight="700" fill="#a16207">P</tspan> = non-dominated on (Δ, flops, n_params)
+    </text>
+  </g>
+</svg>

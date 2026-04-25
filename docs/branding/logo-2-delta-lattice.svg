@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>AutoQEC — Neural Bloch</title>
+  <desc>A Bloch sphere whose state vector is drawn as a neural network path (nodes + edges) instead of a plain arrow; orbital auto-loop ring with |0⟩ / |1⟩ poles labelled — the AI decoder learning the qubit state across autonomous research rounds.</desc>
+
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0f24"/>
+      <stop offset="1" stop-color="#0f1d42"/>
+    </linearGradient>
+    <radialGradient id="sphere" cx="0.35" cy="0.32" r="0.75">
+      <stop offset="0"   stop-color="#67e8f9"/>
+      <stop offset="0.55" stop-color="#22d3ee"/>
+      <stop offset="1"   stop-color="#0e7490"/>
+    </radialGradient>
+    <linearGradient id="autoRing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e879f9"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="40" fill="url(#bg2)"/>
+
+  <!-- Auto-loop orbital ring (tilted ellipse = autonomous iteration) -->
+  <g transform="translate(128 132)">
+    <ellipse rx="104" ry="40" transform="rotate(-18)"
+             fill="none" stroke="url(#autoRing)" stroke-width="3"
+             stroke-dasharray="2 10" stroke-linecap="round"/>
+    <!-- Arrowhead on the ring to signal "auto-loop" -->
+    <g transform="rotate(-18) translate(104 0)">
+      <polygon points="0,-7 14,0 0,7" fill="#e879f9"/>
+    </g>
+  </g>
+
+  <!-- Bloch sphere -->
+  <g transform="translate(128 132)">
+    <circle r="58" fill="url(#sphere)" stroke="#f0f9ff" stroke-width="1.5" stroke-opacity="0.8"/>
+    <!-- Equator -->
+    <ellipse rx="58" ry="18" fill="none" stroke="#f0f9ff" stroke-width="1.2" stroke-opacity="0.55"/>
+    <!-- Meridian -->
+    <ellipse rx="18" ry="58" fill="none" stroke="#f0f9ff" stroke-width="1.2" stroke-opacity="0.4"/>
+    <!-- Polar axis -->
+    <line x1="0" y1="-58" x2="0" y2="58" stroke="#f0f9ff" stroke-width="1" stroke-opacity="0.35"/>
+  </g>
+
+  <!-- |0⟩ and |1⟩ pole labels -->
+  <g font-family="ui-sans-serif, system-ui, -apple-system" font-weight="600" fill="#f0f9ff">
+    <text x="128" y="66"  text-anchor="middle" font-size="14">|0&#10217;</text>
+    <text x="128" y="214" text-anchor="middle" font-size="14">|1&#10217;</text>
+  </g>
+
+  <!-- Neural state vector: edges from Bloch origin through hidden nodes to the state point -->
+  <g stroke="#fef3c7" stroke-width="2" fill="none" stroke-linecap="round">
+    <line x1="128" y1="132" x2="148" y2="118"/>
+    <line x1="148" y1="118" x2="166" y2="100"/>
+    <!-- dashed side-branches hinting at the network -->
+    <line x1="128" y1="132" x2="152" y2="132" stroke-opacity="0.5" stroke-dasharray="2 4"/>
+    <line x1="148" y1="118" x2="162" y2="130" stroke-opacity="0.5" stroke-dasharray="2 4"/>
+  </g>
+
+  <!-- Neural nodes along the vector -->
+  <g>
+    <!-- origin -->
+    <circle cx="128" cy="132" r="4" fill="#f0f9ff"/>
+    <!-- hidden nodes -->
+    <circle cx="148" cy="118" r="5.5" fill="#e879f9"/>
+    <circle cx="152" cy="132" r="3"   fill="#e879f9" opacity="0.7"/>
+    <circle cx="162" cy="130" r="3"   fill="#e879f9" opacity="0.7"/>
+    <!-- state tip -->
+    <circle cx="166" cy="100" r="6"   fill="#fef3c7" stroke="#fbbf24" stroke-width="1.5"/>
+  </g>
+</svg>

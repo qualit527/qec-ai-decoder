@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>AutoQEC — Decoder Loop</title>
+  <desc>A closed autonomous loop: a noisy qubit with an X error flows into a neural AI decoder, which emits a clean qubit; the arrow loops back to iterate. Quantum symbols (qubit circles with error/correction marks) + AI (central neural graph) + Auto (full closed loop).</desc>
+
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0f24"/>
+      <stop offset="1" stop-color="#14224a"/>
+    </linearGradient>
+    <linearGradient id="loopGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#e879f9"/>
+    </linearGradient>
+    <radialGradient id="aiGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#e879f9" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#e879f9" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="40" fill="url(#bg3)"/>
+
+  <!-- Auto-loop: a ring going noisy qubit → AI → clean qubit → back -->
+  <g fill="none" stroke="url(#loopGrad)" stroke-width="3.5" stroke-linecap="round">
+    <!-- top arc: clean → noisy (feedback / next syndrome frame) -->
+    <path d="M 182 70 A 78 78 0 0 0 74 70"/>
+    <!-- bottom arc: noisy → clean (through AI) -->
+    <path d="M 74 194 A 78 78 0 0 0 182 194"/>
+    <!-- arrowhead on the top arc (pointing left, feedback direction) -->
+    <path d="M 74 70 L 88 60 M 74 70 L 86 82"/>
+    <!-- arrowhead on the bottom arc (pointing right, forward flow) -->
+    <path d="M 182 194 L 168 204 M 182 194 L 170 182"/>
+  </g>
+
+  <!-- Noisy qubit (left) — circle with X error mark -->
+  <g transform="translate(60 132)">
+    <circle r="28" fill="#0a0f24" stroke="#22d3ee" stroke-width="2.5"/>
+    <!-- Bloch hint: equator -->
+    <ellipse rx="28" ry="9" fill="none" stroke="#22d3ee" stroke-width="1" stroke-opacity="0.55"/>
+    <!-- X error -->
+    <g stroke="#f87171" stroke-width="3.5" stroke-linecap="round">
+      <line x1="-10" y1="-10" x2="10" y2="10"/>
+      <line x1="10"  y1="-10" x2="-10" y2="10"/>
+    </g>
+    <text y="52" text-anchor="middle" font-size="11" font-family="ui-sans-serif,system-ui"
+          fill="#94a3b8" font-weight="600">syndrome</text>
+  </g>
+
+  <!-- Clean qubit (right) — circle with ket |ψ⟩ label -->
+  <g transform="translate(196 132)">
+    <circle r="28" fill="#0a0f24" stroke="#22d3ee" stroke-width="2.5"/>
+    <ellipse rx="28" ry="9" fill="none" stroke="#22d3ee" stroke-width="1" stroke-opacity="0.55"/>
+    <!-- State vector (clean) -->
+    <line x1="0" y1="0" x2="12" y2="-14" stroke="#fef3c7" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="12" cy="-14" r="2.8" fill="#fef3c7"/>
+    <text y="52" text-anchor="middle" font-size="11" font-family="ui-sans-serif,system-ui"
+          fill="#94a3b8" font-weight="600">|&#968;&#10217;</text>
+  </g>
+
+  <!-- AI decoder (center) — neural graph -->
+  <g transform="translate(128 132)">
+    <circle r="36" fill="url(#aiGlow)"/>
+    <!-- 2-layer tiny network: 3 inputs → 2 hidden → 1 output, but horizontally compact -->
+    <g stroke="#e879f9" stroke-width="1.6" fill="none" stroke-opacity="0.9">
+      <!-- input-hidden -->
+      <line x1="-18" y1="-14" x2="0" y2="-8"/>
+      <line x1="-18" y1="0"   x2="0" y2="-8"/>
+      <line x1="-18" y1="14"  x2="0" y2="8"/>
+      <line x1="-18" y1="-14" x2="0" y2="8"/>
+      <line x1="-18" y1="14"  x2="0" y2="-8"/>
+      <line x1="-18" y1="0"   x2="0" y2="8"/>
+      <!-- hidden-output -->
+      <line x1="0" y1="-8" x2="18" y2="0"/>
+      <line x1="0" y1="8"  x2="18" y2="0"/>
+    </g>
+    <!-- nodes -->
+    <g fill="#0a0f24" stroke="#e879f9" stroke-width="2">
+      <circle cx="-18" cy="-14" r="3.5"/>
+      <circle cx="-18" cy="0"   r="3.5"/>
+      <circle cx="-18" cy="14"  r="3.5"/>
+      <circle cx="0"   cy="-8"  r="4.5"/>
+      <circle cx="0"   cy="8"   r="4.5"/>
+    </g>
+    <circle cx="18" cy="0" r="5.5" fill="#fef3c7"/>
+  </g>
+
+  <!-- Forward flow arrows: noisy → AI, AI → clean -->
+  <g stroke="#22d3ee" stroke-width="2" stroke-linecap="round" fill="none">
+    <line x1="92"  y1="132" x2="106" y2="132"/>
+    <line x1="150" y1="132" x2="164" y2="132"/>
+  </g>
+  <g fill="#22d3ee">
+    <polygon points="106,132 100,128 100,136"/>
+    <polygon points="164,132 158,128 158,136"/>
+  </g>
+
+  <!-- Top center label: AUTO -->
+  <text x="128" y="42" text-anchor="middle" font-size="10.5"
+        font-family="ui-sans-serif,system-ui" font-weight="700"
+        fill="#e879f9" letter-spacing="3">AUTO</text>
+</svg>

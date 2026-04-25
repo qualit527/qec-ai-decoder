@@ -1,0 +1,4 @@
+interface:
+  display_name: "Demo Presenter"
+  short_description: "Generate an evidence-backed AutoQEC demo presentation."
+  default_prompt: "Use $demo-presenter to prepare a persuasive, human-voiced AutoQEC demo walkthrough from repository evidence."
