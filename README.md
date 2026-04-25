@@ -87,6 +87,8 @@ Rules:
 
 ## Architecture at a glance
 
+The classical backend guarantees structural validity; the predecoder contributes `Δ_LER = LER(plain_classical) − LER(predecoder + classical)` — a single clean number per round.
+
 ```
 syndrome + code DEM
         │
@@ -108,15 +110,63 @@ syndrome + code DEM
  logical correction
 ```
 
-The classical backend guarantees structural validity; the predecoder contributes `Δ_LER = LER(plain_classical) − LER(predecoder + classical)` — a single clean number per round.
+Each round is a 3-subagent DAG (+ optional Verifier). Roles are backend-pluggable via `AUTOQEC_{IDEATOR,CODER,ANALYST}_BACKEND`; the Runner is local-only and enforces a tool whitelist (`autoqec/runner/safety.py`) so reward-hacking paths to training-set syndromes are physically blocked.
 
-Per-round isolation and the Pareto-as-branches model are specified in
-[`spec §15`](docs/superpowers/specs/2026-04-20-autoqec-design.md#15-worktree-based-experiment-model).
-Each round runs on its own `exp/<run_id>/<NN>-<slug>` git branch inside a
-`.worktrees/` checkout, Pareto members are the complete non-dominated
-set of VERIFIED branches, and compose rounds test `git merge parent-A
-parent-B` as a first-class scientific probe. Startup reconciliation
-(§15.10) keeps `history.jsonl` and the live branch set in sync.
+```
+ round N dispatch · fork_graph + machine_state
+        ↓
+┌─────────────────────────────────────────┐
+│ Ideator                     (subagent)  │
+│   hypothesis + fork_from + compose_mode │
+└─────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────┐
+│ Coder                       (subagent)  │
+│   DSL config + commit_message           │
+│   Tier-1 canonical · Tier-2 custom_fn   │
+└─────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────┐
+│ Runner                       (script)   │
+│   train + eval → RoundMetrics           │
+└─────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────┐
+│ Analyst                     (subagent)  │
+│   verdict: candidate | ignore           │
+└─────────────────────────────────────────┘
+        ↓   (if candidate)
+┌─────────────────────────────────────────┐
+│ Verifier           (optional subagent)  │
+│   VERIFIED → Pareto admit               │
+│   SUSPICIOUS / FAILED → rejected        │
+└─────────────────────────────────────────┘
+```
+
+Each round runs on its own `exp/<run_id>/<NN>-<slug>` git branch inside a `.worktrees/` checkout, Pareto members are the complete non-dominated set of VERIFIED branches, and compose rounds test `git merge parent-A parent-B` as a first-class scientific probe. Startup reconciliation keeps `history.jsonl` and the live branch set in sync.
+
+```
+ main  (f51cfcf · run_id = demo38-…103750)
+   │
+   ├─ 01-idea-a           ★ Δ=+0.18  ──┐
+   │                                   │
+   ├─ 02-idea-b           ★ Δ=+0.12  ──┤   git merge   (compose_mode = merge)
+   │                                   │
+   ├─ 03-compose-ab       ★ Δ=+0.22  ──┘   dominates both parents
+   │
+   ├─ 04-idea-c           ignore          Analyst: Δ within bootstrap CI
+   │
+   ├─ 90-conflict-L       ◇ compose_conflict · branch=None · sha=None
+   ├─ 91-conflict-R       ◇ compose_conflict · merge refused · no worktree
+   │
+   └─ 07-orphan           ⊘ orphaned_branch  · healed by reconcile
+
+ ★ on non-dominated Pareto    ◇ merge refused    ⊘ orphan recovered on startup
+ each  exp/<run_id>/<NN>-<slug>  ≡ its own  .worktrees/exp-…/  checkout
+ runs/<run_id>/  stores   history.jsonl · pareto.json · fork_graph.json (this tree)
+```
+
+
 
 ## Deliverables
 
@@ -147,7 +197,7 @@ Four ship as runnable demos. The `/add-env` demo (D3) stays planned — the CLI 
 
 ### Skills (LLM-reasoning user surfaces, exposed as `/<name>`)
 
-All five skills under `.claude/skills/` are discoverable from Claude Code. `/add-env` remained a CLI-only subcommand; `/read-zulip` was added to recover off-repo hackathon context.
+All six skills under `.claude/skills/` are discoverable from Claude Code. `/add-env` remained a CLI-only subcommand; `/read-zulip` was added to recover off-repo hackathon context.
 
 | Skill | Purpose | Status |
 |---|---|---|
@@ -155,6 +205,7 @@ All five skills under `.claude/skills/` are discoverable from Claude Code. `/add
 | `/verify-decoder` | Audit a Pareto candidate against holdout seeds (wraps `cli.autoqec verify`) | **implemented** |
 | `/review-log` | Read an entire `runs/<id>/log.md`, flag stuck hypotheses / overfitting | **implemented** |
 | `/diagnose-failure` | Root-cause a broken or stalled round, recommend a fix (wraps `cli.autoqec diagnose`) | **implemented** |
+| `/demo-presenter` | Generate an evidence-backed walkthrough and live AI narration for the merged demos plus planned PR-only worktree demo | **implemented** |
 | `/read-zulip` | Pull Zulip stream/topic history for off-repo project context | **implemented** |
 | `/add-env` | Interactively create a new env YAML | planned (CLI only for now: `python -m cli.autoqec add-env`) |
 
