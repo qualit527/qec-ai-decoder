@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>AutoQEC — Logo Options</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #0a0f1f; color: #e5e7eb; }
+  h1 { text-align: center; padding: 24px 16px 0; font-weight: 600; letter-spacing: 0.02em; }
+  p.sub { text-align: center; color: #94a3b8; margin: 6px 0 32px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; padding: 0 32px 48px; }
+  .card { background: #111a32; border: 1px solid #1e293b; border-radius: 16px; padding: 20px; text-align: center; }
+  .card h2 { margin: 0 0 4px; font-size: 18px; }
+  .card .tag { color: #94a3b8; font-size: 13px; margin-bottom: 16px; }
+  .row { display: flex; justify-content: center; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .sample-lg { width: 192px; height: 192px; }
+  .sample-md { width: 96px; height: 96px; }
+  .sample-sm { width: 32px; height: 32px; }
+  .sample-dl { background: #ffffff; border-radius: 12px; padding: 6px; }
+  .label { font-size: 11px; color: #64748b; margin-top: 4px; }
+  .rationale { color: #cbd5e1; font-size: 13px; line-height: 1.5; text-align: left; margin-top: 12px; }
+</style>
+</head>
+<body>
+  <h1>AutoQEC Logo Options</h1>
+  <p class="sub">Three concepts — same palette (deep quantum blue + cyan + magenta). Pick one.</p>
+  <div class="grid">
+    <div class="card">
+      <h2>Option 1 — Auto-Ket |ψ⟩</h2>
+      <div class="tag">Dirac ket + neural ψ + auto-loop</div>
+      <div class="row">
+        <div>
+          <img class="sample-lg" src="logo-1-plaquette.svg" alt=""/>
+          <div class="label">192px</div>
+        </div>
+      </div>
+      <div class="row">
+        <div><img class="sample-md" src="logo-1-plaquette.svg" alt=""/><div class="label">96px</div></div>
+        <div><img class="sample-sm" src="logo-1-plaquette.svg" alt=""/><div class="label">32px (favicon)</div></div>
+        <div class="sample-dl"><img class="sample-md" src="logo-1-plaquette.svg" alt=""/><div class="label" style="color:#475569">on white</div></div>
+      </div>
+      <p class="rationale">The auto-loop is now the dominant shape — a thick 300° refresh arrow with a chunky magenta arrowhead and a faint dashed "motion trail" just past the opening; "AUTO" sits in the gap at top. Inside, a minimal |ψ⟩: the ψ reads as both the Greek letter and a neural graph (3 cyan inputs → magenta hub decoder → yellow output). Noise removed.</p>
+    </div>
+
+    <div class="card">
+      <h2>Option 2 — Neural Bloch</h2>
+      <div class="tag">Bloch sphere + neural state vector + auto-orbit</div>
+      <div class="row">
+        <div>
+          <img class="sample-lg" src="logo-2-delta-lattice.svg" alt=""/>
+          <div class="label">192px</div>
+        </div>
+      </div>
+      <div class="row">
+        <div><img class="sample-md" src="logo-2-delta-lattice.svg" alt=""/><div class="label">96px</div></div>
+        <div><img class="sample-sm" src="logo-2-delta-lattice.svg" alt=""/><div class="label">32px (favicon)</div></div>
+        <div class="sample-dl"><img class="sample-md" src="logo-2-delta-lattice.svg" alt=""/><div class="label" style="color:#475569">on white</div></div>
+      </div>
+      <p class="rationale">Unambiguously quantum — Bloch sphere with labelled |0⟩/|1⟩ poles — but the state vector is rendered as a neural path (nodes + dashed side-branches), i.e. "the AI decoder's belief about the qubit state." A dashed tilted orbital ring with an arrowhead represents the auto-research loop running around the physics.</p>
+    </div>
+
+    <div class="card">
+      <h2>Option 3 — Decoder Loop</h2>
+      <div class="tag">syndrome → neural decoder → |ψ⟩, looped</div>
+      <div class="row">
+        <div>
+          <img class="sample-lg" src="logo-3-shielded-bloch.svg" alt=""/>
+          <div class="label">192px</div>
+        </div>
+      </div>
+      <div class="row">
+        <div><img class="sample-md" src="logo-3-shielded-bloch.svg" alt=""/><div class="label">96px</div></div>
+        <div><img class="sample-sm" src="logo-3-shielded-bloch.svg" alt=""/><div class="label">32px (favicon)</div></div>
+        <div class="sample-dl"><img class="sample-md" src="logo-3-shielded-bloch.svg" alt=""/><div class="label" style="color:#475569">on white</div></div>
+      </div>
+      <p class="rationale">Shows the entire AutoQEC pipeline: a left qubit with a red X error (the syndrome) → a central neural decoder → a right qubit with a clean state vector |ψ⟩. A closed cyan→magenta loop around them with two arrowheads makes the autonomous round cycle explicit. Most narrative; reads like a one-glance spec.</p>
+    </div>
+  </div>
+</body>
+</html>
