@@ -15,6 +15,10 @@ import re
 import subprocess
 from typing import Literal
 
+from pydantic import ValidationError
+
+from autoqec.agents.schemas import ROLE_SCHEMAS
+
 Role = Literal["ideator", "coder", "analyst"]
 
 
@@ -56,6 +60,33 @@ def _parse_fenced_json(stdout: str) -> dict:
         raise InvalidSubagentResponseError(f"malformed json: {exc}") from exc
 
 
+def _normalize_payload(role: Role, payload: dict) -> dict:
+    normalized = dict(payload)
+    if role == "analyst":
+        if "summary_1line" not in normalized and "summary" in normalized:
+            normalized["summary_1line"] = normalized["summary"]
+        normalized.pop("summary", None)
+
+        if "verdict" not in normalized and "classification" in normalized:
+            normalized["verdict"] = normalized["classification"]
+        normalized.pop("classification", None)
+
+        if "next_hypothesis_seed" not in normalized:
+            normalized["next_hypothesis_seed"] = "continue from analyst summary"
+    return normalized
+
+
+def _parse_validated_payload(role: Role, stdout: str) -> dict:
+    payload = _normalize_payload(role, _parse_fenced_json(stdout))
+    schema = ROLE_SCHEMAS[role]
+    try:
+        return schema.model_validate(payload).model_dump()
+    except ValidationError as exc:
+        raise InvalidSubagentResponseError(
+            f"Invalid {role} response payload: {exc}"
+        ) from exc
+
+
 def invoke_subagent(role: Role, prompt: str, timeout: float = 300.0) -> dict:
     argv = _build_cli_argv(role)
     child_env = os.environ.copy()
@@ -73,6 +104,6 @@ def invoke_subagent(role: Role, prompt: str, timeout: float = 300.0) -> dict:
     )
     if result.returncode != 0:
         raise InvalidSubagentResponseError(
-            f"{argv[0]} exit {result.returncode}: {result.stderr[:200]}"
+            f"{argv[0]} exit {result.returncode}: {result.stderr[:1200]}"
         )
-    return _parse_fenced_json(result.stdout)
+    return _parse_validated_payload(role, result.stdout)

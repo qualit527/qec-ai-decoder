@@ -32,6 +32,45 @@ def test_gnn_forward_shape() -> None:
     assert out.shape == (4, n_var)
 
 
+def test_gnn_soft_priors_initializes_from_physical_prior() -> None:
+    """Soft-prior GNNs should learn residuals around the native DEM prior.
+
+    Starting from random probabilities near 0.5 badly miscalibrates MWPM
+    reweighting on sparse QEC errors. With a ``prior_p`` context, an untrained
+    model should initially emit those priors exactly.
+    """
+    n_var, n_check = 5, 3
+    model = BipartiteGNN(
+        n_var=n_var,
+        n_check=n_check,
+        hidden_dim=8,
+        layers=1,
+        message_fn="mlp",
+        aggregation="sum",
+        normalization="none",
+        residual=False,
+        output_mode="soft_priors",
+    )
+    syndrome = torch.rand(2, n_check)
+    edge_index = torch.stack(
+        torch.meshgrid(torch.arange(n_var), torch.arange(n_check), indexing="ij"),
+        dim=0,
+    ).reshape(2, -1)
+    prior_p = torch.tensor([0.001, 0.002, 0.004, 0.008, 0.016])
+
+    out = model(
+        syndrome,
+        {
+            "edge_index": edge_index,
+            "n_var": n_var,
+            "n_check": n_check,
+            "prior_p": prior_p,
+        },
+    )
+
+    assert torch.allclose(out, prior_p.expand_as(out), atol=1e-7)
+
+
 def test_gnn_hard_flip_shape() -> None:
     model = BipartiteGNN(
         n_var=10,

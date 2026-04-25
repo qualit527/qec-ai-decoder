@@ -137,7 +137,7 @@ class PredecoderModule(nn.Module):
 
 - Ideator: `{"hypothesis": str, "expected_delta_ler": float, "expected_cost_s": int, "rationale": str, "dsl_hint": dict?}`
 - Coder: `{"dsl_config": {...}, "tier": "1" | "2", "rationale": str}`
-- Analyst: `{"summary_1line": str, "verdict": "candidate" | "ignore", "next_hypothesis_seed": str}`
+- Analyst: `{"summary_1line": str, "verdict": "candidate" | "ignore", "next_hypothesis_seed": str, "branch": str?, "commit_sha": str?}`
 
 ## 2.6 Skill surface
 

@@ -125,6 +125,21 @@ def _paired_delta_ci(
     return bootstrap_ci_mean(delta_per_shot, n_resamples=n_resamples, ci=ci, seed=seed)
 
 
+def _predict_model_outputs(
+    model: torch.nn.Module,
+    syndrome: torch.Tensor,
+    ctx: dict,
+    *,
+    device: str,
+    batch_size: int,
+) -> np.ndarray:
+    outputs: list[torch.Tensor] = []
+    for start in range(0, syndrome.shape[0], batch_size):
+        batch = syndrome[start : start + batch_size].to(device)
+        outputs.append(model(batch, ctx).detach().cpu())
+    return torch.cat(outputs, dim=0).numpy()
+
+
 def _write_metrics(round_dir: Path, metrics: RoundMetrics) -> RoundMetrics:
     (round_dir / "metrics.json").write_text(
         metrics.model_dump_json(indent=2),
@@ -357,7 +372,13 @@ def run_round(
 
     model.eval()
     with torch.no_grad():
-        pred_out = model(val_syndrome.to(device), ctx).cpu().numpy()
+        pred_out = _predict_model_outputs(
+            model,
+            val_syndrome,
+            ctx,
+            device=device,
+            batch_size=batch_size,
+        )
     pred_labels = decode_with_predecoder(
         pred_out,
         env_spec,

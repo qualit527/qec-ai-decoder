@@ -1,0 +1,38 @@
+{
+  "run_id": "20260425-234335",
+  "command": "AUTOQEC_IDEATOR_BACKEND=claude-cli AUTOQEC_CODER_BACKEND=claude-cli AUTOQEC_ANALYST_BACKEND=claude-cli bash demos/demo-7-gpu-positive-ai-loop/run.sh",
+  "env_yaml": "autoqec/envs/builtin/surface_d5_depol.yaml",
+  "profile": "prod",
+  "rounds": 1,
+  "agent_trace": {
+    "file": "orchestrator_trace.md",
+    "sections": [
+      "ideator response",
+      "coder response",
+      "runner metrics",
+      "analyst response",
+      "run complete"
+    ]
+  },
+  "metrics": {
+    "status": "ok",
+    "ler_plain_classical": 0.013916015625,
+    "ler_predecoder": 0.0130615234375,
+    "delta_ler": 0.0008544921875,
+    "delta_ler_ci_low": -0.0009796142578124972,
+    "delta_ler_ci_high": 0.0028076171875,
+    "n_params": 75137,
+    "flops_per_syndrome": 72039456,
+    "train_wallclock_s": 149.84471011161804,
+    "eval_wallclock_s": 113.482417345047,
+    "vram_peak_gb": 1.938535424,
+    "train_loss_initial": 0.013585210777819157,
+    "train_loss_final": 0.003462344640865922,
+    "train_batches_total": 640
+  },
+  "history_record": {
+    "hypothesis": "Train a compact 2-layer residual GNN predecoder on the surface_d5 syndrome graph with shared message-passing weights, small hidden width, and dropout tuned for the low-p regime. The goal is to nudge MWPM with a lightweight learned prior without adding much inference cost.",
+    "verdict": "ignore",
+    "summary_1line": "The round reduced LER from 0.013916 to 0.013062, but the 95% CI for delta LER spans zero (-0.000980 to 0.002808)."
+  }
+}

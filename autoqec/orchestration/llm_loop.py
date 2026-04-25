@@ -61,6 +61,11 @@ def _parse_metrics(round_dir: Path) -> dict[str, Any] | None:
     return metrics if isinstance(metrics, dict) else None
 
 
+def _verify_shots_for_profile(env: EnvSpec, profile: str) -> int:
+    cap = 2048 if profile == "dev" else 8192
+    return min(env.eval_protocol.min_shots_verify, cap)
+
+
 def _round_is_complete(run_dir: Path, round_idx: int, history_rows: dict[int, dict[str, Any]]) -> bool:
     """Return True when a previous invocation durably completed ``round_idx``.
 
@@ -195,6 +200,7 @@ def run_llm_loop(
                         checkpoint=round_dir / "checkpoint.pt",
                         env_spec=env,
                         holdout_seeds=holdout,
+                        n_shots=_verify_shots_for_profile(env, profile),
                     )
                     (round_dir / "verification_report.json").write_text(
                         report.model_dump_json(indent=2), encoding="utf-8",

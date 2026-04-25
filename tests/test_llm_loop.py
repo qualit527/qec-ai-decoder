@@ -62,6 +62,7 @@ def test_run_llm_loop_happy_path(tmp_path, monkeypatch):
         model_dump=MagicMock(return_value={"verdict": "SUSPICIOUS",
                                            "delta_vs_baseline_holdout": None}),
     )
+    captured_verify = {}
 
     responses = {"ideator": [], "coder": [], "analyst": []}
 
@@ -80,9 +81,13 @@ def test_run_llm_loop_happy_path(tmp_path, monkeypatch):
         captured_configs.append(cfg)
         return stub_metrics
 
+    def fake_independent_verify(**kwargs):
+        captured_verify.update(kwargs)
+        return stub_report
+
     with patch("autoqec.orchestration.llm_loop.invoke_subagent", side_effect=fake_invoke), \
          patch("autoqec.orchestration.llm_loop.run_round", side_effect=fake_run_round), \
-         patch("autoqec.orchestration.llm_loop.independent_verify", return_value=stub_report):
+         patch("autoqec.orchestration.llm_loop.independent_verify", side_effect=fake_independent_verify):
         run_dir = run_llm_loop(
             env=env,
             rounds=2,
@@ -99,6 +104,7 @@ def test_run_llm_loop_happy_path(tmp_path, monkeypatch):
     assert captured_configs[0].invocation_argv == [
         "python", "-m", "cli.autoqec", "run", "autoqec/envs/builtin/surface_d5_depol.yaml",
     ]
+    assert captured_verify["n_shots"] == 2048
 
     # Trace file captures the chat-level narrative (C route).
     trace = (run_dir / "orchestrator_trace.md")
