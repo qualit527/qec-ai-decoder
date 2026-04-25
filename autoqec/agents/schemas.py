@@ -52,6 +52,8 @@ class AnalystResponse(BaseModel):
     summary_1line: str
     verdict: Literal["candidate", "ignore"]
     next_hypothesis_seed: str
+    branch: Optional[str] = None
+    commit_sha: Optional[str] = None
 
 
 ROLE_SCHEMAS: dict[str, type[BaseModel]] = {

@@ -377,6 +377,34 @@ def test_run_round_populates_delta_ler_ci_bounds(monkeypatch, tmp_path) -> None:
     )
 
 
+def test_predict_model_outputs_batches_eval_forward_pass() -> None:
+    class CountingModel(torch.nn.Module):
+        output_mode = "soft_priors"
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.batch_sizes: list[int] = []
+
+        def forward(self, syndrome: torch.Tensor, ctx: dict) -> torch.Tensor:
+            self.batch_sizes.append(int(syndrome.shape[0]))
+            return torch.full((syndrome.shape[0], 2), 0.125)
+
+    model = CountingModel()
+    syndrome = torch.zeros((5, 3), dtype=torch.float32)
+
+    out = runner._predict_model_outputs(
+        model,
+        syndrome,
+        {},
+        device="cpu",
+        batch_size=2,
+    )
+
+    assert out.shape == (5, 2)
+    assert model.batch_sizes == [2, 2, 1]
+    assert np.allclose(out, 0.125)
+
+
 def test_stim_soft_priors_training_target_is_errors_not_syndrome(monkeypatch, tmp_path) -> None:
     """Regression (2026-04-24): soft_priors BCE target on stim_circuit must
     be the DEM errors (shape (B, n_var)), not the raw syndrome

@@ -48,6 +48,15 @@ def _aggregate(agg: str, messages: Tensor, index: Tensor, n_targets: int) -> Ten
     raise ValueError(f"unsupported aggregation: {agg}")
 
 
+def _zero_init_last_linear(module: nn.Module) -> None:
+    for child in reversed(list(module.modules())):
+        if isinstance(child, nn.Linear):
+            nn.init.zeros_(child.weight)
+            if child.bias is not None:
+                nn.init.zeros_(child.bias)
+            return
+
+
 class BipartiteGNN(PredecoderBase):
     def __init__(
         self,
@@ -76,6 +85,7 @@ class BipartiteGNN(PredecoderBase):
         self.norm_name = normalization
         if output_mode == "soft_priors":
             self.head = make_head(head_type, hidden_dim, 1)
+            _zero_init_last_linear(self.head)
         else:
             self.head = make_head(head_type, hidden_dim, 1)
 
@@ -123,6 +133,14 @@ class BipartiteGNN(PredecoderBase):
 
         if self.output_mode == "soft_priors":
             logits = self.head(h_v).squeeze(-1)
+            prior_p = ctx.get("prior_p")
+            if prior_p is not None:
+                prior = torch.as_tensor(
+                    prior_p,
+                    dtype=logits.dtype,
+                    device=logits.device,
+                ).clamp(1e-6, 1 - 1e-6)
+                logits = logits + torch.logit(prior).unsqueeze(0)
             return torch.sigmoid(logits)
 
         # hard_flip: return soft sigmoid probabilities so gradients flow
@@ -131,4 +149,3 @@ class BipartiteGNN(PredecoderBase):
         # autoqec.decoders.backend_adapter.decode_with_predecoder).
         logits = self.head(h_c).squeeze(-1)
         return torch.sigmoid(logits)
-

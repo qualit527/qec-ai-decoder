@@ -138,6 +138,8 @@ EXPECTED_FIELDS: dict[str, set[str]] = {
         "summary_1line",
         "verdict",
         "next_hypothesis_seed",
+        "branch",
+        "commit_sha",
     },
 }
 
