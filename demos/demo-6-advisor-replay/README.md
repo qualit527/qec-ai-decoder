@@ -45,18 +45,18 @@ If you already have a completed run from Demo 1 or Demo 2, you do not need
 to regenerate it. First package the run directory:
 
 ```bash
-/home/jinguxie/qec-ai-decoder/.venv/bin/python -m cli.autoqec package-run runs/<run_id>
+./.venv/bin/python -m cli.autoqec package-run runs/<run_id>
 ```
 
 Then point the replay helper at that existing `run_dir` and package:
 
 ```bash
 PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}" \
-/home/jinguxie/qec-ai-decoder/.venv/bin/python -m autoqec.tools.advisor_replay \
+./.venv/bin/python -m autoqec.tools.advisor_replay \
   --run-dir runs/<run_id> \
   --package-path runs/<run_id>.tar.gz \
   --env autoqec/envs/builtin/surface_d5_depol.yaml \
-  --python-bin /home/jinguxie/qec-ai-decoder/.venv/bin/python \
+  --python-bin ./.venv/bin/python \
   --n-shots 256 \
   --n-seeds 2 \
   --extract-root runs/demo-6-replay
@@ -112,3 +112,61 @@ Default settings target a demo-scale run:
 
 These defaults keep replay practical while still proving the advisor-facing
 package/replay workflow.
+
+## Visual Showcase
+
+Run the standalone visual showcase to generate a browser-friendly evidence
+dashboard for Demo 6 only. The report focuses on the replay artifact paths and
+the field-by-field verifier comparison between original and replay reports:
+
+```bash
+bash demos/demo-6-advisor-replay/showcase/run.sh
+```
+
+Outputs:
+
+- `runs/demo-6-showcase/report.html`
+- `runs/demo-6-showcase/report.md`
+- `runs/demo-6-showcase/summary.json`
+
+### Copy-paste Agent Prompt
+
+Paste this prompt into Codex CLI / Claude Code from the repository root:
+
+```text
+Please run the Demo 6 visual showcase only.
+
+Requirements:
+- Do not call an LLM.
+- Do not use the network during the replay step.
+- Do not modify source files.
+- Use Python: ./.venv/bin/python (auto-discovered by the script)
+
+Command:
+bash demos/demo-6-advisor-replay/showcase/run.sh
+
+After it finishes, tell me:
+1. whether Demo 6 passed,
+2. the status from runs/demo-6-showcase/summary.json,
+3. the reports_match value from runs/demo-6-showcase/summary.json,
+4. the comparison_matches / comparison_total field count from summary.json,
+5. the package path,
+6. the absolute path to report.html,
+7. if artifact links do not open, the repo-root http://127.0.0.1 server command and report URL.
+
+If all checks pass, end with:
+demo6 showcase healthy
+```
+
+If `file://` links are not accessible from your browser, start a read-only
+server from the repo root:
+
+```bash
+python -m http.server 8768 --bind 127.0.0.1
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8768/runs/demo-6-showcase/report.html
+```
