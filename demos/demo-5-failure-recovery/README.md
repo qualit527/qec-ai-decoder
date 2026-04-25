@@ -74,10 +74,10 @@ Requirements:
 - Do not call an LLM.
 - Do not use the network.
 - Do not modify source files.
-- Use Python: /home/jinguxie/qec-ai-decoder/.venv/bin/python
+- Use Python: ./.venv/bin/python (auto-discovered by the script)
 
 Command:
-PYTHON_BIN=/home/jinguxie/qec-ai-decoder/.venv/bin/python bash demos/demo-5-failure-recovery/showcase/run.sh
+bash demos/demo-5-failure-recovery/showcase/run.sh
 
 After it finishes, tell me:
 1. whether Demo 5 passed,

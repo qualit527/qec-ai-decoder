@@ -47,16 +47,14 @@ def _git_sha(root: Path) -> str:
 
 
 def _classify(metrics: dict[str, Any] | None, train_log: str) -> str:
-    text = " ".join(
-        str(value)
-        for value in ((metrics or {}).get("status"), (metrics or {}).get("status_reason"), train_log)
-        if value is not None
-    ).lower()
-    if "compile_error" in text or "validation" in text or "hidden_dim" in text:
+    status = str((metrics or {}).get("status") or "").lower()
+    reason = str((metrics or {}).get("status_reason") or "").lower()
+    log = train_log.lower()
+    if status == "compile_error" or "validation failed" in reason:
         return "compile_error"
-    if "nan" in text:
+    if status == "killed_by_safety" and "nan" in reason:
         return "nan_loss"
-    if "out of memory" in text or "oom" in text:
+    if "out of memory" in reason or "out of memory" in log:
         return "oom"
     return "unknown"
 

@@ -53,6 +53,19 @@ def _write_round_with_real_demo_heading(root: Path) -> None:
         "**Note:** The system does not apply fixes automatically. Apply the suggested patch manually.\n",
         encoding="utf-8",
     )
+
+
+def test_demo5_classifier_uses_metrics_status_reason_not_broad_substrings() -> None:
+    build_report = _load_build_report_module()
+
+    assert build_report._classify({"status": "ok", "status_reason": "validation loss=0.05"}, "") == "unknown"
+    assert build_report._classify({"status": "train_error", "status_reason": "finance routine failed"}, "") == "unknown"
+    assert build_report._classify({"status": "train_error", "status_reason": "groom process exited"}, "") == "unknown"
+    assert build_report._classify({"status": "compile_error", "status_reason": "schema rejected config"}, "") == "compile_error"
+    assert build_report._classify({"status": "killed_by_safety", "status_reason": "NaN rate 0.500"}, "") == "nan_loss"
+    assert build_report._classify({"status": "train_error", "status_reason": "RuntimeError: CUDA out of memory"}, "") == "oom"
+
+
 def test_demo5_visual_report_explains_expected_failures_and_evidence(tmp_path: Path) -> None:
     build_report = _load_build_report_module()
     _write_round(tmp_path, "round_0", "compile_error", "hidden_dim validation failed: -1 < 4", "ValueError: hidden_dim must be >= 4")
@@ -150,6 +163,8 @@ def test_demo5_visual_report_keeps_recommended_fix_to_patch_only(tmp_path: Path)
 def test_demo5_showcase_run_script_is_standalone_and_portable() -> None:
     script = (SHOWCASE_DIR / "run.sh").read_text(encoding="utf-8")
     assert 'if [[ -z "${PYTHON_BIN:-}" ]]; then' in script
+    assert "refusing unsafe OUTPUT_DIR" in script
+    assert "-s \"$PHASE_JSON\"" in script
     assert "PYTHONPATH" in script
     assert "demos/demo-5-failure-recovery/run.sh" in script
     assert "build_report.py" in script
@@ -164,3 +179,6 @@ def test_demo5_readme_contains_copy_paste_agent_prompt() -> None:
     assert "report.html" in readme
     assert "file://" in readme
     assert "http://127.0.0.1" in readme
+    assert "/home/jinguxie/qec-ai-decoder/.venv/bin/python" not in readme
+    assert "PYTHON_BIN=/home/jinguxie" not in readme
+    assert "Use Python: ./.venv/bin/python" in readme

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Intentionally omit set -e so the wrapper can capture the inner demo exit code.
 set -u -o pipefail
 
 if [[ -z "${PYTHON_BIN:-}" ]]; then
@@ -19,6 +20,12 @@ fi
 OUTPUT_DIR="${OUTPUT_DIR:-runs/demo-5-showcase}"
 LOG_DIR="$OUTPUT_DIR/logs"
 PHASE_JSON="$OUTPUT_DIR/phases.json"
+case "$OUTPUT_DIR" in
+  ""|"/"|"/*"|"$HOME"|"$HOME/"|".")
+    echo "refusing unsafe OUTPUT_DIR: $OUTPUT_DIR" >&2
+    exit 2
+    ;;
+esac
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$LOG_DIR"
 
@@ -60,6 +67,11 @@ print(json.dumps([{
     "stderr": "runs/demo-5-showcase/logs/demo5.stderr",
 }], indent=2, ensure_ascii=False))
 PY
+
+if [[ ! -s "$PHASE_JSON" ]]; then
+  echo "phase file was not created: $PHASE_JSON" >&2
+  exit 2
+fi
 
 "$PYTHON_BIN" demos/demo-5-failure-recovery/showcase/build_report.py --root "$PWD" --output-dir "$OUTPUT_DIR" --phase-file "$PHASE_JSON"
 report_exit=$?
