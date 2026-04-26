@@ -1,0 +1,47 @@
+{
+  "payload": {
+    "summary_1line": "Round 1 ran successfully with status ok, but it achieved delta_ler of 0.0 and the confidence interval fields were missing. The model used 724148544 FLOPs per syndrome and 253377 parameters, so compute cost is substantial without a measured gain over the classical baseline. No previous summary was provided, so there is no prior-round delta to compare.",
+    "verdict": "ignore",
+    "next_hypothesis_seed": "Try reducing message-passing depth or swapping to a lighter gating/normalization variant to recover positive delta_ler without increasing FLOPs.",
+    "branch": "exp/20260424-154450/01-try-a-compact-3-layer-gated-mlp-gnn-with",
+    "commit_sha": "91022134fde9893f9d7add05abe8482a9d218992"
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 82141,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 74240,
+      "output_tokens": 754,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 39461,
+    "total_cost_usd": 0.093335,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 82141,
+        "outputTokens": 754,
+        "cacheReadInputTokens": 74240,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.093335,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "93669628-baf3-48ba-bdf5-96cd586c6ef3",
+    "uuid": "0074c6a3-8a3d-42cd-8f81-9525a0b83af0",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

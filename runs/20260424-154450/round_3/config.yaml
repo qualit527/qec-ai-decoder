@@ -1,0 +1,16 @@
+gnn:
+  aggregation: gated_sum
+  hidden_dim: 64
+  layers: 2
+  message_fn: gated_mlp
+  normalization: layer
+  residual: true
+head: linear
+output_mode: soft_priors
+training:
+  batch_size: 64
+  epochs: 4
+  learning_rate: 0.001
+  loss: focal
+  profile: dev
+type: gnn

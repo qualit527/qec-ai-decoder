@@ -26,14 +26,14 @@ env_yaml = Path(os.environ["AUTOQEC_TEST_ENV_YAML"])
 interrupt_after_round = os.environ.get("AUTOQEC_TEST_INTERRUPT_AFTER_ROUND")
 
 
-def fake_invoke_subagent(role, prompt, timeout=300.0):
+def fake_invoke_subagent_with_metadata(role, prompt, timeout=300.0, cwd=None):
     if role == "ideator":
         return {
             "hypothesis": "try a resumable round",
             "fork_from": "baseline",
             "compose_mode": None,
             "rationale": "exercise resume bookkeeping",
-        }
+        }, {"usage": {"input_tokens": 1, "output_tokens": 1}}
     if role == "coder":
         return {
             "dsl_config": {
@@ -45,17 +45,34 @@ def fake_invoke_subagent(role, prompt, timeout=300.0):
             "tier": "1",
             "rationale": "small fake gnn",
             "commit_message": "feat(round): fake",
-        }
+        }, {"usage": {"input_tokens": 1, "output_tokens": 1}}
     if role == "analyst":
         return {
             "summary_1line": "fake round complete",
             "verdict": "ignore",
             "next_hypothesis_seed": "continue",
-        }
+        }, {"usage": {"input_tokens": 1, "output_tokens": 1}}
     raise AssertionError(role)
 
 
-def fake_run_round(cfg, env):
+def fake_create_round_worktree(repo_root, run_id, round_idx, slug, fork_from):
+    worktree_dir = run_dir / ".worktrees" / f"exp-{run_id}-{round_idx:02d}-{slug}"
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "run_id": run_id,
+        "round_idx": round_idx,
+        "slug": slug,
+        "fork_from": fork_from,
+        "worktree_dir": str(worktree_dir),
+        "branch": f"exp/{run_id}/{round_idx:02d}-{slug}",
+    }
+
+
+def fake_cleanup_round_worktree(repo_root, worktree_dir):
+    return None
+
+
+def fake_run_round_in_subprocess(cfg, env, round_attempt_id=None):
     round_idx = int(Path(cfg.round_dir).name.removeprefix("round_"))
     print(f"EXECUTED_ROUND={round_idx}", flush=True)
     metrics = RoundMetrics(
@@ -63,7 +80,10 @@ def fake_run_round(cfg, env):
         delta_ler=0.001 * round_idx,
         flops_per_syndrome=100 + round_idx,
         n_params=10 + round_idx,
-        round_attempt_id=cfg.round_attempt_id,
+        round_attempt_id=round_attempt_id,
+        branch=cfg.branch,
+        commit_sha=f"deadbeef-{round_idx}",
+        fork_from=cfg.fork_from,
     )
     round_dir = Path(cfg.round_dir)
     round_dir.mkdir(parents=True, exist_ok=True)
@@ -83,8 +103,10 @@ def interrupting_record_round(mem, round_metrics, verify_verdict=None, verify_re
         os.kill(os.getpid(), signal.SIGINT)
 
 
-llm_loop.invoke_subagent = fake_invoke_subagent
-llm_loop.run_round = fake_run_round
+llm_loop.invoke_subagent_with_metadata = fake_invoke_subagent_with_metadata
+llm_loop.create_round_worktree = fake_create_round_worktree
+llm_loop.cleanup_round_worktree = fake_cleanup_round_worktree
+llm_loop.run_round_in_subprocess = fake_run_round_in_subprocess
 llm_loop.record_round = interrupting_record_round
 
 env = load_env_yaml(env_yaml)

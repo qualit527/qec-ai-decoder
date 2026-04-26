@@ -7,11 +7,11 @@ run-round-internal`` (static argv) and reads its payload from
 ``AUTOQEC_CHILD_*`` env vars so no dynamic user value ever lands on the
 child's argv.
 
-After a successful non-``compose_conflict`` round the parent also writes
-and commits ``round_<N>/round_<N>_pointer.json`` on the branch — this is
-the producer side of the §15.10 reconcile contract. Without it reconcile
-cannot auto-heal an orphaned branch after a crash and always falls through
-to ``pause``.
+After a successful non-``compose_conflict`` round the parent commits the
+worktree's pending edits together with ``round_<N>/round_<N>_pointer.json``
+on the branch — this is the producer side of the §15.10 reconcile contract.
+Without it reconcile cannot auto-heal an orphaned branch after a crash and
+always falls through to ``pause``.
 """
 from __future__ import annotations
 
@@ -102,8 +102,9 @@ def _write_and_commit_pointer(
     round_idx: int,
     round_attempt_id: str | None,
     branch: str,
+    commit_message: str | None = None,
 ) -> str | None:
-    """Write ``round_<N>/round_<N>_pointer.json`` into the worktree, commit it,
+    """Write ``round_<N>/round_<N>_pointer.json``, commit worktree edits,
     and return the new HEAD sha.
 
     This is the §15.10 auto-heal producer. The pointer lives on the branch so
@@ -129,24 +130,19 @@ def _write_and_commit_pointer(
         encoding="utf-8",
     )
 
-    rel_pointer = f"round_{round_idx}/round_{round_idx}_pointer.json"
+    message = commit_message or (
+        f"chore(pointer): record round {round_idx} pointer for attempt "
+        f"{round_attempt_id or 'unknown'}"
+    )
     try:
         subprocess.run(
-            ["git", "-C", code_cwd, "add", rel_pointer],
+            ["git", "-C", code_cwd, "add", "-A"],
             check=True,
             capture_output=True,
             text=True,
         )
         subprocess.run(
-            [
-                "git",
-                "-C",
-                code_cwd,
-                "commit",
-                "-q",
-                "-m",
-                f"round {round_idx}: pointer for attempt {round_attempt_id or 'unknown'}",
-            ],
+            ["git", "-C", code_cwd, "commit", "-q", "-m", message],
             check=True,
             capture_output=True,
             text=True,
@@ -308,6 +304,7 @@ def run_round_in_subprocess(
                     round_idx,
                     round_attempt_id or metrics_data.get("round_attempt_id"),
                     cfg.branch,
+                    cfg.commit_message,
                 )
                 if commit_sha is not None:
                     # Pointer commit is the authoritative round provenance.

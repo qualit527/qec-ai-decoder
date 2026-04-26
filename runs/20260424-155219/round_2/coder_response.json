@@ -1,0 +1,70 @@
+{
+  "payload": {
+    "dsl_config": {
+      "type": "gnn",
+      "output_mode": "hard_flip",
+      "gnn": {
+        "layers": 4,
+        "hidden_dim": 32,
+        "message_fn": "gated_mlp",
+        "aggregation": "sum",
+        "normalization": "layer",
+        "residual": true,
+        "edge_features": [
+          "syndrome_bit",
+          "stabilizer_type",
+          "distance"
+        ]
+      },
+      "head": "linear",
+      "training": {
+        "learning_rate": 0.001,
+        "batch_size": 64,
+        "epochs": 24,
+        "loss": "weighted_bce",
+        "profile": "prod"
+      }
+    },
+    "tier": "1",
+    "rationale": "Tier 1 is sufficient because gated_mlp is already a supported message function. A 4-layer, 32-hidden-dim GNN with layer norm, residuals, and a linear hard-flip head gives a small but qualitatively different inductive bias from neural-BP while staying within the expected compute budget.",
+    "commit_message": "exp(20260424-155219/02): try a 4-layer gated GNN predecoder"
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 29892,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 20480,
+      "output_tokens": 1312,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 23842,
+    "total_cost_usd": 0.0385,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 29892,
+        "outputTokens": 1312,
+        "cacheReadInputTokens": 20480,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.0385,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "7f3aa9b2-9506-4df7-96f3-c5ece8978703",
+    "uuid": "56671bd7-3945-4ba4-825e-3721b4f9effe",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

@@ -175,7 +175,7 @@ def test_subprocess_runner_cleans_tempfiles_and_sets_writable_mplconfig(
     assert "MPLCONFIGDIR" in captured["env"]
 
 
-def test_subprocess_runner_uses_shell_false_and_resolved_cwd(tmp_path):
+def test_subprocess_runner_uses_shell_false_and_venv_python(tmp_path):
     """The child process must spawn via a static internal command.
 
     subprocess_runner now also issues git invocations for the §15.10
@@ -370,6 +370,96 @@ def test_subprocess_runner_writes_and_commits_pointer(tmp_path):
         text=True,
     ).strip()
     assert metrics.commit_sha == head_sha
+    tip_subject = subprocess.check_output(
+        ["git", "-C", str(tmp_path), "log", "-1", "--pretty=%s"],
+        text=True,
+    ).strip()
+    assert tip_subject.startswith("chore(")
+
+
+def test_subprocess_runner_commits_child_worktree_edits_with_pointer(tmp_path):
+    """Child/Coder edits must land in the same provenance commit as the pointer."""
+    from autoqec.orchestration import subprocess_runner
+
+    _init_git_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("runs/\n", encoding="utf-8")
+    subprocess.check_call(["git", "-C", str(tmp_path), "add", ".gitignore"])
+    subprocess.check_call(
+        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "ignore runs"]
+    )
+    (tmp_path / "module.py").write_text("VALUE = 'old'\n", encoding="utf-8")
+    subprocess.check_call(["git", "-C", str(tmp_path), "add", "module.py"])
+    subprocess.check_call(
+        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "seed module"]
+    )
+    subprocess.check_call(
+        ["git", "-C", str(tmp_path), "checkout", "-q", "-b", "exp/test/10-edits"]
+    )
+
+    child_stdout = json.dumps({
+        "status": "ok",
+        "ler_plain_classical": 1e-3,
+        "ler_predecoder": 5e-4,
+        "delta_ler": 5e-4,
+        "round_attempt_id": "attempt-edits",
+    })
+
+    class _FakeCompletedProcess:
+        returncode = 0
+        stdout = child_stdout
+        stderr = ""
+
+    env = load_env_yaml("autoqec/envs/builtin/surface_d5_depol.yaml")
+    cfg = RunnerConfig(
+        env_name=env.name,
+        predecoder_config={"type": "gnn", "output_mode": "soft_priors"},
+        training_profile="dev",
+        seed=0,
+        round_dir=str(tmp_path / "runs" / "r1" / "round_1"),
+        code_cwd=str(tmp_path),
+        branch="exp/test/10-edits",
+        commit_message="feat(round): persist coder edits",
+    )
+
+    real_subprocess_run = subprocess.run
+
+    def _stub_child_edits_worktree(argv, **kw):
+        if "run-round-internal" in argv:
+            (tmp_path / "module.py").write_text("VALUE = 'new'\n", encoding="utf-8")
+            (tmp_path / "modules").mkdir()
+            (tmp_path / "modules" / "generated.py").write_text(
+                "GENERATED = True\n", encoding="utf-8"
+            )
+            return _FakeCompletedProcess()
+        return real_subprocess_run(argv, **kw)
+
+    with patch.object(
+        subprocess_runner.subprocess, "run", side_effect=_stub_child_edits_worktree
+    ):
+        metrics = subprocess_runner.run_round_in_subprocess(
+            cfg, env, round_attempt_id="attempt-edits"
+        )
+
+    assert metrics.commit_sha == subprocess.check_output(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        text=True,
+    ).strip()
+    assert subprocess.check_output(
+        ["git", "-C", str(tmp_path), "show", "exp/test/10-edits:module.py"],
+        text=True,
+    ) == "VALUE = 'new'\n"
+    assert subprocess.check_output(
+        ["git", "-C", str(tmp_path), "show", "exp/test/10-edits:modules/generated.py"],
+        text=True,
+    ) == "GENERATED = True\n"
+    assert subprocess.check_output(
+        ["git", "-C", str(tmp_path), "status", "--short"],
+        text=True,
+    ) == ""
+    assert subprocess.check_output(
+        ["git", "-C", str(tmp_path), "log", "-1", "--pretty=%s"],
+        text=True,
+    ).strip() == "feat(round): persist coder edits"
 
 
 def test_subprocess_runner_writes_artifact_manifest(tmp_path):

@@ -92,7 +92,7 @@ Step 4 — Round 3: Compose merge of Idea A ⊕ Idea B
   git log --graph --oneline (merge commit as a diamond;
   scope limited to commits after fork point 'feat/issue-38-worktree-demo'):
     *   360c0da (HEAD -> exp/demo38-sample/03-compose-ab) Merge branch 'exp/demo38-sample/02-idea-b' into exp/demo38-sample/03-compose-ab
-    |\  
+    |\
     | * 07aef39 (exp/demo38-sample/02-idea-b) round 2: pointer for attempt 902000c8-a795-4487-8eea-f24cf1d86c95
     * be40742 (exp/demo38-sample/01-idea-a) round 1: pointer for attempt f7de78a0-56d1-4d71-bde0-a0650f433cbb
 
@@ -157,7 +157,7 @@ Step 6 — Final fork graph across exp/demo38-sample/*
     * fdac844 (exp/demo38-sample/90-conflict-left) demo: conflict variant left
     * 719fcba (exp/demo38-sample/03-compose-ab) round 3: pointer for attempt 88cebbed-73b5-490e-b0b4-4e1e5cef2b13
     *   360c0da Merge branch 'exp/demo38-sample/02-idea-b' into exp/demo38-sample/03-compose-ab
-    |\  
+    |\
     | * 07aef39 (exp/demo38-sample/02-idea-b) round 2: pointer for attempt 902000c8-a795-4487-8eea-f24cf1d86c95
     * be40742 (exp/demo38-sample/01-idea-a) round 1: pointer for attempt f7de78a0-56d1-4d71-bde0-a0650f433cbb
 

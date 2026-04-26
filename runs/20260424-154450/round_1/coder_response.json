@@ -1,0 +1,71 @@
+{
+  "payload": {
+    "dsl_config": {
+      "type": "gnn",
+      "output_mode": "soft_priors",
+      "gnn": {
+        "layers": 3,
+        "hidden_dim": 64,
+        "message_fn": "gated_mlp",
+        "aggregation": "gated_sum",
+        "normalization": "layer",
+        "residual": true,
+        "edge_features": [
+          "syndrome_bit",
+          "stabilizer_type",
+          "distance",
+          "prior_weight"
+        ]
+      },
+      "head": "mlp_small",
+      "training": {
+        "learning_rate": 0.0005,
+        "batch_size": 128,
+        "epochs": 30,
+        "loss": "weighted_bce",
+        "profile": "prod"
+      }
+    },
+    "tier": "1",
+    "rationale": "The hypothesis is fully expressible with the Tier-1 GNN schema: a compact 3-layer gated-MLP stack with soft-prior outputs and no custom primitives. Layer norm, residuals, and a small MLP head keep the model lightweight while still giving the decoder enough capacity to learn local corrections before MWPM.",
+    "commit_message": "exp(20260424-154450/01): try a compact 3-layer gated-MLP GNN with soft priors"
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 29892,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 29696,
+      "output_tokens": 1088,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 18205,
+    "total_cost_usd": 0.038301600000000005,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 29892,
+        "outputTokens": 1088,
+        "cacheReadInputTokens": 29696,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.038301600000000005,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "2ca639af-1176-4524-8708-51b363ca3c59",
+    "uuid": "eec38de8-5ca1-4f53-903e-c3ac671cb199",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

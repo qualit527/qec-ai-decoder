@@ -13,32 +13,43 @@ import json
 import os
 import re
 import subprocess
+from pathlib import Path
+from typing import Any
 from typing import Literal
 
 Role = Literal["ideator", "coder", "analyst"]
+_VALID_BACKENDS = frozenset({"codex-cli", "claude-cli"})
 
 
 class InvalidSubagentResponseError(RuntimeError):
     pass
 
 
-_BACKEND_ARGV = {
-    "codex-cli": lambda model: ["codex", "exec", "--model", model, "-"],
-    "claude-cli": lambda model: ["claude", "-p", "--model", model],
-}
-
-
-def _build_cli_argv(role: Role) -> list[str]:
+def _backend_and_model(role: Role) -> tuple[str, str]:
     backend = os.environ.get(f"AUTOQEC_{role.upper()}_BACKEND", "codex-cli")
     model = os.environ.get(
         f"AUTOQEC_{role.upper()}_MODEL",
         "gpt-5.4" if backend == "codex-cli" else "claude-haiku-4-5",
     )
-    if backend not in _BACKEND_ARGV:
+    if backend not in _VALID_BACKENDS:
         raise InvalidSubagentResponseError(
             f"unknown backend {backend!r} for role {role!r}"
         )
-    return _BACKEND_ARGV[backend](model)
+    return backend, model
+
+
+def _build_cli_argv(role: Role, *, structured_output: bool = False) -> list[str]:
+    backend, model = _backend_and_model(role)
+    if backend == "codex-cli":
+        argv = ["codex", "exec", "--model", model]
+        if structured_output:
+            argv.append("--json")
+        argv.append("-")
+        return argv
+    argv = ["claude", "-p", "--model", model]
+    if structured_output:
+        argv.extend(["--output-format", "json"])
+    return argv
 
 
 _FENCE = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL)
@@ -56,23 +67,82 @@ def _parse_fenced_json(stdout: str) -> dict:
         raise InvalidSubagentResponseError(f"malformed json: {exc}") from exc
 
 
-def invoke_subagent(role: Role, prompt: str, timeout: float = 300.0) -> dict:
-    argv = _build_cli_argv(role)
+def _parse_claude_json_result(stdout: str) -> tuple[dict, dict[str, Any]]:
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise InvalidSubagentResponseError(f"malformed claude json output: {exc}") from exc
+    if not isinstance(payload, dict) or "result" not in payload:
+        raise InvalidSubagentResponseError(
+            "claude json output missing result field"
+        )
+    return _parse_fenced_json(str(payload["result"])), {
+        "usage": payload.get("usage"),
+        "duration_ms": payload.get("duration_ms"),
+        "total_cost_usd": payload.get("total_cost_usd"),
+        "model_usage": payload.get("modelUsage"),
+        "session_id": payload.get("session_id"),
+        "uuid": payload.get("uuid"),
+    }
+
+
+def _resolve_repo_root(cwd: str | None) -> Path:
+    return Path(cwd).resolve() if cwd is not None else Path(__file__).resolve().parents[2]
+
+
+def _prepend_agent_spec(role: Role, prompt: str, cwd: str | None) -> str:
+    spec_path = _resolve_repo_root(cwd) / ".claude" / "agents" / f"autoqec-{role}.md"
+    if not spec_path.exists():
+        return prompt
+    spec_text = spec_path.read_text(encoding="utf-8").strip()
+    return (
+        f"# AUTOQEC {role.upper()} SPEC\n\n"
+        f"{spec_text}\n\n"
+        "# TASK INPUT\n\n"
+        f"{prompt}"
+    )
+
+
+def invoke_subagent_with_metadata(
+    role: Role,
+    prompt: str,
+    timeout: float = 300.0,
+    *,
+    cwd: str | None = None,
+) -> tuple[dict, dict[str, Any]]:
+    backend, model = _backend_and_model(role)
+    argv = _build_cli_argv(role, structured_output=(backend == "claude-cli"))
     child_env = os.environ.copy()
     child_env["PYTHONIOENCODING"] = "utf-8"
     child_env["PYTHONUTF8"] = "1"
+    effective_prompt = _prepend_agent_spec(role, prompt, cwd)
     result = subprocess.run(
         argv,
-        input=prompt,
+        input=effective_prompt,
         text=True,
         capture_output=True,
         encoding="utf-8",
         errors="replace",
         env=child_env,
         timeout=timeout,
+        cwd=cwd,
     )
     if result.returncode != 0:
         raise InvalidSubagentResponseError(
             f"{argv[0]} exit {result.returncode}: {result.stderr[:200]}"
         )
-    return _parse_fenced_json(result.stdout)
+    if backend == "claude-cli":
+        parsed, meta = _parse_claude_json_result(result.stdout)
+    else:
+        parsed, meta = _parse_fenced_json(result.stdout), {}
+    meta.setdefault("usage", None)
+    meta.setdefault("duration_ms", None)
+    meta.setdefault("total_cost_usd", None)
+    meta["backend"] = backend
+    meta["model"] = model
+    return parsed, meta
+
+
+def invoke_subagent(role: Role, prompt: str, timeout: float = 300.0) -> dict:
+    parsed, _ = invoke_subagent_with_metadata(role, prompt, timeout)
+    return parsed

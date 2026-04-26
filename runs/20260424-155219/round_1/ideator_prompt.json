@@ -1,0 +1,82 @@
+{
+  "env_spec": {
+    "name": "bb72_depol",
+    "code": {
+      "type": "parity_check_matrix",
+      "source": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/issue-51-live-llm-verification/circuits/bb72_Hx.npy"
+    },
+    "noise": {
+      "type": "depolarizing",
+      "p": [
+        0.001,
+        0.003,
+        0.005
+      ],
+      "seed_policy": {
+        "train": [
+          1,
+          999
+        ],
+        "val": [
+          1000,
+          1999
+        ],
+        "holdout": [
+          9000,
+          9999
+        ]
+      }
+    },
+    "constraints": {
+      "latency_flops_budget": 50000000,
+      "param_budget": 500000,
+      "target_ler": 0.0001,
+      "target_p": 0.001
+    },
+    "baseline_decoders": [
+      "bposd",
+      "relay_bp"
+    ],
+    "classical_backend": "osd",
+    "eval_protocol": {
+      "min_shots_train": 1000000,
+      "min_shots_val": 100000,
+      "min_shots_verify": 200000,
+      "bootstrap_ci": 0.95,
+      "osd_orders_reported": [
+        0,
+        10
+      ],
+      "x_z_decoding": "circuit"
+    }
+  },
+  "fork_graph": {
+    "run_id": "20260424-155219",
+    "nodes": [
+      {
+        "branch": "baseline",
+        "delta_vs_baseline": 0.0,
+        "ler": null,
+        "flops": 0,
+        "n_params": 0,
+        "status": "baseline"
+      }
+    ],
+    "pareto_front": []
+  },
+  "knowledge_excerpts": "",
+  "machine_state_hint": {
+    "gpu": {},
+    "history_timings": {
+      "rounds_so_far": 0,
+      "wall_clock_mean_s": 0,
+      "wall_clock_p95_s": 0,
+      "params_vs_time": [],
+      "killed_by_safety_count": 0
+    },
+    "budget": {
+      "total_wallclock_s_spent": 0,
+      "total_wallclock_s_remaining": null
+    }
+  }
+}

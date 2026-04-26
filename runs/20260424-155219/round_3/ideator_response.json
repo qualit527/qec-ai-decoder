@@ -1,0 +1,54 @@
+{
+  "payload": {
+    "hypothesis": "Try a smaller 3-layer GNN predecoder with gated MLP messages and soft-prior outputs to avoid the hard-flip gradient failure while still giving the classical OSD backend a useful learned prior.",
+    "fork_from": "baseline",
+    "compose_mode": null,
+    "expected_delta_ler": 4e-05,
+    "expected_cost_s": 900,
+    "rationale": "Branch exp/20260424-155219/01-try-a-compact-neural-bp-predecoder-that- produced no gain over baseline, while exp/20260424-155219/02-try-a-small-4-layer-gnn-predecoder-with- failed with a non-differentiable hard-flip path. A smaller soft-prior GNN keeps the same family as 02 but removes the gradient trap and should be cheaper than a deeper variant.",
+    "dsl_hint": {
+      "type": "gnn",
+      "message_fn": "gated_mlp",
+      "layers": 3,
+      "output_mode": "soft_priors"
+    }
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 28102,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 20480,
+      "output_tokens": 758,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 13137,
+    "total_cost_usd": 0.03394,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 28102,
+        "outputTokens": 758,
+        "cacheReadInputTokens": 20480,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.03394,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "379cb9a3-d83e-430b-9b0f-65f9a5d249ff",
+    "uuid": "d2f9c74e-0442-4180-a9b6-ff2526eb856d",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

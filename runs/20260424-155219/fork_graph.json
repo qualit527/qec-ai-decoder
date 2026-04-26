@@ -1,0 +1,56 @@
+{
+  "run_id": "20260424-155219",
+  "nodes": [
+    {
+      "branch": "baseline",
+      "delta_vs_baseline": 0.0,
+      "ler": null,
+      "flops": 0,
+      "n_params": 0,
+      "status": "baseline"
+    },
+    {
+      "branch": "exp/20260424-155219/01-try-a-compact-neural-bp-predecoder-that-",
+      "commit_sha": "502b202d9bd607eeb30e1a84cf9a3193039360e8",
+      "parent": "baseline",
+      "delta_vs_parent": 0.0,
+      "delta_vs_baseline": 0.0,
+      "ler": 0.0,
+      "flops": 72,
+      "params": 9,
+      "status": "OK",
+      "on_pareto": false,
+      "hypothesis_1line": "Try a compact neural-BP predecoder that learns damped soft priors on the bb72 Ta",
+      "failure_reason": null
+    },
+    {
+      "branch": "exp/20260424-155219/02-try-a-small-4-layer-gnn-predecoder-with-",
+      "commit_sha": "9bf8ddfd0eac600bf874aed93a856af2944ce60d",
+      "parent": "baseline",
+      "delta_vs_parent": null,
+      "delta_vs_baseline": null,
+      "ler": null,
+      "flops": null,
+      "params": 44129,
+      "status": "TRAIN_ERROR",
+      "on_pareto": false,
+      "hypothesis_1line": "Try a small 4-layer GNN predecoder with gated MLP messages and hard-flip outputs",
+      "failure_reason": "element 0 of tensors does not require grad and does not have a grad_fn"
+    },
+    {
+      "branch": "exp/20260424-155219/03-try-a-smaller-3-layer-gnn-predecoder-wit",
+      "commit_sha": "25c7260c2f94fa02d143f6eee0c97c758fbed098",
+      "parent": "baseline",
+      "delta_vs_parent": 0.0,
+      "delta_vs_baseline": 0.0,
+      "ler": 0.0,
+      "flops": 14997312,
+      "params": 73585,
+      "status": "OK",
+      "on_pareto": false,
+      "hypothesis_1line": "Try a smaller 3-layer GNN predecoder with gated MLP messages and soft-prior outp",
+      "failure_reason": null
+    }
+  ],
+  "pareto_front": []
+}

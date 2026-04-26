@@ -1,0 +1,117 @@
+{
+  "env_spec": {
+    "name": "surface_d5_depol",
+    "code": {
+      "type": "stim_circuit",
+      "source": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/issue-51-live-llm-verification/circuits/surface_d5.stim"
+    },
+    "noise": {
+      "type": "depolarizing",
+      "p": [
+        0.001,
+        0.005,
+        0.01
+      ],
+      "seed_policy": {
+        "train": [
+          1,
+          999
+        ],
+        "val": [
+          1000,
+          1999
+        ],
+        "holdout": [
+          9000,
+          9999
+        ]
+      }
+    },
+    "constraints": {
+      "latency_flops_budget": 10000000,
+      "param_budget": 200000,
+      "target_ler": 0.0001,
+      "target_p": 0.001
+    },
+    "baseline_decoders": [
+      "pymatching"
+    ],
+    "classical_backend": "mwpm",
+    "eval_protocol": {
+      "min_shots_train": 1000000,
+      "min_shots_val": 100000,
+      "min_shots_verify": 200000,
+      "bootstrap_ci": 0.95,
+      "osd_orders_reported": [
+        0
+      ],
+      "x_z_decoding": "circuit"
+    }
+  },
+  "fork_graph": {
+    "run_id": "20260424-154450",
+    "nodes": [
+      {
+        "branch": "baseline",
+        "delta_vs_baseline": 0.0,
+        "ler": null,
+        "flops": 0,
+        "n_params": 0,
+        "status": "baseline"
+      },
+      {
+        "branch": "exp/20260424-154450/01-try-a-compact-3-layer-gated-mlp-gnn-with",
+        "commit_sha": "91022134fde9893f9d7add05abe8482a9d218992",
+        "parent": "baseline",
+        "delta_vs_parent": 0.0,
+        "delta_vs_baseline": 0.0,
+        "ler": 0.015625,
+        "flops": 724148544,
+        "params": 253377,
+        "status": "OK",
+        "on_pareto": false,
+        "hypothesis_1line": "Try a compact 3-layer gated-MLP GNN with soft-prior outputs to learn local syndr",
+        "failure_reason": null
+      },
+      {
+        "branch": "exp/20260424-154450/02-try-a-tiny-hard-flip-neural-bp-predecode",
+        "commit_sha": "ae67ad5f5363ef0d1270b2bdcbb0d316a52ad2cc",
+        "parent": "baseline",
+        "delta_vs_parent": null,
+        "delta_vs_baseline": null,
+        "ler": null,
+        "flops": null,
+        "params": 5,
+        "status": "TRAIN_ERROR",
+        "on_pareto": false,
+        "hypothesis_1line": "Try a tiny hard-flip neural BP predecoder with shared weights and 3 unrolled ite",
+        "failure_reason": "element 0 of tensors does not require grad and does not have a grad_fn"
+      }
+    ],
+    "pareto_front": []
+  },
+  "knowledge_excerpts": "",
+  "machine_state_hint": {
+    "gpu": {},
+    "history_timings": {
+      "rounds_so_far": 2,
+      "wall_clock_mean_s": 26.051038146018982,
+      "wall_clock_p95_s": 49.76756405830383,
+      "params_vs_time": [
+        [
+          253377,
+          49.76756405830383
+        ],
+        [
+          5,
+          2.334512233734131
+        ]
+      ],
+      "killed_by_safety_count": 0
+    },
+    "budget": {
+      "total_wallclock_s_spent": 52.102076292037964,
+      "total_wallclock_s_remaining": null
+    }
+  }
+}
