@@ -120,6 +120,16 @@ Do not commit runtime artifacts, coverage outputs, or packaging byproducts.
   `docs/superpowers/plans/`.
 - Demo-specific instructions belong under `demos/<demo-name>/README.md`.
 
+## GitHub Workflow
+
+- Use GitHub MCP tools for read-only context gathering only.
+- Use the local `gh` CLI for GitHub write operations such as creating PRs,
+  pushing follow-up metadata, commenting on issues, and other state-changing
+  actions.
+- When opening a PR, request the repository owner `qualit527` as a reviewer.
+- If the PR author is the repository owner, request `tengxianglin` as the
+  reviewer instead.
+
 ## Zulip Context
 
 - When task context may depend on prior hackathon discussion, use the repo
