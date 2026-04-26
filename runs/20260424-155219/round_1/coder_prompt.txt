@@ -1,0 +1,88 @@
+# CODER CONTEXT
+
+{
+  "hypothesis": {
+    "hypothesis": "Try a compact neural-BP predecoder that learns damped soft priors on the bb72 Tanner graph before OSD refinement.",
+    "fork_from": "baseline",
+    "compose_mode": null,
+    "expected_delta_ler": 5e-05,
+    "expected_cost_s": 900,
+    "rationale": "There is no prior round history, so the safest first probe is a small qLDPC-oriented model directly against baseline rather than a compose branch. A soft-prior neural-BP variant should complement the fixed OSD backend better than a harder flip-style decoder on bb72_depol.",
+    "dsl_hint": {
+      "type": "neural_bp",
+      "message_fn": "gated_mlp",
+      "layers": 3,
+      "output_mode": "soft_priors"
+    }
+  },
+  "dsl_schema": "{\n  \"$defs\": {\n    \"CustomFn\": {\n      \"additionalProperties\": false,\n      \"properties\": {\n        \"type\": {\n          \"const\": \"custom\",\n          \"default\": \"custom\",\n          \"title\": \"Type\",\n          \"type\": \"string\"\n        },\n        \"code\": {\n          \"title\": \"Code\",\n          \"type\": \"string\"\n        },\n        \"params_declared\": {\n          \"additionalProperties\": {\n            \"type\": \"string\"\n          },\n          \"title\": \"Params Declared\",\n          \"type\": \"object\"\n        }\n      },\n      \"required\": [\n        \"code\"\n      ],\n      \"title\": \"CustomFn\",\n      \"type\": \"object\"\n    },\n    \"GNNConfig\": {\n      \"additionalProperties\": false,\n      \"properties\": {\n        \"layers\": {\n          \"minimum\": 1,\n          \"title\": \"Layers\",\n          \"type\": \"integer\"\n        },\n        \"hidden_dim\": {\n          \"minimum\": 4,\n          \"title\": \"Hidden Dim\",\n          \"type\": \"integer\"\n        },\n        \"message_fn\": {\n          \"anyOf\": [\n            {\n              \"enum\": [\n                \"mlp\",\n                \"gated_mlp\",\n                \"attention\",\n                \"gru_cell\",\n                \"edge_attention\",\n                \"geometric_attention\",\n                \"residual_mlp\",\n                \"normalized_mlp\"\n              ],\n              \"type\": \"string\"\n            },\n            {\n              \"$ref\": \"#/$defs/CustomFn\"\n            }\n          ],\n          \"title\": \"Message Fn\"\n        },\n        \"aggregation\": {\n          \"anyOf\": [\n            {\n              \"enum\": [\n                \"sum\",\n                \"mean\",\n                \"max\",\n                \"attention_pool\",\n                \"set_transformer\",\n                \"gated_sum\"\n              ],\n              \"type\": \"string\"\n            },\n            {\n              \"$ref\": \"#/$defs/CustomFn\"\n            }\n          ],\n          \"title\": \"Aggregation\"\n        },\n        \"normalization\": {\n          \"enum\": [\n            \"none\",\n            \"layer\",\n            \"batch\",\n            \"edge_norm\",\n            \"graph_norm\"\n          ],\n          \"title\": \"Normalization\",\n          \"type\": \"string\"\n        },\n        \"residual\": {\n          \"title\": \"Residual\",\n          \"type\": \"boolean\"\n        },\n        \"edge_features\": {\n          \"items\": {\n            \"enum\": [\n              \"syndrome_bit\",\n              \"round_idx\",\n              \"stabilizer_type\",\n              \"distance\",\n              \"prior_weight\"\n            ],\n            \"type\": \"string\"\n          },\n          \"title\": \"Edge Features\",\n          \"type\": \"array\"\n        }\n      },\n      \"required\": [\n        \"layers\",\n        \"hidden_dim\",\n        \"message_fn\",\n        \"aggregation\",\n        \"normalization\",\n        \"residual\"\n      ],\n      \"title\": \"GNNConfig\",\n      \"type\": \"object\"\n    },\n    \"NeuralBPConfig\": {\n      \"additionalProperties\": false,\n      \"properties\": {\n        \"iterations\": {\n          \"minimum\": 1,\n          \"title\": \"Iterations\",\n          \"type\": \"integer\"\n        },\n        \"weight_sharing\": {\n          \"enum\": [\n            \"none\",\n            \"per_layer\",\n            \"per_check\"\n          ],\n          \"title\": \"Weight Sharing\",\n          \"type\": \"string\"\n        },\n        \"damping\": {\n          \"enum\": [\n            \"fixed\",\n            \"learnable_scalar\",\n            \"learnable_per_iter\"\n          ],\n          \"title\": \"Damping\",\n          \"type\": \"string\"\n        },\n        \"attention_aug\": {\n          \"title\": \"Attention Aug\",\n          \"type\": \"boolean\"\n        },\n        \"attention_heads\": {\n          \"minimum\": 1,\n          \"title\": \"Attention Heads\",\n          \"type\": \"integer\"\n        }\n      },\n      \"required\": [\n        \"iterations\",\n        \"weight_sharing\",\n        \"damping\",\n        \"attention_aug\",\n        \"attention_heads\"\n      ],\n      \"title\": \"NeuralBPConfig\",\n      \"type\": \"object\"\n    },\n    \"TrainingConfig\": {\n      \"additionalProperties\": false,\n      \"properties\": {\n        \"learning_rate\": {\n          \"exclusiveMinimum\": 0,\n          \"title\": \"Learning Rate\",\n          \"type\": \"number\"\n        },\n        \"batch_size\": {\n          \"minimum\": 1,\n          \"title\": \"Batch Size\",\n          \"type\": \"integer\"\n        },\n        \"epochs\": {\n          \"minimum\": 1,\n          \"title\": \"Epochs\",\n          \"type\": \"integer\"\n        },\n        \"loss\": {\n          \"enum\": [\n            \"bce\",\n            \"focal\",\n            \"weighted_bce\"\n          ],\n          \"title\": \"Loss\",\n          \"type\": \"string\"\n        },\n        \"profile\": {\n          \"enum\": [\n            \"dev\",\n            \"prod\"\n          ],\n          \"title\": \"Profile\",\n          \"type\": \"string\"\n        }\n      },\n      \"required\": [\n        \"learning_rate\",\n        \"batch_size\",\n        \"epochs\",\n        \"loss\",\n        \"profile\"\n      ],\n      \"title\": \"TrainingConfig\",\n      \"type\": \"object\"\n    }\n  },\n  \"additionalProperties\": false,\n  \"properties\": {\n    \"type\": {\n      \"enum\": [\n        \"gnn\",\n        \"neural_bp\"\n      ],\n      \"title\": \"Type\",\n      \"type\": \"string\"\n    },\n    \"output_mode\": {\n      \"enum\": [\n        \"hard_flip\",\n        \"soft_priors\"\n      ],\n      \"title\": \"Output Mode\",\n      \"type\": \"string\"\n    },\n    \"gnn\": {\n      \"anyOf\": [\n        {\n          \"$ref\": \"#/$defs/GNNConfig\"\n        },\n        {\n          \"type\": \"null\"\n        }\n      ],\n      \"default\": null\n    },\n    \"neural_bp\": {\n      \"anyOf\": [\n        {\n          \"$ref\": \"#/$defs/NeuralBPConfig\"\n        },\n        {\n          \"type\": \"null\"\n        }\n      ],\n      \"default\": null\n    },\n    \"head\": {\n      \"anyOf\": [\n        {\n          \"enum\": [\n            \"linear\",\n            \"mlp_small\"\n          ],\n          \"type\": \"string\"\n        },\n        {\n          \"$ref\": \"#/$defs/CustomFn\"\n        }\n      ],\n      \"title\": \"Head\"\n    },\n    \"training\": {\n      \"$ref\": \"#/$defs/TrainingConfig\"\n    }\n  },\n  \"required\": [\n    \"type\",\n    \"output_mode\",\n    \"head\",\n    \"training\"\n  ],\n  \"title\": \"PredecoderDSL\",\n  \"type\": \"object\"\n}",
+  "best_so_far": [],
+  "tier2_validator_rules": {
+    "slot_signatures": {
+      "message_fn": [
+        "x_src",
+        "x_dst",
+        "e_ij",
+        "params"
+      ],
+      "aggregation": [
+        "messages",
+        "edge_index"
+      ],
+      "head": [
+        "hidden_state"
+      ]
+    },
+    "allowed_top_imports": [
+      "torch",
+      "typing"
+    ],
+    "allowed_from_imports": [
+      "torch",
+      "torch.nn",
+      "torch.nn.functional",
+      "typing"
+    ],
+    "forbidden_names": [
+      "__builtins__",
+      "__import__",
+      "breakpoint",
+      "compile",
+      "ctypes",
+      "delattr",
+      "dir",
+      "eval",
+      "exec",
+      "getattr",
+      "globals",
+      "help",
+      "importlib",
+      "input",
+      "io",
+      "locals",
+      "marshal",
+      "open",
+      "os",
+      "pathlib",
+      "pickle",
+      "setattr",
+      "shutil",
+      "socket",
+      "subprocess",
+      "sys",
+      "tempfile",
+      "urllib",
+      "vars"
+    ],
+    "output_shape": {
+      "type": "custom",
+      "code": "<python source defining exactly one function with the slot signature>",
+      "params_declared": {
+        "<name>": "<type-hint str>"
+      }
+    }
+  },
+  "worktree_dir": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/issue-51-live-llm-verification/.worktrees/exp-20260424-155219-01-try-a-compact-neural-bp-predecoder-that-"
+}
+
+Respond with exactly one fenced ```json block matching your `autoqec-coder` agent spec. No prose outside the block.

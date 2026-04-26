@@ -1,0 +1,47 @@
+{
+  "payload": {
+    "summary_1line": "Round 1 ran successfully with status ok, but delta_ler was 0.0 and the confidence interval fields were missing. It used 72 FLOPs per syndrome and 9 parameters, so the compute footprint is tiny but there is no measured gain over baseline. There was no previous summary to compare against, so this round establishes the first baseline-like result rather than showing progress.",
+    "verdict": "ignore",
+    "next_hypothesis_seed": "Try a slightly wider neural BP message-passing budget or a small increase in hidden width/iterations to seek positive Δ LER.",
+    "branch": "exp/20260424-155219/01-try-a-compact-neural-bp-predecoder-that-",
+    "commit_sha": "502b202d9bd607eeb30e1a84cf9a3193039360e8"
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 82132,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 53760,
+      "output_tokens": 695,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 27586,
+    "total_cost_usd": 0.090983,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 82132,
+        "outputTokens": 695,
+        "cacheReadInputTokens": 53760,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.090983,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "8241572a-0619-4b0f-93ad-937c9fae1952",
+    "uuid": "1099fc19-5893-4c76-9391-d8e7fe2800fb",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

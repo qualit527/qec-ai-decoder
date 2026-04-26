@@ -1,0 +1,47 @@
+{
+  "payload": {
+    "summary_1line": "Round 3 ran successfully with status ok, but the reported Δ LER was 0.0 and the confidence interval was unavailable, so there is no positive lift to forward. The decoder is lightweight at 73,585 params and 14,997,312 FLOPs per syndrome, but it does not improve over baseline. With no previous summary to compare against, the next seed should try a different message-passing depth or a gentler width reduction instead of repeating this smaller 3-layer GNN.",
+    "verdict": "ignore",
+    "next_hypothesis_seed": "Try a 4-layer message-passing variant with moderate hidden width and residual connections, or keep 3 layers but increase channel capacity slightly.",
+    "branch": "exp/20260424-155219/03-try-a-smaller-3-layer-gnn-predecoder-wit",
+    "commit_sha": "25c7260c2f94fa02d143f6eee0c97c758fbed098"
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 82136,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 80384,
+      "output_tokens": 790,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 27994,
+    "total_cost_usd": 0.0941244,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 82136,
+        "outputTokens": 790,
+        "cacheReadInputTokens": 80384,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.0941244,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "3ef11f11-1c79-4a71-a6d0-5eb283b80b33",
+    "uuid": "32016b79-fe9f-4d90-ae60-a3b1befea235",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

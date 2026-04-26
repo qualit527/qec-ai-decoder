@@ -1,0 +1,55 @@
+{
+  "payload": {
+    "hypothesis": "Try a narrower 2-layer gated-MLP GNN with soft-prior outputs to stay under the param budget while keeping the differentiable local-syndrome aggregation path.",
+    "fork_from": "baseline",
+    "compose_mode": null,
+    "expected_delta_ler": 2e-05,
+    "expected_cost_s": 18,
+    "rationale": "exp/20260424-154450/01-try-a-compact-3-layer-gated-mlp-gnn-with landed at 253377 params, over the 200000 cap, and gave no gain over baseline; exp/20260424-154450/02-try-a-tiny-hard-flip-neural-bp-predecode failed on gradient flow. A smaller soft-prior GNN keeps the stable training path from 01 while shrinking capacity enough to fit the budget.",
+    "dsl_hint": {
+      "type": "gnn",
+      "message_fn": "gated_mlp",
+      "layers": 2,
+      "hidden_dim": 64,
+      "output_mode": "soft_priors"
+    }
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 28099,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 20480,
+      "output_tokens": 1756,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 27324,
+    "total_cost_usd": 0.038926999999999996,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 28099,
+        "outputTokens": 1756,
+        "cacheReadInputTokens": 20480,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.038926999999999996,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "144d58e1-a9b7-4e01-a49d-1a61f594a013",
+    "uuid": "399adb48-c3b5-4140-af3e-460b4115d9d9",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

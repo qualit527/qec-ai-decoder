@@ -1,0 +1,20 @@
+gnn:
+  aggregation: sum
+  edge_features:
+  - syndrome_bit
+  - stabilizer_type
+  - distance
+  hidden_dim: 32
+  layers: 4
+  message_fn: gated_mlp
+  normalization: layer
+  residual: true
+head: linear
+output_mode: hard_flip
+training:
+  batch_size: 64
+  epochs: 24
+  learning_rate: 0.001
+  loss: weighted_bce
+  profile: prod
+type: gnn

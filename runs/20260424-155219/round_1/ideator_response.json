@@ -1,0 +1,54 @@
+{
+  "payload": {
+    "hypothesis": "Try a compact neural-BP predecoder that learns damped soft priors on the bb72 Tanner graph before OSD refinement.",
+    "fork_from": "baseline",
+    "compose_mode": null,
+    "expected_delta_ler": 5e-05,
+    "expected_cost_s": 900,
+    "rationale": "There is no prior round history, so the safest first probe is a small qLDPC-oriented model directly against baseline rather than a compose branch. A soft-prior neural-BP variant should complement the fixed OSD backend better than a harder flip-style decoder on bb72_depol.",
+    "dsl_hint": {
+      "type": "neural_bp",
+      "message_fn": "gated_mlp",
+      "layers": 3,
+      "output_mode": "soft_priors"
+    }
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 27695,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 705,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 9731,
+    "total_cost_usd": 0.03122,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 27695,
+        "outputTokens": 705,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.03122,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "334c7de2-36e0-47af-978e-650281b4eaa4",
+    "uuid": "1f2536d0-c7bc-44d2-ab61-5af30b59580c",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

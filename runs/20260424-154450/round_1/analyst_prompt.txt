@@ -1,0 +1,9 @@
+# ANALYST CONTEXT
+
+{
+  "metrics_path": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/issue-51-live-llm-verification/runs/20260424-154450/round_1/metrics.json",
+  "previous_summary": "",
+  "pareto_front": []
+}
+
+Respond with exactly one fenced ```json block matching your `autoqec-analyst` agent spec. No prose outside the block.

@@ -1,0 +1,64 @@
+{
+  "payload": {
+    "dsl_config": {
+      "type": "neural_bp",
+      "output_mode": "hard_flip",
+      "neural_bp": {
+        "iterations": 3,
+        "weight_sharing": "per_layer",
+        "damping": "fixed",
+        "attention_aug": false,
+        "attention_heads": 1
+      },
+      "head": "linear",
+      "training": {
+        "learning_rate": 0.001,
+        "batch_size": 128,
+        "epochs": 12,
+        "loss": "bce",
+        "profile": "prod"
+      }
+    },
+    "tier": "1",
+    "rationale": "This keeps the round in Tier 1 and matches the hypothesis with a minimal neural-BP setup: hard_flip output, 3 iterations, shared weights, and no attention augmentation. I chose fixed damping and a linear head to minimize parameter and latency overhead while still testing whether a compact message-passing decoder improves on baseline.",
+    "commit_message": "exp(20260424-154450/02): try a tiny hard-flip neural BP predecoder"
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 29913,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 762,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 15320,
+    "total_cost_usd": 0.033722999999999996,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 29913,
+        "outputTokens": 762,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.033722999999999996,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "c32adb31-2b48-4ae9-bda4-80f9c419f127",
+    "uuid": "91d5affb-af02-4b65-a9ba-908425b1076f",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

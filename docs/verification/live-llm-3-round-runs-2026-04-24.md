@@ -41,6 +41,11 @@ python -m cli.autoqec run autoqec/envs/builtin/bb72_depol.yaml --rounds 3 --prof
 - `docs/verification/artifacts/autoqec-surface-d5-live-3rounds-2026-04-24.tar.gz`
 - `docs/verification/artifacts/autoqec-bb72-live-3rounds-2026-04-24.tar.gz`
 
+The `runs/` directories are checked in as lightweight demo-plotting copies with
+JSON, prompt/response, log, and manifest artifacts. `checkpoint.pt` files are
+intentionally omitted from the checked-in directories; the complete archives
+above retain the full generated run contents.
+
 ## Summary
 
 | Env | Run dir | History rows | Statuses | Fork nodes | Machine-state calls | Agent input / output tokens | Agent wall-clock | Train+eval wall-clock | Cost |

@@ -1,0 +1,65 @@
+{
+  "payload": {
+    "dsl_config": {
+      "type": "gnn",
+      "output_mode": "soft_priors",
+      "gnn": {
+        "layers": 2,
+        "hidden_dim": 64,
+        "message_fn": "gated_mlp",
+        "aggregation": "gated_sum",
+        "normalization": "layer",
+        "residual": true
+      },
+      "head": "linear",
+      "training": {
+        "learning_rate": 0.001,
+        "batch_size": 64,
+        "epochs": 4,
+        "loss": "focal",
+        "profile": "dev"
+      }
+    },
+    "tier": "1",
+    "rationale": "This keeps the stable gated-MLP message/aggregation path from the prior GNN attempt while reducing depth to 2 layers and preserving soft-prior outputs. The linear head and dev-profile focal training keep the config compact and aligned with existing gated-GNN examples.",
+    "commit_message": "exp(20260424-154450/03): try a narrower 2-layer gated MLP GNN"
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 131271,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 82432,
+      "output_tokens": 2634,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 60110,
+    "total_cost_usd": 0.1526842,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 131271,
+        "outputTokens": 2634,
+        "cacheReadInputTokens": 82432,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.1526842,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "6d07a128-335b-4f33-9a5a-96d90b4caa2b",
+    "uuid": "3ac98f40-8b88-4eff-b4a4-560ebad9d837",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

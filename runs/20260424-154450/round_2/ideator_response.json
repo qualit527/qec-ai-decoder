@@ -1,0 +1,55 @@
+{
+  "payload": {
+    "hypothesis": "Try a tiny hard-flip neural BP predecoder with shared weights and 3 unrolled iterations to stay inside the latency budget and test whether a message-passing family beats the compact soft-prior GNN.",
+    "fork_from": "baseline",
+    "compose_mode": null,
+    "expected_delta_ler": 5e-05,
+    "expected_cost_s": 40,
+    "rationale": "The only prior branch, exp/20260424-154450/01-try-a-compact-3-layer-gated-mlp-gnn-with, came in at zero delta_vs_baseline and exceeded the param budget, so I would not iterate on that soft-prior GNN shape. Starting from baseline with a smaller neural-BP hard_flip design is the cheapest meaningful change that also respects the latency and parameter constraints.",
+    "dsl_hint": {
+      "type": "neural_bp",
+      "output_mode": "hard_flip",
+      "iterations": 3,
+      "hidden_dim": 32,
+      "shared_weights": true
+    }
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 27902,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 20480,
+      "output_tokens": 1526,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 21464,
+    "total_cost_usd": 0.03758,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 27902,
+        "outputTokens": 1526,
+        "cacheReadInputTokens": 20480,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.03758,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "3a82d75f-dbe7-40cf-b6ae-022c567572f9",
+    "uuid": "14b9f002-9827-42d9-8781-334192b4db28",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

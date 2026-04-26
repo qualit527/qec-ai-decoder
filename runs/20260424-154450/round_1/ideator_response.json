@@ -1,0 +1,55 @@
+{
+  "payload": {
+    "hypothesis": "Try a compact 3-layer gated-MLP GNN with soft-prior outputs to learn local syndrome corrections before MWPM on surface_d5_depol.",
+    "fork_from": "baseline",
+    "compose_mode": null,
+    "expected_delta_ler": 5e-05,
+    "expected_cost_s": 900,
+    "rationale": "There are no prior rounds or verified branches yet, so the cheapest useful first probe is a small GNN fork from baseline rather than a compose round. A compact soft-prior model should stay well within the parameter and FLOP budgets while giving a cleaner signal than a heavier architecture on the first pass.",
+    "dsl_hint": {
+      "type": "gnn",
+      "message_fn": "gated_mlp",
+      "layers": 3,
+      "hidden_dim": 64,
+      "output_mode": "soft_priors"
+    }
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 27686,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 27136,
+      "output_tokens": 720,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 20387,
+    "total_cost_usd": 0.033999600000000005,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 27686,
+        "outputTokens": 720,
+        "cacheReadInputTokens": 27136,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.033999600000000005,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "cd12f14a-bc71-4c41-8b94-76c2f715b8e6",
+    "uuid": "7533c60b-732f-4030-b59e-4e87926b4444",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

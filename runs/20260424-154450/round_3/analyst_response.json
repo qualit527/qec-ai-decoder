@@ -1,0 +1,47 @@
+{
+  "payload": {
+    "summary_1line": "Round 3 ran successfully with status ok, but it matched the classical baseline exactly (ΔLER=0.0) and the CI bounds are missing. It used 477476928 FLOPs per syndrome and 207873 parameters, so the compute cost did not buy any error-rate gain. There was no previous summary to compare against, so this round does not show a step up from the prior report.",
+    "verdict": "ignore",
+    "next_hypothesis_seed": "Try a deeper message-passing stack or a wider gated MLP with normalization to recover nonzero ΔLER.",
+    "branch": "exp/20260424-154450/03-try-a-narrower-2-layer-gated-mlp-gnn-wit",
+    "commit_sha": "25d1e4a2c7369129f8005ba711835b5319bccfcd"
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 82134,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 74240,
+      "output_tokens": 900,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 36857,
+    "total_cost_usd": 0.094058,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 82134,
+        "outputTokens": 900,
+        "cacheReadInputTokens": 74240,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.094058,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "d31901d7-c098-460b-b599-f34089c26d3f",
+    "uuid": "cb9c7a88-f793-466f-84be-b2882a51230c",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

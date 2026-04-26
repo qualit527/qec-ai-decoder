@@ -1,0 +1,16 @@
+gnn: null
+head: linear
+neural_bp:
+  attention_aug: false
+  attention_heads: 1
+  damping: learnable_scalar
+  iterations: 6
+  weight_sharing: per_layer
+output_mode: soft_priors
+training:
+  batch_size: 128
+  epochs: 24
+  learning_rate: 0.0005
+  loss: weighted_bce
+  profile: prod
+type: neural_bp

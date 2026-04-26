@@ -1,0 +1,65 @@
+{
+  "payload": {
+    "dsl_config": {
+      "type": "neural_bp",
+      "output_mode": "soft_priors",
+      "gnn": null,
+      "neural_bp": {
+        "iterations": 6,
+        "weight_sharing": "per_layer",
+        "damping": "learnable_scalar",
+        "attention_aug": false,
+        "attention_heads": 1
+      },
+      "head": "linear",
+      "training": {
+        "learning_rate": 0.0005,
+        "batch_size": 128,
+        "epochs": 24,
+        "loss": "weighted_bce",
+        "profile": "prod"
+      }
+    },
+    "tier": "1",
+    "rationale": "This keeps the first probe compact and schema-native: a standard neural-BP stack with shared per-layer weights, learnable damping, and soft-prior outputs to hand off cleanly to OSD. Linear head and moderate training settings should keep compute low while still testing whether bb72 benefits from a learned prior over the baseline.",
+    "commit_message": "exp(20260424-155219/01): compact neural-BP soft-prior probe"
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 29857,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 20480,
+      "output_tokens": 1138,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 20277,
+    "total_cost_usd": 0.037595,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 29857,
+        "outputTokens": 1138,
+        "cacheReadInputTokens": 20480,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.037595,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "e2cd29ba-64d3-4fae-a2e0-a2db4d327b45",
+    "uuid": "70c6daa2-c6e9-4fc2-a080-812d8fdbe02d",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

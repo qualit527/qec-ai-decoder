@@ -1,0 +1,53 @@
+{
+  "payload": {
+    "hypothesis": "Try a small 4-layer GNN predecoder with gated MLP messages and hard-flip outputs to replace the ineffective compact neural-BP probe.",
+    "fork_from": "baseline",
+    "compose_mode": null,
+    "expected_delta_ler": 2e-05,
+    "expected_cost_s": 600,
+    "rationale": "The prior branch exp/20260424-155219/01-try-a-compact-neural-bp-predecoder-that- landed at delta_vs_baseline 0.0 with only 9 params, so scaling that exact direction looks low-yield; switching family is the better next probe. The observed wall-clock was ~5s for a trivial model, so a modest 4-layer GNN should remain comfortably feasible while testing a qualitatively different inductive bias.",
+    "dsl_hint": {
+      "type": "gnn",
+      "message_fn": "gated_mlp",
+      "layers": 4
+    }
+  },
+  "meta": {
+    "usage": {
+      "input_tokens": 27903,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 20480,
+      "output_tokens": 736,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "duration_ms": 15123,
+    "total_cost_usd": 0.033631,
+    "model_usage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 27903,
+        "outputTokens": 736,
+        "cacheReadInputTokens": 20480,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.033631,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      }
+    },
+    "session_id": "4846fd58-abdf-4a12-8ccb-b5d663c8edf8",
+    "uuid": "5d9a8347-4f39-422f-a384-6ef9dc139f72",
+    "backend": "claude-cli",
+    "model": "claude-haiku-4-5"
+  }
+}

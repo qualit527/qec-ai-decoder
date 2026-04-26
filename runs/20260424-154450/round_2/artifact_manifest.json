@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-04-24T07:47:45Z",
+  "repo": {
+    "commit_sha": "c4448f7bb7138536a96f03b25d1fac1e235da2ad",
+    "branch": "exp/20260424-154450/02-try-a-tiny-hard-flip-neural-bp-predecode",
+    "dirty": false
+  },
+  "environment": {
+    "env_yaml_path": "/home/tx/QuAIR/qec-ai-decoder/.worktrees/issue-51-live-llm-verification/autoqec/envs/builtin/surface_d5_depol.yaml",
+    "env_yaml_sha256": "87eee092dadeadfe451d7bb0bc3ba2820884c6a21b7ee09954a3fec211e267d9"
+  },
+  "round": {
+    "run_id": "20260424-154450",
+    "round_dir": "round_2",
+    "round": 2,
+    "dsl_config_sha256": "ff814cfac8c9c46eaf34c24c98f8ca80d1038848abbb5060d1fa7b906c92aa0b",
+    "command_line": [
+      "/home/tx/QuAIR/qec-ai-decoder/.worktrees/issue-51-live-llm-verification/.venv/bin/python",
+      "-m",
+      "cli.autoqec",
+      "run-round-internal"
+    ]
+  },
+  "artifacts": {
+    "config_yaml": "config.yaml",
+    "checkpoint": "checkpoint.pt",
+    "metrics": "metrics.json",
+    "train_log": "train.log"
+  },
+  "packages": {
+    "python": "3.12.7",
+    "torch": "2.11.0",
+    "cuda": "none",
+    "stim": "1.15.0",
+    "pymatching": "2.3.1",
+    "ldpc": "2.4.1"
+  }
+}
